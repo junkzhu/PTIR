@@ -40,6 +40,7 @@ from threedgrut.render import Renderer
 from threedgrut.strategy.base import BaseStrategy
 from threedgrut.utils.logger import logger
 from threedgrut.utils.misc import check_step_condition, create_summary_writer, jet_map
+from threedgrut.utils.normal import NormalUtils
 from threedgrut.utils.render import apply_post_processing
 from threedgrut.utils.timer import CudaTimer
 from threedgrut.utils.visualize import TrainingVisualizer
@@ -134,6 +135,7 @@ class Trainer3DGRUT:
         self.setup_training(conf, self.model, self.train_dataset)
         self.init_experiments_tracking(conf)
         self.init_visualizer(conf)
+        self.init_normal_utils()
         self.init_post_processing(conf)
         self.init_gui(conf, self.model, self.train_dataset, self.val_dataset, self.scene_bbox)
 
@@ -376,6 +378,9 @@ class Trainer3DGRUT:
             output_dir=self.tracking.output_dir,
             frequency=getattr(conf, "visualize_frequency", 0),
         )
+
+    def init_normal_utils(self):
+        self.normal_utils = NormalUtils()
 
     def init_post_processing(self, conf: DictConfig):
         """Initialize post-processing module based on config."""
@@ -945,6 +950,22 @@ class Trainer3DGRUT:
         if self.post_processing is not None:
             with torch.cuda.nvtx.range(f"train_{global_step}_post_processing"):
                 outputs = apply_post_processing(self.post_processing, outputs, gpu_batch, training=True)
+
+        # Convert depth to normal
+        with torch.cuda.nvtx.range(f"train_{global_step}_pseudo_normal"):
+            pred_dist = outputs.get("pred_dist")
+            if pred_dist is not None:
+                valid = pred_dist > 0
+                pseudo_normal, pseudo_normal_mask = self.normal_utils.depth_to_pseudo_normal(
+                    rays_o=gpu_batch.rays_ori,
+                    rays_d=gpu_batch.rays_dir,
+                    T_to_world=gpu_batch.T_to_world,
+                    pred_dist=pred_dist,
+                    valid=valid,
+                    foreground_mask=gpu_batch.mask,
+                )
+                gpu_batch.pseudo_normal = pseudo_normal
+                gpu_batch.pseudo_normal_mask = pseudo_normal_mask
 
         # Compute the losses of a single batch
         with torch.cuda.nvtx.range(f"train_{global_step}_loss"):

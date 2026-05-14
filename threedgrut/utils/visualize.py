@@ -108,6 +108,13 @@ class TrainingVisualizer:
             gt_image,
             err_image,
         ]
+        if spec.name == "rgb":
+            depth_image = self._build_depth_image(outputs.get("pred_dist"), reference=ours_image)
+            row_images.insert(1, depth_image)
+        elif spec.name == "normal":
+            pseudo_normal_image = self._build_pseudo_normal_image(batch, reference=ours_image)
+            row_images.insert(1, pseudo_normal_image)
+
         return self._concat_images(row_images, dim=-1)
 
     @staticmethod
@@ -145,6 +152,46 @@ class TrainingVisualizer:
             heatmaps.append(torch.from_numpy(heat_rgb).permute(2, 0, 1))
 
         return torch.stack(heatmaps, dim=0).float()
+
+    def _build_depth_image(
+        self,
+        depth: Optional[torch.Tensor],
+        reference: torch.Tensor,
+    ) -> torch.Tensor:
+        depth_batch = self._to_channel_last_batch(depth)
+        if depth_batch is None:
+            return torch.zeros_like(reference)
+
+        depth_map = depth_batch[..., 0].detach().clamp(min=0.0)
+        depth_images = []
+        for batch_idx in range(depth_map.shape[0]):
+            depth_item = depth_map[batch_idx]
+            depth_item = depth_item / depth_item.max().clamp_min(1e-8)
+            depth_images.append(depth_item.expand(3, -1, -1))
+
+        depth_image = torch.stack(depth_images, dim=0).float().cpu()
+        if depth_image.shape[-2:] != reference.shape[-2:]:
+            depth_image = F.interpolate(depth_image, size=reference.shape[-2:], mode="bilinear", align_corners=False)
+
+        return depth_image
+
+    def _build_pseudo_normal_image(
+        self,
+        batch: Optional[object],
+        reference: torch.Tensor,
+    ) -> torch.Tensor:
+        if batch is None:
+            return torch.zeros_like(reference)
+
+        image = self._to_image_batch(getattr(batch, "pseudo_normal", None))
+        if image is None:
+            return torch.zeros_like(reference)
+
+        image = (0.5 * (image + 1.0)).clip(0.0, 1.0)
+        if image.shape[-2:] != reference.shape[-2:]:
+            image = F.interpolate(image, size=reference.shape[-2:], mode="bilinear", align_corners=False)
+
+        return image
 
     @staticmethod
     def _concat_rows(rows: list[torch.Tensor]) -> torch.Tensor:

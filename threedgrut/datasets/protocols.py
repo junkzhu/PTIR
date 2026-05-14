@@ -29,6 +29,8 @@ class Batch:
     rays_in_world_space: bool = False  # True if rays are already in world space (no transform needed)
     rgb_gt: Optional[torch.Tensor] = None
     normal_gt: Optional[torch.Tensor] = None
+    pseudo_normal: Optional[torch.Tensor] = None
+    pseudo_normal_mask: Optional[torch.Tensor] = None
     mask: Optional[torch.Tensor] = None
     intrinsics: Optional[list] = None
     intrinsics_OpenCVPinholeCameraModelParameters: Optional[dict] = None
@@ -52,6 +54,12 @@ class Batch:
         if self.normal_gt is not None:
             assert self.normal_gt.ndim == 4, "normal_gt must be a 4D tensor [B, H, W, 3]"
             assert self.normal_gt.shape[0] == batch_size, "normal_gt must have the same batch size"
+        if self.pseudo_normal is not None:
+            assert self.pseudo_normal.ndim == 4, "pseudo_normal must be a 4D tensor [B, H, W, 3]"
+            assert self.pseudo_normal.shape[0] == batch_size, "pseudo_normal must have the same batch size"
+        if self.pseudo_normal_mask is not None:
+            assert self.pseudo_normal_mask.ndim == 4, "pseudo_normal_mask must be a 4D tensor [B, H, W, 1]"
+            assert self.pseudo_normal_mask.shape[0] == batch_size, "pseudo_normal_mask must have the same batch size"
         if self.mask is not None:
             assert self.mask.ndim == 4, "mask must be a 3D tensor [B, H, W, 1]"
             assert self.mask.shape[0] == batch_size, "mask must have the same batch size"
