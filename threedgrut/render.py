@@ -206,6 +206,9 @@ class Renderer:
         output_path_renders = os.path.join(self.out_dir, f"ours_{int(self.global_step)}", "renders")
         os.makedirs(output_path_renders, exist_ok=True)
 
+        output_path_normals = os.path.join(self.out_dir, f"ours_{int(self.global_step)}", "normals")
+        os.makedirs(output_path_normals, exist_ok=True)
+
         if self.save_gt:
             output_path_gt = os.path.join(self.out_dir, f"ours_{int(self.global_step)}", "gt")
             os.makedirs(output_path_gt, exist_ok=True)
@@ -249,6 +252,14 @@ class Renderer:
                 pred_rgb_full.squeeze(0).permute(2, 0, 1),
                 os.path.join(output_path_renders, "{0:05d}".format(iteration) + ".png"),
             )
+            pred_normals_full = outputs.get("pred_normals")
+            if pred_normals_full is not None:
+                normals_to_write = (0.5 * (pred_normals_full + 1.0)).clip(0, 1.0)
+                torchvision.utils.save_image(
+                    normals_to_write.squeeze(0).permute(2, 0, 1),
+                    os.path.join(output_path_normals, "{0:05d}".format(iteration) + ".png"),
+                )
+
             pred_img_to_write = pred_rgb_full[-1].clip(0, 1.0)
             gt_img_to_write = rgb_gt_full[-1].clip(0, 1.0)
 
