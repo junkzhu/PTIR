@@ -21,6 +21,7 @@ test_last: true
 validate_first: false
 log_frequency: 1
 compute_extra_metrics: true
+visualize_frequency: 1000
 
 enable_frame_timings: false
 

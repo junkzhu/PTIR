@@ -42,6 +42,7 @@ from threedgrut.utils.logger import logger
 from threedgrut.utils.misc import check_step_condition, create_summary_writer, jet_map
 from threedgrut.utils.render import apply_post_processing
 from threedgrut.utils.timer import CudaTimer
+from threedgrut.utils.visualize import TrainingVisualizer
 
 
 class Trainer3DGRUT:
@@ -132,6 +133,7 @@ class Trainer3DGRUT:
         self.init_metrics()
         self.setup_training(conf, self.model, self.train_dataset)
         self.init_experiments_tracking(conf)
+        self.init_visualizer(conf)
         self.init_post_processing(conf)
         self.init_gui(conf, self.model, self.train_dataset, self.val_dataset, self.scene_bbox)
 
@@ -367,6 +369,12 @@ class Trainer3DGRUT:
             run_name=run_name,
             object_name=object_name,
             output_dir=out_dir,
+        )
+
+    def init_visualizer(self, conf: DictConfig):
+        self.visualizer = TrainingVisualizer(
+            output_dir=self.tracking.output_dir,
+            frequency=getattr(conf, "visualize_frequency", 0),
         )
 
     def init_post_processing(self, conf: DictConfig):
@@ -1054,6 +1062,10 @@ class Trainer3DGRUT:
                 self.render_gui_viser(scene_updated)
             elif self.conf.with_gui:
                 self.render_gui(scene_updated)
+
+        # Visualize Training Images
+        with torch.cuda.nvtx.range(f"train_{global_step - 1}_visualize"):
+            self.visualizer.save(global_step, outputs)
 
     @torch.cuda.nvtx.range(f"run_train_pass")
     def run_train_pass(self, conf: DictConfig):
