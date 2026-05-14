@@ -12,6 +12,7 @@ def normal_mae(
     pred_normal: torch.Tensor,
     gt_normal: torch.Tensor,
     valid_mask: Optional[torch.Tensor] = None,
+    average_full_image: bool = False,
     eps: float = 1e-6,
 ) -> torch.Tensor:
     """
@@ -21,6 +22,8 @@ def normal_mae(
         pred_normal: [..., 3], normal in world/camera space.
         gt_normal: Same shape as pred_normal, in the same space.
         valid_mask: Optional bool/float mask shaped [...] or [..., 1].
+        average_full_image: If true, masked-out pixels contribute zero error
+            but remain in the denominator.
         eps: Normalization epsilon.
     """
     pred = F.normalize(pred_normal, dim=-1, eps=eps)
@@ -33,6 +36,9 @@ def normal_mae(
         valid_mask = valid_mask.bool()
         if valid_mask.ndim == angular_error.ndim + 1:
             valid_mask = valid_mask.squeeze(-1)
+        if average_full_image:
+            angular_error = torch.where(valid_mask, angular_error, torch.zeros_like(angular_error))
+            return angular_error.mean()
         angular_error = angular_error[valid_mask]
 
     if angular_error.numel() == 0:

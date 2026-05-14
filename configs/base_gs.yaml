@@ -95,7 +95,7 @@ optimizer:
     scale:
       lr: 0.005 # 3DGS value: 0.005
     shading_normal:
-      lr: 0.001
+      lr: 0.005
 
 scheduler:
   positions:

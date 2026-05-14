@@ -281,8 +281,17 @@ class Renderer:
                 pred_shadingnormal = outputs.get("pred_shadingnormal")
                 normal_gt = getattr(gpu_batch, "normal_gt", None)
                 if pred_shadingnormal is not None and normal_gt is not None:
-                    normal_mask = normal_gt.abs().sum(dim=-1) > 1e-6
-                    normal_mae_single_img = normal_mae(pred_shadingnormal, normal_gt, valid_mask=normal_mask).item()
+                    normal_mask = getattr(gpu_batch, "mask", None)
+                    if normal_mask is not None:
+                        normal_mask = normal_mask[..., 0] > 0.5
+                    else:
+                        normal_mask = normal_gt.abs().sum(dim=-1) > 1e-6
+                    normal_mae_single_img = normal_mae(
+                        pred_shadingnormal,
+                        normal_gt,
+                        valid_mask=normal_mask,
+                        average_full_image=True,
+                    ).item()
                     normal_maes.append(normal_mae_single_img)
 
             log_msg = f"Frame {iteration}, PSNR: {psnr[-1]}"
