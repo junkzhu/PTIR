@@ -2,10 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
-from pathlib import Path
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Optional
 
+import cv2
+import numpy as np
 import torch
 import torch.nn.functional as F
 import torchvision
@@ -14,10 +16,14 @@ from threedgrut.utils.logger import logger
 
 
 @dataclass(frozen=True)
-class VisualizationSpec:
+class VisualizationRowSpec:
     name: str
-    output_key: str
-    transform: Callable[[torch.Tensor], torch.Tensor]
+    ours_key: str
+    gt_attr: str
+    ours_transform: Callable[[torch.Tensor], torch.Tensor]
+    gt_transform: Callable[[torch.Tensor], torch.Tensor]
+    error: Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+    fixed_max_error: Optional[float] = None
 
 
 class TrainingVisualizer:
@@ -27,9 +33,24 @@ class TrainingVisualizer:
         self.frequency = int(frequency)
         self.enabled = self.frequency > 0
         self.output_dir = Path(output_dir) / "visualizations"
-        self.specs = [
-            VisualizationSpec("rgb", "pred_rgb", lambda image: image.clip(0.0, 1.0)),
-            VisualizationSpec("normal", "pred_normals", lambda image: (0.5 * (image + 1.0)).clip(0.0, 1.0)),
+        self.row_specs = [
+            VisualizationRowSpec(
+                name="rgb",
+                ours_key="pred_rgb",
+                gt_attr="rgb_gt",
+                ours_transform=lambda image: image.clip(0.0, 1.0),
+                gt_transform=lambda image: image.clip(0.0, 1.0),
+                error=lambda ours, gt: ((ours - gt) ** 2).mean(dim=-1),
+            ),
+            VisualizationRowSpec(
+                name="normal",
+                ours_key="pred_normals",
+                gt_attr="normal_gt",
+                ours_transform=lambda image: (0.5 * (image + 1.0)).clip(0.0, 1.0),
+                gt_transform=lambda image: (0.5 * (image + 1.0)).clip(0.0, 1.0),
+                error=self._normal_angle_error,
+                fixed_max_error=180.0,
+            ),
         ]
 
         if self.enabled:
@@ -40,30 +61,105 @@ class TrainingVisualizer:
         return self.enabled and step > 0 and step % self.frequency == 0
 
     @torch.no_grad()
-    def save(self, step: int, outputs: dict) -> None:
+    def save(self, step: int, outputs: dict, batch: Optional[object] = None) -> None:
         if not self.should_visualize(step):
             return
 
-        images = self._collect_images(outputs)
-        if not images:
+        rows = self._collect_rows(outputs, batch)
+        if not rows:
             return
 
-        image = self._concat_images(images)
+        image = self._concat_rows(rows)
         torchvision.utils.save_image(image, self.output_dir / f"{step:05d}.png")
 
-    def _collect_images(self, outputs: dict) -> list[torch.Tensor]:
-        images = []
-        for spec in self.specs:
-            image = self._to_image_batch(outputs.get(spec.output_key))
-            if image is None:
+    def _collect_rows(self, outputs: dict, batch: Optional[object]) -> list[torch.Tensor]:
+        rows = []
+        for spec in self.row_specs:
+            row = self._build_row(spec, outputs, batch)
+            if row is None:
                 continue
+            rows.append(row)
 
-            images.append(spec.transform(image))
+        return rows
 
-        return images
+    def _build_row(
+        self,
+        spec: VisualizationRowSpec,
+        outputs: dict,
+        batch: Optional[object],
+    ) -> Optional[torch.Tensor]:
+        if batch is None:
+            return None
+
+        ours = self._to_channel_last_batch(outputs.get(spec.ours_key))
+        gt = self._to_channel_last_batch(getattr(batch, spec.gt_attr, None))
+        if ours is None or gt is None:
+            return None
+
+        ours_image = spec.ours_transform(self._to_image_batch(ours))
+        gt_image = spec.gt_transform(self._to_image_batch(gt))
+        gt_mask = self._gt_image_mask(gt_image) if spec.name == "normal" else None
+
+        err_map = spec.error(ours, gt)
+        err_image = self._error_batch_to_image(err_map, gt_mask, fixed_max_error=spec.fixed_max_error)
+
+        row_images = [
+            ours_image,
+            gt_image,
+            err_image,
+        ]
+        return self._concat_images(row_images, dim=-1)
 
     @staticmethod
-    def _concat_images(images: list[torch.Tensor]) -> torch.Tensor:
+    def _normal_angle_error(ours: torch.Tensor, gt: torch.Tensor) -> torch.Tensor:
+        ours = F.normalize(ours, dim=-1)
+        gt = F.normalize(gt, dim=-1)
+        cos_sim = (ours * gt).sum(dim=-1).clamp(-1.0, 1.0)
+        return torch.arccos(cos_sim) * 180.0 / np.pi
+
+    @staticmethod
+    def _gt_image_mask(gt_image: torch.Tensor) -> torch.Tensor:
+        valid = gt_image.abs().sum(dim=1, keepdim=True) > 1e-6
+        return valid.permute(0, 2, 3, 1)
+
+    def _error_batch_to_image(
+        self,
+        error_map: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+        fixed_max_error: Optional[float] = None,
+    ) -> torch.Tensor:
+        error_map = error_map.detach()
+        if error_map.ndim == 2:
+            error_map = error_map.unsqueeze(0)
+
+        mask = self._to_channel_last_batch(mask)
+        heatmaps = []
+        for batch_idx in range(error_map.shape[0]):
+            mask_item = mask[batch_idx] if mask is not None else None
+            heat_rgb, _ = _error_to_inferno(
+                error_map[batch_idx],
+                mask=mask_item,
+                apply_mask_to_visual=True,
+                fixed_max_error=fixed_max_error,
+            )
+            heatmaps.append(torch.from_numpy(heat_rgb).permute(2, 0, 1))
+
+        return torch.stack(heatmaps, dim=0).float()
+
+    @staticmethod
+    def _concat_rows(rows: list[torch.Tensor]) -> torch.Tensor:
+        width = rows[0].shape[-1]
+        resized_rows = []
+
+        for row in rows:
+            if row.shape[-1] != width:
+                row = F.interpolate(row, size=(row.shape[-2], width), mode="bilinear", align_corners=False)
+            resized_rows.append(row)
+
+        return torch.cat(resized_rows, dim=-2)
+
+    @staticmethod
+    def _concat_images(images: list[torch.Tensor], dim: int) -> torch.Tensor:
         height, width = images[0].shape[-2:]
         resized_images = []
 
@@ -72,7 +168,7 @@ class TrainingVisualizer:
                 image = F.interpolate(image, size=(height, width), mode="bilinear", align_corners=False)
             resized_images.append(image)
 
-        return torch.cat(resized_images, dim=-1)
+        return torch.cat(resized_images, dim=dim)
 
     @staticmethod
     def _to_image_batch(tensor: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
@@ -92,3 +188,61 @@ class TrainingVisualizer:
             return None
 
         return tensor.float().cpu()
+
+    @staticmethod
+    def _to_channel_last_batch(tensor: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
+        if tensor is None:
+            return None
+
+        tensor = tensor.detach()
+        if tensor.ndim == 3:
+            tensor = tensor.unsqueeze(0)
+
+        if tensor.ndim != 4:
+            return None
+
+        if tensor.shape[-1] in (1, 3, 4):
+            return tensor.float()
+        if tensor.shape[1] in (1, 3, 4):
+            return tensor.permute(0, 2, 3, 1).float()
+
+        return None
+
+
+def _error_to_inferno(
+    error_map: torch.Tensor,
+    mask: Optional[torch.Tensor] = None,
+    apply_mask_to_visual: bool = False,
+    fixed_max_error: Optional[float] = None,
+) -> tuple[np.ndarray, float]:
+    error_map = error_map.detach().clamp(min=0.0)
+    valid = None
+    if mask is not None:
+        if mask.ndim == 3:
+            valid = mask[..., 0] > 0
+        else:
+            valid = mask > 0
+
+    if fixed_max_error is not None:
+        max_error = float(max(fixed_max_error, 0.0))
+    elif valid is not None and valid.any():
+        max_error = float(error_map[valid].max().item())
+    else:
+        max_error = float(error_map.max().item())
+
+    denom = max(max_error, 1e-8)
+    norm = (error_map / denom).clamp(0.0, 1.0)
+    norm_np = norm.cpu().numpy().astype(np.float32)
+
+    heat_rgb = _apply_inferno_colormap(norm_np)
+    if apply_mask_to_visual and valid is not None:
+        valid_np = valid.cpu().numpy()
+        heat_rgb = np.where(valid_np[..., None], heat_rgb, 0)
+    return heat_rgb, max_error
+
+
+def _apply_inferno_colormap(norm_np: np.ndarray) -> np.ndarray:
+    norm_u8 = (np.clip(norm_np, 0.0, 1.0) * 255.0).astype(np.uint8)
+    heat_bgr = cv2.applyColorMap(norm_u8, cv2.COLORMAP_INFERNO)
+    heat_rgb = cv2.cvtColor(heat_bgr, cv2.COLOR_BGR2RGB)
+    return heat_rgb.astype(np.float32) / 255.0

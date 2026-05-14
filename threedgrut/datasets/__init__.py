@@ -71,11 +71,13 @@ def make(name: str, config, ray_jitter):
                 split="train",
                 bg_color=config.model.background.color,
                 ray_jitter=ray_jitter,
+                load_normals=config.dataset.get("normal", False),
             )
             val_dataset = NeRFDataset(
                 config.path,
                 split="val",
                 bg_color=config.model.background.color,
+                load_normals=config.dataset.get("normal", False),
             )
         case "colmap":
             # Load EXIF exposure data if enabled (shared between train and val)
@@ -191,6 +193,7 @@ def make_test(name: str, config):
                 config.path,
                 split="test",
                 bg_color=config.model.background.color,
+                load_normals=config.dataset.get("normal", False),
             )
         case "colmap":
             # Load EXIF exposure data if enabled

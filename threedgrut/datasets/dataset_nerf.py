@@ -37,12 +37,13 @@ from .utils import (
 
 
 class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
-    def __init__(self, path, device="cuda", split="train", ray_jitter=None, bg_color=None):
+    def __init__(self, path, device="cuda", split="train", ray_jitter=None, bg_color=None, load_normals=False):
         self.root_dir = path
         self.device = device
         self.split = split
         self.ray_jitter = ray_jitter
         self.bg_color = bg_color
+        self.load_normals = load_normals
 
         # Cache for per-worker GPU tensors (thread-local storage)
         self._worker_gpu_cache = {}
@@ -133,6 +134,7 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
         self.poses = []
         self.image_paths = []
         self.mask_paths = []
+        self.normal_paths = []
 
         if split == "trainval":
             with open(os.path.join(self.root_dir, "transforms_train.json"), "r") as f:
@@ -152,6 +154,7 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
 
             img_path = os.path.join(self.root_dir, f"{frame['file_path']}") + self.suffix
             self.image_paths.append(img_path)
+            self.normal_paths.append(self._normal_path_from_image_path(img_path))
 
             # We assume that the mask is stored in the same folder as the image with the same name but with _mask.png extension.
             # If the mask does not exist, we will return None in the batch
@@ -165,6 +168,7 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
 
         self.image_paths = np.stack(self.image_paths, dtype=str)
         self.mask_paths = np.stack(self.mask_paths, dtype=str)
+        self.normal_paths = np.stack(self.normal_paths, dtype=str)
         self.poses = np.array(self.poses).astype(np.float32)  # (N_images, 4, 4)
 
     @torch.no_grad()
@@ -246,6 +250,17 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
             "frame_idx": idx,
         }
 
+        if self.load_normals:
+            normal_path = self.normal_paths[idx]
+            if not os.path.exists(normal_path):
+                raise FileNotFoundError(f"Normal path {normal_path} does not exist.")
+            normal = NeRFDataset.__read_image(
+                normal_path,
+                self.img_wh,
+                return_alpha=False,
+            )
+            output_dict["normal"] = torch.tensor(normal).reshape(out_shape)
+
         if os.path.exists(mask_path := self.mask_paths[idx]):
             mask = torch.from_numpy(np.array(Image.open(mask_path))).reshape(1, self.image_h, self.image_w, 1)
             output_dict["mask"] = mask
@@ -279,7 +294,16 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
             mask = (mask > 0.5).to(torch.float32)
             sample["mask"] = mask
 
+        if "normal" in batch:
+            normal = batch["normal"][0].to(self.device, non_blocking=True) / 255.0
+            sample["normal_gt"] = normal * 2.0 - 1.0
+
         return Batch(**sample)
+
+    @staticmethod
+    def _normal_path_from_image_path(image_path: str) -> str:
+        normal_path = image_path.replace("rgba", "normal")
+        return normal_path
 
     @property
     def image_h(self):

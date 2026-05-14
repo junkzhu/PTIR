@@ -28,6 +28,7 @@ class Batch:
     T_to_world_end: Optional[torch.Tensor] = None  # [B, 4, 4] END pose for rolling shutter
     rays_in_world_space: bool = False  # True if rays are already in world space (no transform needed)
     rgb_gt: Optional[torch.Tensor] = None
+    normal_gt: Optional[torch.Tensor] = None
     mask: Optional[torch.Tensor] = None
     intrinsics: Optional[list] = None
     intrinsics_OpenCVPinholeCameraModelParameters: Optional[dict] = None
@@ -48,6 +49,9 @@ class Batch:
         if self.rgb_gt is not None:
             assert self.rgb_gt.ndim == 4, "rgb_gt must be a 4D tensor [B, H, W, 3]"
             assert self.rgb_gt.shape[0] == batch_size, "rgb_gt must have the same batch size"
+        if self.normal_gt is not None:
+            assert self.normal_gt.ndim == 4, "normal_gt must be a 4D tensor [B, H, W, 3]"
+            assert self.normal_gt.shape[0] == batch_size, "normal_gt must have the same batch size"
         if self.mask is not None:
             assert self.mask.ndim == 4, "mask must be a 3D tensor [B, H, W, 1]"
             assert self.mask.shape[0] == batch_size, "mask must have the same batch size"

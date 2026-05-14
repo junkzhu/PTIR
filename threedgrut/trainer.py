@@ -1065,7 +1065,7 @@ class Trainer3DGRUT:
 
         # Visualize Training Images
         with torch.cuda.nvtx.range(f"train_{global_step - 1}_visualize"):
-            self.visualizer.save(global_step, outputs)
+            self.visualizer.save(global_step, outputs, gpu_batch)
 
     @torch.cuda.nvtx.range(f"run_train_pass")
     def run_train_pass(self, conf: DictConfig):
