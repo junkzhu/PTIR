@@ -113,10 +113,12 @@ extern "C" __global__ void __raygen__rg() {
     float rayIntegratedTransmittance = 1.0f - params.rayDensity[idx.z][idx.y][idx.x][0];
     float rayIntegratedHitDistance   = params.rayHitDistance[idx.z][idx.y][idx.x][0];
     float rayMaxHitDistance          = params.rayHitDistance[idx.z][idx.y][idx.x][1];
+    float3 rayIntegratedShadingNormal = make_float3(params.rayShadingNormal[idx.z][idx.y][idx.x][0], params.rayShadingNormal[idx.z][idx.y][idx.x][1], params.rayShadingNormal[idx.z][idx.y][idx.x][2]);
 
     float3 rayRadianceGrad     = make_float3(params.rayRadianceGrad[idx.z][idx.y][idx.x][0], params.rayRadianceGrad[idx.z][idx.y][idx.x][1], params.rayRadianceGrad[idx.z][idx.y][idx.x][2]);
     float rayTransmittanceGrad = -1.0f * params.rayDensityGrad[idx.z][idx.y][idx.x][0];
     float rayHitDistanceGrad   = params.rayHitDistanceGrad[idx.z][idx.y][idx.x][0];
+    float3 rayShadingNormalGrad = make_float3(params.rayShadingNormalGrad[idx.z][idx.y][idx.x][0], params.rayShadingNormalGrad[idx.z][idx.y][idx.x][1], params.rayShadingNormalGrad[idx.z][idx.y][idx.x][2]);
 
     constexpr float epsT = 1e-9;
 
@@ -149,6 +151,8 @@ extern "C" __global__ void __raygen__rg() {
                     params.particleDensityGrad,
                     params.particleRadiance,
                     params.particleRadianceGrad,
+                    params.particleShadingNormal,
+                    params.particleShadingNormalGrad,
                     params.hitMinGaussianResponse,
                     params.alphaMinThreshold,
                     params.minTransmittance,
@@ -161,7 +165,9 @@ extern "C" __global__ void __raygen__rg() {
                     rayRadianceGrad,
                     rayIntegratedHitDistance,
                     rayHitDistance,
-                    rayHitDistanceGrad);
+                    rayHitDistanceGrad,
+                    rayIntegratedShadingNormal,
+                    rayShadingNormalGrad);
 
                 startT = fmaxf(startT, rayHit.distance);
             }

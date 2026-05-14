@@ -28,6 +28,7 @@ struct PipelineParameters {
 
     const ParticleDensity* particleDensity; ///< position, scale, quaternions, density
     const float* particleRadiance;          ///< spherical harmonics coefficients
+    const float* particleShadingNormal;     ///< per-particle shading normal
     const void* particleExtendedData;       ///< pipeline specific particle data
     int32_t* particleVisibility;            ///< pipeline specific particle data
 
@@ -35,6 +36,7 @@ struct PipelineParameters {
     PackedTensorAccessor32<float, 4> rayDensity;     ///< output integrated ray density
     PackedTensorAccessor32<float, 4> rayHitDistance; ///< output integrated ray hit distance
     PackedTensorAccessor32<float, 4> rayNormal;      ///< output integrated ray normal
+    PackedTensorAccessor32<float, 4> rayShadingNormal; ///< output integrated ray shading normal
     PackedTensorAccessor32<float, 4> rayHitsCount;   ///< output (only in AH pipeline) number of hits per ray
 
     OptixTraversableHandle handle;
@@ -91,7 +93,9 @@ struct PipelineBackwardParameters : PipelineParameters {
     PackedTensorAccessor32<float, 4> rayDensityGrad;     ///< integrated ray density gradient
     PackedTensorAccessor32<float, 4> rayHitDistanceGrad; ///< integrated ray hit distance gradient
     PackedTensorAccessor32<float, 4> rayNormalGrad;      ///< integrated ray hit distance gradient
+    PackedTensorAccessor32<float, 4> rayShadingNormalGrad; ///< integrated ray shading normal gradient
 
     ParticleDensity* particleDensityGrad; ///< output position, scale, quaternions, density gradient
     float* particleRadianceGrad;          ///< output spherical harmonics coefficients gradient
+    float* particleShadingNormalGrad;     ///< output per-particle shading normal gradient
 };

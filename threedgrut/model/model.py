@@ -41,6 +41,7 @@ from threedgrut.utils.misc import (
     to_np,
     to_torch,
 )
+from threedgrut.utils.normal import NormalUtils
 from threedgrut.utils.render import RGB2SH
 
 
@@ -72,6 +73,11 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
 
     def get_features_specular(self) -> torch.Tensor:
         return self.features_specular
+
+    def get_shading_normal(self, preactivation=False) -> torch.Tensor:
+        if preactivation:
+            return self.shading_normal
+        return self.shading_normal_activation(self.shading_normal)
 
     def get_features(self):
         return torch.cat((self.features_albedo, self.features_specular), dim=1)
@@ -114,6 +120,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
             "rotation": self.rotation,
             "scale": self.scale,
             "density": self.density,
+            "shading_normal": self.shading_normal,
             "background": self.background.state_dict(),
             # Add other attributes that we need at restore
             "n_active_features": self.n_active_features,
@@ -163,6 +170,9 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
             torch.empty([0, specular_dim])
         )  # Features of the higher order SH coefficients [n_gaussians, specular_dim]
         self.max_sh_degree = sh_degree
+        self.shading_normal = torch.nn.Parameter(
+            torch.empty([0, 3])
+        )  # Shading normal direction for each Gaussian [n_gaussians, 3]
 
         self.conf = conf
         self.scene_extent = scene_extent
@@ -175,6 +185,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         self.scale_activation = get_activation_function(self.conf.model.scale_activation)
         self.scale_activation_inv = get_activation_function(self.conf.model.scale_activation, inverse=True)
         self.rotation_activation = get_activation_function("normalize")  # The default value of the dim parameter is 1
+        self.shading_normal_activation = get_activation_function("normalize")
 
         self.background = background.make(self.conf.model.background.name, self.conf.model.background)
 
@@ -218,6 +229,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         self.density.requires_grad = False
         self.features_albedo.requires_grad = False
         self.features_specular.requires_grad = False
+        self.shading_normal.requires_grad = False
 
         self._gaussians_frozen = True
         logger.info("❄️ [Distillation] Gaussian parameters frozen")
@@ -228,6 +240,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         assert self.density.shape == (num_gaussians, 1)
         assert self.rotation.shape == (num_gaussians, 4)
         assert self.scale.shape == (num_gaussians, 3)
+        assert self.shading_normal.shape == (num_gaussians, 3)
 
         if self.feature_type == "sh":
             assert self.features_albedo.shape == (num_gaussians, 3)
@@ -450,6 +463,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         feats_sph = feats_sph.reshape(num_gaussians, 3, -1).transpose(-1, -2).reshape(num_gaussians, -1)
 
         self.features_specular = torch.nn.Parameter(feats_sph)
+        self.shading_normal = torch.nn.Parameter(self._default_shading_normal(self.rotation))
 
         if set_optimizable_parameters:
             self.set_optimizable_parameters()
@@ -499,6 +513,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         self.density = torch.nn.Parameter(opacities.to(dtype=dtype, device=self.device))
         self.features_albedo = torch.nn.Parameter(features_albedo.to(dtype=dtype, device=self.device))
         self.features_specular = torch.nn.Parameter(features_specular.to(dtype=dtype, device=self.device))
+        self.shading_normal = torch.nn.Parameter(self._default_shading_normal(self.rotation))
 
         if set_optimizable_parameters:
             self.set_optimizable_parameters()
@@ -511,6 +526,14 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         self.density = checkpoint["density"]
         self.features_albedo = checkpoint["features_albedo"]
         self.features_specular = checkpoint["features_specular"]
+        self.shading_normal = checkpoint.get(
+            "shading_normal",
+            torch.nn.Parameter(
+                self._default_shading_normal(
+                    self.rotation,
+                )
+            ),
+        )
         self.n_active_features = checkpoint["n_active_features"]
         self.max_n_features = checkpoint["max_n_features"]
         self.scene_extent = checkpoint["scene_extent"]
@@ -596,10 +619,14 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         self.density = torch.nn.Parameter(opacities.to(dtype=dtype, device=self.device))
         self.features_albedo = torch.nn.Parameter(features_albedo.to(dtype=dtype, device=self.device))
         self.features_specular = torch.nn.Parameter(features_specular.to(dtype=dtype, device=self.device))
+        self.shading_normal = torch.nn.Parameter(self._default_shading_normal(self.rotation))
 
         self.set_optimizable_parameters()
         self.setup_optimizer()
         self.validate_fields()
+
+    def _default_shading_normal(self, rotation: torch.Tensor) -> torch.Tensor:
+        return NormalUtils().initialize_shading_normal_from_rotation(rotation)
 
     def setup_optimizer(self, state_dict=None):
         params = []
@@ -789,6 +816,9 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         self.density = torch.nn.Parameter(torch.tensor(mogt_densities, dtype=self.density.dtype, device=self.device))
         self.scale = torch.nn.Parameter(torch.tensor(mogt_scales, dtype=self.scale.dtype, device=self.device))
         self.rotation = torch.nn.Parameter(torch.tensor(mogt_rotation, dtype=self.rotation.dtype, device=self.device))
+        self.shading_normal = torch.nn.Parameter(
+            self._default_shading_normal(self.rotation)
+        )
 
         self.n_active_features = self.max_n_features
 
@@ -811,6 +841,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
             self.density = torch.nn.Parameter(other.density.clone())
             self.features_albedo = torch.nn.Parameter(other.features_albedo.clone())
             self.features_specular = torch.nn.Parameter(other.features_specular.clone())
+            self.shading_normal = torch.nn.Parameter(other.shading_normal.clone())
         else:  # shared tensors
             self.positions = torch.nn.Parameter(other.positions)
             self.rotation = torch.nn.Parameter(other.rotation)
@@ -818,6 +849,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
             self.density = torch.nn.Parameter(other.density)
             self.features_albedo = torch.nn.Parameter(other.features_albedo)
             self.features_specular = torch.nn.Parameter(other.features_specular)
+            self.shading_normal = torch.nn.Parameter(other.shading_normal)
         self.max_sh_degree = other.max_sh_degree
         self.n_active_features = other.n_active_features
         self.scene_extent = other.scene_extent
@@ -841,6 +873,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         sliced.density = torch.nn.Parameter(sliced.density[idx])
         sliced.features_albedo = torch.nn.Parameter(sliced.features_albedo[idx])
         sliced.features_specular = torch.nn.Parameter(sliced.features_specular[idx])
+        sliced.shading_normal = torch.nn.Parameter(sliced.shading_normal[idx])
         return sliced
 
     def __len__(self):

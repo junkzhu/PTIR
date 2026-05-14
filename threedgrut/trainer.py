@@ -33,7 +33,7 @@ from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 import threedgrut.datasets as datasets
 from threedgrut.datasets.protocols import BoundedMultiViewDataset
 from threedgrut.datasets.utils import DEFAULT_DEVICE, MultiEpochsDataLoader, PointCloud
-from threedgrut.model.losses import ssim
+from threedgrut.model.losses import pseudo_normal_loss, ssim
 from threedgrut.model.model import MixtureOfGaussians
 from threedgrut.optimizers import SelectiveAdam
 from threedgrut.render import Renderer
@@ -572,8 +572,31 @@ class Trainer3DGRUT:
                 loss_scale = torch.abs(self.model.get_scale()).mean()
                 lambda_scale = self.conf.loss.lambda_scale
 
+        # Shading normal loss
+        loss_shading_normal = torch.zeros(1, device=self.device)
+        lambda_shading_normal = 0.0
+        if self.conf.loss.use_shading_normal:
+            pred_shadingnormal = outputs.get("pred_shadingnormal")
+            pseudo_normal = getattr(gpu_batch, "pseudo_normal", None)
+            pseudo_normal_mask = getattr(gpu_batch, "pseudo_normal_mask", None)
+            if pred_shadingnormal is not None and pseudo_normal is not None and pseudo_normal_mask is not None:
+                with torch.cuda.nvtx.range(f"loss-shading-normal"):
+                    loss_shading_normal = pseudo_normal_loss(
+                        pred_shadingnormal,
+                        pseudo_normal,
+                        valid_mask=pseudo_normal_mask,
+                    )
+                    lambda_shading_normal = self.conf.loss.lambda_shading_normal
+
         # Total loss
-        loss = lambda_l1 * loss_l1 + lambda_ssim * loss_ssim + lambda_opacity * loss_opacity + lambda_scale * loss_scale
+        loss = (
+            lambda_l1 * loss_l1
+            + lambda_l2 * loss_l2
+            + lambda_ssim * loss_ssim
+            + lambda_opacity * loss_opacity
+            + lambda_scale * loss_scale
+            + lambda_shading_normal * loss_shading_normal
+        )
         return dict(
             total_loss=loss,
             l1_loss=lambda_l1 * loss_l1,
@@ -581,6 +604,7 @@ class Trainer3DGRUT:
             ssim_loss=lambda_ssim * loss_ssim,
             opacity_loss=lambda_opacity * loss_opacity,
             scale_loss=lambda_scale * loss_scale,
+            shading_normal_loss=lambda_shading_normal * loss_shading_normal,
         )
 
     @torch.cuda.nvtx.range("log_validation_iter")
@@ -720,6 +744,9 @@ class Trainer3DGRUT:
             if self.conf.loss.use_scale:
                 scale_loss = np.mean(batch_metrics["losses"]["scale_loss"])
                 writer.add_scalar("loss/scale/train", scale_loss, global_step)
+            if self.conf.loss.get("use_shading_normal", False):
+                shading_normal_loss = np.mean(batch_metrics["losses"]["shading_normal_loss"])
+                writer.add_scalar("loss/shading_normal/train", shading_normal_loss, global_step)
             if self.post_processing is not None and "post_processing_reg_loss" in batch_metrics["losses"]:
                 post_processing_reg_loss = np.mean(batch_metrics["losses"]["post_processing_reg_loss"])
                 writer.add_scalar(
@@ -962,6 +989,7 @@ class Trainer3DGRUT:
                     T_to_world=gpu_batch.T_to_world,
                     pred_dist=pred_dist,
                     valid=valid,
+                    pred_opacity=outputs.get("pred_opacity"),
                     foreground_mask=gpu_batch.mask,
                 )
                 gpu_batch.pseudo_normal = pseudo_normal

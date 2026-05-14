@@ -851,13 +851,14 @@ void OptixTracer::buildBVH(torch::Tensor mogPos,
     CUDA_CHECK_LAST();
 }
 
-std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
 OptixTracer::trace(uint32_t frameNumber,
                    torch::Tensor rayToWorld,
                    torch::Tensor rayOri,
                    torch::Tensor rayDir,
                    torch::Tensor particleDensity,
                    torch::Tensor particleRadiance,
+                   torch::Tensor particleShadingNormal,
                    uint32_t renderOpts,
                    int sphDegree,
                    float minTransmittance) {
@@ -867,6 +868,7 @@ OptixTracer::trace(uint32_t frameNumber,
     torch::Tensor rayDns             = torch::empty({rayOri.size(0), rayOri.size(1), rayOri.size(2), 1}, opts);
     torch::Tensor rayHit             = torch::empty({rayOri.size(0), rayOri.size(1), rayOri.size(2), 2}, opts);
     torch::Tensor rayNrm             = torch::empty({rayOri.size(0), rayOri.size(1), rayOri.size(2), 3}, opts);
+    torch::Tensor rayShadingNrm      = torch::empty({rayOri.size(0), rayOri.size(1), rayOri.size(2), 3}, opts);
     torch::Tensor rayHitsCount       = torch::zeros({rayOri.size(0), rayOri.size(1), rayOri.size(2), 1}, opts);
     torch::Tensor particleVisibility = torch::zeros({particleDensity.size(0), 1}, opts);
 
@@ -890,6 +892,7 @@ OptixTracer::trace(uint32_t frameNumber,
 
     paramsHost.particleDensity      = getPtr<const ParticleDensity>(particleDensity);
     paramsHost.particleRadiance     = getPtr<const float>(particleRadiance);
+    paramsHost.particleShadingNormal = getPtr<const float>(particleShadingNormal);
     paramsHost.particleExtendedData = reinterpret_cast<const void*>(_state->gPipelineParticleData);
     paramsHost.particleVisibility   = getPtr<int32_t>(particleVisibility);
 
@@ -897,6 +900,7 @@ OptixTracer::trace(uint32_t frameNumber,
     paramsHost.rayDensity     = packed_accessor32<float, 4>(rayDns);
     paramsHost.rayHitDistance = packed_accessor32<float, 4>(rayHit);
     paramsHost.rayNormal      = packed_accessor32<float, 4>(rayNrm);
+    paramsHost.rayShadingNormal = packed_accessor32<float, 4>(rayShadingNrm);
     paramsHost.rayHitsCount   = packed_accessor32<float, 4>(rayHitsCount);
 
     cudaStream_t cudaStream = at::cuda::getCurrentCUDAStream();
@@ -911,10 +915,11 @@ OptixTracer::trace(uint32_t frameNumber,
 
     CUDA_CHECK_LAST();
 
-    return std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>(rayRad, rayDns, rayHit, rayNrm, rayHitsCount, particleVisibility);
+    return std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>(
+        rayRad, rayDns, rayHit, rayNrm, rayShadingNrm, rayHitsCount, particleVisibility);
 }
 
-std::tuple<torch::Tensor, torch::Tensor>
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
 OptixTracer::traceBwd(uint32_t frameNumber,
                       torch::Tensor rayToWorld,
                       torch::Tensor rayOri,
@@ -923,12 +928,15 @@ OptixTracer::traceBwd(uint32_t frameNumber,
                       torch::Tensor rayDns,
                       torch::Tensor rayHit,
                       torch::Tensor rayNrm,
+                      torch::Tensor rayShadingNrm,
                       torch::Tensor particleDensity,
                       torch::Tensor particleRadiance,
+                      torch::Tensor particleShadingNormal,
                       torch::Tensor rayRadGrd,
                       torch::Tensor rayDnsGrd,
                       torch::Tensor rayHitGrd,
                       torch::Tensor rayNrmGrd,
+                      torch::Tensor rayShadingNrmGrd,
                       uint32_t renderOpts,
                       int sphDegree,
                       float minTransmittance) {
@@ -936,6 +944,7 @@ OptixTracer::traceBwd(uint32_t frameNumber,
     const torch::TensorOptions opts    = torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA);
     torch::Tensor particleDensityGrad  = torch::zeros({particleDensity.size(0), particleDensity.size(1)}, opts);
     torch::Tensor particleRadianceGrad = torch::zeros({particleRadiance.size(0), particleRadiance.size(1)}, opts);
+    torch::Tensor particleShadingNormalGrad = torch::zeros({particleShadingNormal.size(0), particleShadingNormal.size(1)}, opts);
 
     PipelineBackwardParameters paramsHost;
     paramsHost.handle = _state->gasHandle;
@@ -957,20 +966,24 @@ OptixTracer::traceBwd(uint32_t frameNumber,
 
     paramsHost.particleDensity      = getPtr<const ParticleDensity>(particleDensity);
     paramsHost.particleRadiance     = getPtr<const float>(particleRadiance);
+    paramsHost.particleShadingNormal = getPtr<const float>(particleShadingNormal);
     paramsHost.particleExtendedData = reinterpret_cast<const void*>(_state->gPipelineParticleData);
 
     paramsHost.rayRadiance    = packed_accessor32<float, 4>(rayRad);
     paramsHost.rayDensity     = packed_accessor32<float, 4>(rayDns);
     paramsHost.rayHitDistance = packed_accessor32<float, 4>(rayHit);
     paramsHost.rayNormal      = packed_accessor32<float, 4>(rayNrm);
+    paramsHost.rayShadingNormal = packed_accessor32<float, 4>(rayShadingNrm);
 
     paramsHost.particleDensityGrad  = getPtr<ParticleDensity>(particleDensityGrad);
     paramsHost.particleRadianceGrad = getPtr<float>(particleRadianceGrad);
+    paramsHost.particleShadingNormalGrad = getPtr<float>(particleShadingNormalGrad);
 
     paramsHost.rayRadianceGrad    = packed_accessor32<float, 4>(rayRadGrd);
     paramsHost.rayDensityGrad     = packed_accessor32<float, 4>(rayDnsGrd);
     paramsHost.rayHitDistanceGrad = packed_accessor32<float, 4>(rayHitGrd);
     paramsHost.rayNormalGrad      = packed_accessor32<float, 4>(rayNrmGrd);
+    paramsHost.rayShadingNormalGrad = packed_accessor32<float, 4>(rayShadingNrmGrd);
 
     cudaStream_t cudaStream = at::cuda::getCurrentCUDAStream();
 
@@ -982,5 +995,6 @@ OptixTracer::traceBwd(uint32_t frameNumber,
                             sizeof(PipelineBackwardParameters), &_state->sbtTracingBwd,
                             rayRad.size(2), rayRad.size(1), rayRad.size(0)));
 
-    return std::tuple<torch::Tensor, torch::Tensor>(particleDensityGrad, particleRadianceGrad);
+    return std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>(
+        particleDensityGrad, particleRadianceGrad, particleShadingNormalGrad);
 }

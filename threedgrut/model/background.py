@@ -52,6 +52,21 @@ class BaseBackground(ABC, torch.nn.Module):
     def forward(self, ray_to_world, rays_d, rgb, opacity):
         raise NotImplementedError("Must override in the child class")
 
+    def apply_to_attribute(self, attribute: torch.Tensor, opacity: torch.Tensor, background_value=None) -> torch.Tensor:
+        return attribute
+
+    def apply_to_attributes(
+        self,
+        attributes: dict[str, torch.Tensor],
+        opacity: torch.Tensor,
+        background_values: dict[str, torch.Tensor | float | list[float]] | None = None,
+    ) -> dict[str, torch.Tensor]:
+        background_values = background_values or {}
+        return {
+            name: self.apply_to_attribute(attribute, opacity, background_value=background_values.get(name))
+            for name, attribute in attributes.items()
+        }
+
     def linear_to_srgb(self, x: torch.Tensor) -> torch.Tensor:
         return torch.where(x < 0.0031308, 12.92 * x, 1.055 * x**0.41666 - 0.055)
 
@@ -86,11 +101,33 @@ class BackgroundColor(BaseBackground):
                 color = torch.rand_like(rays_d, dtype=torch.float32, device=self.device)
                 # this is set up to statefully remember the last random color, we ise this during trainint
                 self.color = color
-                rgb = rgb + color * (1.0 - opacity)
+                rgb = self.apply_to_attribute(rgb, opacity, background_value=color)
         elif self.background_color_type != "black":
-            rgb = rgb + color * (1.0 - opacity)
+            rgb = self.apply_to_attribute(rgb, opacity, background_value=color)
 
         return rgb, opacity
+
+    def apply_to_attribute(self, attribute: torch.Tensor, opacity: torch.Tensor, background_value=None) -> torch.Tensor:
+        if background_value is None:
+            background_value = self.color
+
+        background_value = self._prepare_background_value(background_value, attribute)
+        return attribute + background_value * (1.0 - opacity)
+
+    @staticmethod
+    def _prepare_background_value(background_value, attribute: torch.Tensor) -> torch.Tensor:
+        if not torch.is_tensor(background_value):
+            background_value = torch.as_tensor(background_value, dtype=attribute.dtype, device=attribute.device)
+        else:
+            background_value = background_value.to(dtype=attribute.dtype, device=attribute.device)
+
+        if background_value.ndim > 0 and background_value.shape[-1] not in (1, attribute.shape[-1]):
+            raise ValueError(
+                f"Background value with {background_value.shape[-1]} channels cannot be applied "
+                f"to attribute with {attribute.shape[-1]} channels."
+            )
+
+        return background_value
 
 
 class SkipBackground(BaseBackground):

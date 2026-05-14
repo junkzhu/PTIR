@@ -94,6 +94,8 @@ optimizer:
       lr: 0.001 # 3DGS value: 0.001
     scale:
       lr: 0.005 # 3DGS value: 0.005
+    shading_normal:
+      lr: 0.001
 
 scheduler:
   positions:
@@ -122,6 +124,9 @@ loss:
 
   use_scale: false
   lambda_scale: 0.0
+
+  use_shading_normal: true
+  lambda_shading_normal: 0.05
 
 # Post-processing configuration
 post_processing:

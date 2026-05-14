@@ -29,6 +29,7 @@ from threedgrut.model.model import MixtureOfGaussians
 from threedgrut.utils.color_correct import color_correct_affine
 from threedgrut.utils.logger import logger
 from threedgrut.utils.misc import create_summary_writer
+from threedgrut.utils.normal import normal_mae
 from threedgrut.utils.render import apply_post_processing
 
 
@@ -219,7 +220,9 @@ class Renderer:
         cc_psnr = []
         cc_ssim = []
         cc_lpips = []
+        normal_maes = []
         inference_time = []
+        compute_normal_mae = self.conf.dataset.get("normal", False)
 
         best_psnr = -1.0
         worst_psnr = 2**16 * 1.0
@@ -252,7 +255,7 @@ class Renderer:
                 pred_rgb_full.squeeze(0).permute(2, 0, 1),
                 os.path.join(output_path_renders, "{0:05d}".format(iteration) + ".png"),
             )
-            pred_normals_full = outputs.get("pred_normals")
+            pred_normals_full = outputs.get("pred_shadingnormal", outputs.get("pred_normals"))
             if pred_normals_full is not None:
                 normals_to_write = (0.5 * (pred_normals_full + 1.0)).clip(0, 1.0)
                 torchvision.utils.save_image(
@@ -272,7 +275,20 @@ class Renderer:
             # Compute the loss
             psnr_single_img = criterions["psnr"](outputs["pred_rgb"], gpu_batch.rgb_gt).item()
             psnr.append(psnr_single_img)  # evaluation on valid rays only
-            logger.info(f"Frame {iteration}, PSNR: {psnr[-1]}")
+            normal_mae_single_img = None
+
+            if compute_normal_mae:
+                pred_shadingnormal = outputs.get("pred_shadingnormal")
+                normal_gt = getattr(gpu_batch, "normal_gt", None)
+                if pred_shadingnormal is not None and normal_gt is not None:
+                    normal_mask = normal_gt.abs().sum(dim=-1) > 1e-6
+                    normal_mae_single_img = normal_mae(pred_shadingnormal, normal_gt, valid_mask=normal_mask).item()
+                    normal_maes.append(normal_mae_single_img)
+
+            log_msg = f"Frame {iteration}, PSNR: {psnr[-1]}"
+            if normal_mae_single_img is not None:
+                log_msg += f", Normal MAE: {normal_mae_single_img}"
+            logger.info(log_msg)
 
             if psnr_single_img > best_psnr:
                 best_psnr = psnr_single_img
@@ -317,7 +333,10 @@ class Renderer:
             # Record the time
             inference_time.append(outputs["frame_time_ms"])
 
-            logger.log_progress(task_name="Rendering", advance=1, iteration=f"{str(iteration)}", psnr=psnr[-1])
+            progress_metrics = {"iteration": f"{str(iteration)}", "psnr": psnr[-1]}
+            if normal_mae_single_img is not None:
+                progress_metrics["normal_mae"] = normal_mae_single_img
+            logger.log_progress(task_name="Rendering", advance=1, **progress_metrics)
 
         logger.end_progress(task_name="Rendering")
 
@@ -327,6 +346,7 @@ class Renderer:
         mean_cc_psnr = np.mean(cc_psnr)
         mean_cc_ssim = np.mean(cc_ssim)
         mean_cc_lpips = np.mean(cc_lpips)
+        mean_normal_mae = np.mean(normal_maes) if normal_maes else None
         std_psnr = np.std(psnr)
         mean_inference_time = np.mean(inference_time)
 
@@ -339,6 +359,8 @@ class Renderer:
             mean_cc_lpips=mean_cc_lpips,
             std_psnr=std_psnr,
         )
+        if mean_normal_mae is not None:
+            table["normal_mae"] = mean_normal_mae
 
         if self.conf.render.enable_kernel_timings:
             table["mean_inference_time"] = f"{'{:.2f}'.format(mean_inference_time)}" + " ms/frame"
@@ -352,6 +374,8 @@ class Renderer:
             mean_cc_ssim=float(mean_cc_ssim),
             mean_cc_lpips=float(mean_cc_lpips),
         )
+        if mean_normal_mae is not None:
+            metrics_json["normal_mae"] = float(mean_normal_mae)
         metrics_path = os.path.join(self.out_dir, "metrics.json")
         with open(metrics_path, "w") as f:
             json.dump(metrics_json, f, indent=2)
@@ -366,6 +390,8 @@ class Renderer:
             self.writer.add_scalar("cc_psnr/test", mean_cc_psnr, self.global_step)
             self.writer.add_scalar("cc_ssim/test", mean_cc_ssim, self.global_step)
             self.writer.add_scalar("cc_lpips/test", mean_cc_lpips, self.global_step)
+            if mean_normal_mae is not None:
+                self.writer.add_scalar("normal_mae/test", mean_normal_mae, self.global_step)
             self.writer.add_scalar("time/inference/test", mean_inference_time, self.global_step)
 
             if best_psnr_img is not None:

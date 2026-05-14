@@ -336,9 +336,11 @@ __device__ inline bool processHit(
     const float minParticleKernelDensity,
     const float minParticleAlpha,
     const int32_t sphEvalDegree,
+    const float* particlesShadingNormal,
     float* transmittance,
     float3* radiance,
     float* depth,
+    float3* shadingnormal,
     float3* normal) {
     float3 particlePosition;
     float3 particleScale;
@@ -388,6 +390,14 @@ __device__ inline bool processHit(
         *depth += hitT * weight;
 
         if (normal) {
+            if (shadingnormal) {
+                const float3 particleShadingNormal = make_float3(
+                    particlesShadingNormal[particleIdx * 3 + 0],
+                    particlesShadingNormal[particleIdx * 3 + 1],
+                    particlesShadingNormal[particleIdx * 3 + 2]);
+                *shadingnormal += weight * particleShadingNormal;
+            }
+
             constexpr float ellispoidSqRadius = 9.0f;
             const float3 particleScaleRotated = (particleRotation * particleScale);
             *normal += weight * (SurfelPrimitive ? make_float3(0, 0, (grd.z > 0 ? 1 : -1) * particleScaleRotated.z) : safe_normalize((gro + grd * (dot(grd, -1 * gro) - sqrtf(ellispoidSqRadius - grayDist))) * particleScaleRotated));
@@ -466,6 +476,8 @@ __device__ inline void processHitBwd(
     ParticleDensity* particleDensityGradPtr,
     const float* particleRadiancePtr,
     float* particleRadianceGradPtr,
+    const float* particlesShadingNormal,
+    float* particlesShadingNormalGrad,
     float minParticleKernelDensity,
     float minParticleAlpha,
     float minTransmittance,
@@ -478,7 +490,9 @@ __device__ inline void processHitBwd(
     float3 radianceGrad,
     float integratedDepth,
     float& depth,
-    float depthGrad) {
+    float depthGrad,
+    float3 integratedShadingNormal,
+    float3 shadingNormalGrad) {
     float3 particlePosition;
     float3 gscl;
     float33 particleRotation;
@@ -580,6 +594,23 @@ __device__ inline void processHitBwd(
         const float3 residualRayRad = maxf3((nextTransmit <= minTransmittance ? make_float3(0) : (integratedRadiance - radiance) / nextTransmit),
                                             make_float3(0));
 
+        const float3 particleShadingNormal = make_float3(
+            particlesShadingNormal[particleIdx * 3 + 0],
+            particlesShadingNormal[particleIdx * 3 + 1],
+            particlesShadingNormal[particleIdx * 3 + 2]);
+        const float3 rayShadingNormal = weight * particleShadingNormal;
+        const float3 residualShadingNormal =
+            (nextTransmit <= minTransmittance ? make_float3(0) : (integratedShadingNormal - rayShadingNormal) / nextTransmit);
+
+        atomicAdd(&particlesShadingNormalGrad[particleIdx * 3 + 0], weight * shadingNormalGrad.x);
+        atomicAdd(&particlesShadingNormalGrad[particleIdx * 3 + 1], weight * shadingNormalGrad.y);
+        atomicAdd(&particlesShadingNormalGrad[particleIdx * 3 + 2], weight * shadingNormalGrad.z);
+
+        const float shadingNormalAlphaGrad =
+            transmittance * ((particleShadingNormal.x - residualShadingNormal.x) * shadingNormalGrad.x +
+                             (particleShadingNormal.y - residualShadingNormal.y) * shadingNormalGrad.y +
+                             (particleShadingNormal.z - residualShadingNormal.z) * shadingNormalGrad.z);
+
         // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
         // ---> rayDns = 1 - prevTrm * (1-galpha) * nextTrm
         //             = 1 - (1-galpha) * prevTrm * nextTrm
@@ -594,7 +625,8 @@ __device__ inline void processHitBwd(
             &particleDensityGrad.density,
             gres * (galphaRayHitGrd + galphaRayDnsGrd + transmittance * (grad.x - residualRayRad.x) * radianceGrad.x +
                     transmittance * (grad.y - residualRayRad.y) * radianceGrad.y +
-                    transmittance * (grad.z - residualRayRad.z) * radianceGrad.z));
+                    transmittance * (grad.z - residualRayRad.z) * radianceGrad.z +
+                    shadingNormalAlphaGrad));
 
         // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
         // ---> rayDns = 1 - prevTrm * (1-galpha) * nextTrm
@@ -609,7 +641,8 @@ __device__ inline void processHitBwd(
         const float gresGrd =
             particleDensity * (galphaRayHitGrd + galphaRayDnsGrd + transmittance * (grad.x - residualRayRad.x) * radianceGrad.x +
                                transmittance * (grad.y - residualRayRad.y) * radianceGrad.y +
-                               transmittance * (grad.z - residualRayRad.z) * radianceGrad.z);
+                               transmittance * (grad.z - residualRayRad.z) * radianceGrad.z +
+                               shadingNormalAlphaGrad);
 
         // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
         // ---> gres = exp(-0.0555 * grayDist * grayDist)

@@ -258,6 +258,7 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
                 normal_path,
                 self.img_wh,
                 return_alpha=False,
+                bg_color=self.bg_color,
             )
             output_dict["normal"] = torch.tensor(normal).reshape(out_shape)
 

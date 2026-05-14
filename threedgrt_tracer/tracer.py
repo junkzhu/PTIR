@@ -61,18 +61,28 @@ class Tracer:
             mog_scl,
             mog_dns,
             mog_sph,
+            mog_snrm,
             render_opts,
             sph_degree,
             min_transmittance,
         ):
             particle_density = torch.concat([mog_pos, mog_dns, mog_rot, mog_scl, torch.zeros_like(mog_dns)], dim=1)
-            ray_radiance, ray_density, ray_hit_distance, ray_normals, hits_count, mog_visibility = tracer_wrapper.trace(
+            (
+                ray_radiance,
+                ray_density,
+                ray_hit_distance,
+                ray_normals,
+                ray_shadingnormal,
+                hits_count,
+                mog_visibility,
+            ) = tracer_wrapper.trace(
                 frame_id,
                 ray_to_world,
                 ray_ori,
                 ray_dir,
                 particle_density,
                 mog_sph,
+                mog_snrm,
                 render_opts,
                 sph_degree,
                 min_transmittance,
@@ -85,8 +95,10 @@ class Tracer:
                 ray_density,
                 ray_hit_distance,
                 ray_normals,
+                ray_shadingnormal,
                 particle_density,
                 mog_sph,
+                mog_snrm,
             )
             ctx.frame_id = frame_id
             ctx.render_opts = render_opts
@@ -98,6 +110,7 @@ class Tracer:
                 ray_density,
                 ray_hit_distance[:, :, :, 0:1],  # return only the hit distance
                 ray_normals,
+                ray_shadingnormal,
                 hits_count,
                 mog_visibility,
             )
@@ -109,6 +122,7 @@ class Tracer:
             ray_density_grd,
             ray_hit_distance_grd,
             ray_normals_grd,
+            ray_shadingnormal_grd,
             ray_hits_count_grd_UNUSED,
             mog_visibility_grd_UNUSED,
         ):
@@ -120,11 +134,13 @@ class Tracer:
                 ray_density,
                 ray_hit_distance,
                 ray_normals,
+                ray_shadingnormal,
                 particle_density,
                 mog_sph,
+                mog_snrm,
             ) = ctx.saved_variables
             frame_id = ctx.frame_id
-            particle_density_grd, mog_sph_grd = ctx.tracer_wrapper.trace_bwd(
+            particle_density_grd, mog_sph_grd, mog_sn_grd = ctx.tracer_wrapper.trace_bwd(
                 frame_id,
                 ray_to_world,
                 ray_ori,
@@ -133,12 +149,15 @@ class Tracer:
                 ray_density,
                 ray_hit_distance,
                 ray_normals,
+                ray_shadingnormal,
                 particle_density,
                 mog_sph,
+                mog_snrm,
                 ray_radiance_grd,
                 ray_density_grd,
                 ray_hit_distance_grd,
                 ray_normals_grd,
+                ray_shadingnormal_grd,
                 ctx.render_opts,
                 ctx.sph_degree,
                 ctx.min_transmittance,
@@ -157,6 +176,7 @@ class Tracer:
                 mog_scl_grd,
                 mog_dns_grd,
                 mog_sph_grd,
+                mog_sn_grd,
                 None,
                 None,
                 None,
@@ -220,7 +240,15 @@ class Tracer:
             if self.frame_timer is not None:
                 self.frame_timer.start()
 
-            pred_rgb, pred_opacity, pred_dist, pred_normals, hits_count, mog_visibility = Tracer._Autograd.apply(
+            (
+                pred_rgb,
+                pred_opacity,
+                pred_dist,
+                pred_normals,
+                pred_shadingnormal,
+                hits_count,
+                mog_visibility,
+            ) = Tracer._Autograd.apply(
                 self.tracer_wrapper,
                 frame_id,
                 gpu_batch.T_to_world.contiguous(),
@@ -231,6 +259,7 @@ class Tracer:
                 gaussians.get_scale().contiguous(),
                 gaussians.get_density().contiguous(),
                 gaussians.get_features().contiguous(),
+                gaussians.get_shading_normal().contiguous(),
                 Tracer.RenderOpts.DEFAULT,
                 gaussians.n_active_features,
                 self.conf.render.min_transmittance,
@@ -242,6 +271,10 @@ class Tracer:
             pred_rgb, pred_opacity = gaussians.background(
                 gpu_batch.T_to_world.contiguous(), gpu_batch.rays_dir.contiguous(), pred_rgb, pred_opacity, train
             )
+            pred_shadingnormal = gaussians.background.apply_to_attribute(pred_shadingnormal, pred_opacity)
+
+            pred_dist = pred_dist / pred_opacity
+            pred_dist = torch.nan_to_num(pred_dist, 0.0, 0.0)
 
         if self.frame_timer is not None:
             self.timings["forward_render"] = self.frame_timer.timing()
@@ -251,6 +284,7 @@ class Tracer:
             "pred_opacity": pred_opacity,
             "pred_dist": pred_dist,
             "pred_normals": torch.nn.functional.normalize(pred_normals, dim=3),
+            "pred_shadingnormal": pred_shadingnormal,
             "hits_count": hits_count,
             "frame_time_ms": self.frame_timer.timing() if self.frame_timer is not None else 0.0,
             "mog_visibility": mog_visibility,

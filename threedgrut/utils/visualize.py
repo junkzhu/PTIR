@@ -44,7 +44,7 @@ class TrainingVisualizer:
             ),
             VisualizationRowSpec(
                 name="normal",
-                ours_key="pred_normals",
+                ours_key="pred_shadingnormal",
                 gt_attr="normal_gt",
                 ours_transform=lambda image: (0.5 * (image + 1.0)).clip(0.0, 1.0),
                 gt_transform=lambda image: (0.5 * (image + 1.0)).clip(0.0, 1.0),
@@ -164,10 +164,26 @@ class TrainingVisualizer:
 
         depth_map = depth_batch[..., 0].detach().clamp(min=0.0)
         depth_images = []
+        eps = np.finfo(np.float32).eps
         for batch_idx in range(depth_map.shape[0]):
-            depth_item = depth_map[batch_idx]
-            depth_item = depth_item / depth_item.max().clamp_min(1e-8)
-            depth_images.append(depth_item.expand(3, -1, -1))
+            depth_item = depth_map[batch_idx].cpu().numpy().astype(np.float32)
+            valid = np.isfinite(depth_item) & (depth_item > 0.0)
+            if valid.any():
+                near = depth_item[valid].min() - eps
+                far = depth_item[valid].max() + eps
+            else:
+                near = 0.2 - eps
+                far = 13.0 + eps
+
+            curve_fn = lambda x: -np.log(x + eps)
+            near, far, depth_item = [curve_fn(x) for x in [near, far, depth_item]]
+            depth_item = np.nan_to_num(
+                np.clip((depth_item - np.minimum(near, far)) / np.abs(far - near), 0.0, 1.0)
+            )
+            depth_item = (depth_item * 255.0).astype(np.uint8)
+            depth_item = cv2.applyColorMap(depth_item, cv2.COLORMAP_TURBO)
+            depth_item = cv2.cvtColor(depth_item, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+            depth_images.append(torch.from_numpy(depth_item).permute(2, 0, 1))
 
         depth_image = torch.stack(depth_images, dim=0).float().cpu()
         if depth_image.shape[-2:] != reference.shape[-2:]:

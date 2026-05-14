@@ -114,6 +114,7 @@ extern "C" __global__ void __raygen__rg() {
     float rayHitDistance   = 0.f;
 #ifdef ENABLE_NORMALS
     float3 rayNormal = make_float3(0.f);
+    float3 rayShadingNormal = make_float3(0.f);
 #endif
 #ifdef ENABLE_HIT_COUNTS
     float rayHitsCount = 0.f;
@@ -145,12 +146,15 @@ extern "C" __global__ void __raygen__rg() {
                     params.hitMinGaussianResponse,
                     params.alphaMinThreshold,
                     params.sphDegree,
+                    params.particleShadingNormal,
                     &rayTransmittance,
                     &rayRadiance,
                     &rayHitDistance,
 #ifdef ENABLE_NORMALS
+                    &rayShadingNormal,
                     &rayNormal
 #else
+                    nullptr,
                     nullptr
 #endif
                 );
@@ -179,6 +183,9 @@ extern "C" __global__ void __raygen__rg() {
     params.rayNormal[idx.z][idx.y][idx.x][0] = rayNormal.x;
     params.rayNormal[idx.z][idx.y][idx.x][1] = rayNormal.y;
     params.rayNormal[idx.z][idx.y][idx.x][2] = rayNormal.z;
+    params.rayShadingNormal[idx.z][idx.y][idx.x][0] = rayShadingNormal.x;
+    params.rayShadingNormal[idx.z][idx.y][idx.x][1] = rayShadingNormal.y;
+    params.rayShadingNormal[idx.z][idx.y][idx.x][2] = rayShadingNormal.z;
 #endif
 #ifdef ENABLE_HIT_COUNTS
     params.rayHitsCount[idx.z][idx.y][idx.x][0] = rayHitsCount;
