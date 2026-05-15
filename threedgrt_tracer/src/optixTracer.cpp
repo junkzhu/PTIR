@@ -851,7 +851,7 @@ void OptixTracer::buildBVH(torch::Tensor mogPos,
     CUDA_CHECK_LAST();
 }
 
-std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
 OptixTracer::trace(uint32_t frameNumber,
                    torch::Tensor rayToWorld,
                    torch::Tensor rayOri,
@@ -867,6 +867,8 @@ OptixTracer::trace(uint32_t frameNumber,
     torch::Tensor rayRad             = torch::empty({rayOri.size(0), rayOri.size(1), rayOri.size(2), 3}, opts);
     torch::Tensor rayDns             = torch::empty({rayOri.size(0), rayOri.size(1), rayOri.size(2), 1}, opts);
     torch::Tensor rayHit             = torch::empty({rayOri.size(0), rayOri.size(1), rayOri.size(2), 2}, opts);
+    torch::Tensor rayHitSecondMoment = torch::empty({rayOri.size(0), rayOri.size(1), rayOri.size(2), 1}, opts);
+    torch::Tensor rayDepthDistortion = torch::empty({rayOri.size(0), rayOri.size(1), rayOri.size(2), 1}, opts);
     torch::Tensor rayNrm             = torch::empty({rayOri.size(0), rayOri.size(1), rayOri.size(2), 3}, opts);
     torch::Tensor rayShadingNrm      = torch::empty({rayOri.size(0), rayOri.size(1), rayOri.size(2), 3}, opts);
     torch::Tensor rayHitsCount       = torch::zeros({rayOri.size(0), rayOri.size(1), rayOri.size(2), 1}, opts);
@@ -899,6 +901,8 @@ OptixTracer::trace(uint32_t frameNumber,
     paramsHost.rayRadiance    = packed_accessor32<float, 4>(rayRad);
     paramsHost.rayDensity     = packed_accessor32<float, 4>(rayDns);
     paramsHost.rayHitDistance = packed_accessor32<float, 4>(rayHit);
+    paramsHost.rayHitDistanceSecondMoment = packed_accessor32<float, 4>(rayHitSecondMoment);
+    paramsHost.rayDepthDistortion = packed_accessor32<float, 4>(rayDepthDistortion);
     paramsHost.rayNormal      = packed_accessor32<float, 4>(rayNrm);
     paramsHost.rayShadingNormal = packed_accessor32<float, 4>(rayShadingNrm);
     paramsHost.rayHitsCount   = packed_accessor32<float, 4>(rayHitsCount);
@@ -915,8 +919,8 @@ OptixTracer::trace(uint32_t frameNumber,
 
     CUDA_CHECK_LAST();
 
-    return std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>(
-        rayRad, rayDns, rayHit, rayNrm, rayShadingNrm, rayHitsCount, particleVisibility);
+    return std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>(
+        rayRad, rayDns, rayHit, rayHitSecondMoment, rayDepthDistortion, rayNrm, rayShadingNrm, rayHitsCount, particleVisibility);
 }
 
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
@@ -927,6 +931,8 @@ OptixTracer::traceBwd(uint32_t frameNumber,
                       torch::Tensor rayRad,
                       torch::Tensor rayDns,
                       torch::Tensor rayHit,
+                      torch::Tensor rayHitSecondMoment,
+                      torch::Tensor rayDepthDistortion,
                       torch::Tensor rayNrm,
                       torch::Tensor rayShadingNrm,
                       torch::Tensor particleDensity,
@@ -935,6 +941,8 @@ OptixTracer::traceBwd(uint32_t frameNumber,
                       torch::Tensor rayRadGrd,
                       torch::Tensor rayDnsGrd,
                       torch::Tensor rayHitGrd,
+                      torch::Tensor rayHitSecondMomentGrd,
+                      torch::Tensor rayDepthDistortionGrd,
                       torch::Tensor rayNrmGrd,
                       torch::Tensor rayShadingNrmGrd,
                       uint32_t renderOpts,
@@ -972,6 +980,8 @@ OptixTracer::traceBwd(uint32_t frameNumber,
     paramsHost.rayRadiance    = packed_accessor32<float, 4>(rayRad);
     paramsHost.rayDensity     = packed_accessor32<float, 4>(rayDns);
     paramsHost.rayHitDistance = packed_accessor32<float, 4>(rayHit);
+    paramsHost.rayHitDistanceSecondMoment = packed_accessor32<float, 4>(rayHitSecondMoment);
+    paramsHost.rayDepthDistortion = packed_accessor32<float, 4>(rayDepthDistortion);
     paramsHost.rayNormal      = packed_accessor32<float, 4>(rayNrm);
     paramsHost.rayShadingNormal = packed_accessor32<float, 4>(rayShadingNrm);
 
@@ -982,6 +992,8 @@ OptixTracer::traceBwd(uint32_t frameNumber,
     paramsHost.rayRadianceGrad    = packed_accessor32<float, 4>(rayRadGrd);
     paramsHost.rayDensityGrad     = packed_accessor32<float, 4>(rayDnsGrd);
     paramsHost.rayHitDistanceGrad = packed_accessor32<float, 4>(rayHitGrd);
+    paramsHost.rayHitDistanceSecondMomentGrad = packed_accessor32<float, 4>(rayHitSecondMomentGrd);
+    paramsHost.rayDepthDistortionGrad = packed_accessor32<float, 4>(rayDepthDistortionGrd);
     paramsHost.rayNormalGrad      = packed_accessor32<float, 4>(rayNrmGrd);
     paramsHost.rayShadingNormalGrad = packed_accessor32<float, 4>(rayShadingNrmGrd);
 

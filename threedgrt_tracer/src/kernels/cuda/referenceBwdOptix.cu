@@ -112,12 +112,16 @@ extern "C" __global__ void __raygen__rg() {
     float3 rayIntegratedRadiance     = make_float3(params.rayRadiance[idx.z][idx.y][idx.x][0], params.rayRadiance[idx.z][idx.y][idx.x][1], params.rayRadiance[idx.z][idx.y][idx.x][2]);
     float rayIntegratedTransmittance = 1.0f - params.rayDensity[idx.z][idx.y][idx.x][0];
     float rayIntegratedHitDistance   = params.rayHitDistance[idx.z][idx.y][idx.x][0];
+    float rayIntegratedHitDistanceSecondMoment = params.rayHitDistanceSecondMoment[idx.z][idx.y][idx.x][0];
+    float rayIntegratedDepthDistortion = params.rayDepthDistortion[idx.z][idx.y][idx.x][0];
     float rayMaxHitDistance          = params.rayHitDistance[idx.z][idx.y][idx.x][1];
     float3 rayIntegratedShadingNormal = make_float3(params.rayShadingNormal[idx.z][idx.y][idx.x][0], params.rayShadingNormal[idx.z][idx.y][idx.x][1], params.rayShadingNormal[idx.z][idx.y][idx.x][2]);
 
     float3 rayRadianceGrad     = make_float3(params.rayRadianceGrad[idx.z][idx.y][idx.x][0], params.rayRadianceGrad[idx.z][idx.y][idx.x][1], params.rayRadianceGrad[idx.z][idx.y][idx.x][2]);
     float rayTransmittanceGrad = -1.0f * params.rayDensityGrad[idx.z][idx.y][idx.x][0];
     float rayHitDistanceGrad   = params.rayHitDistanceGrad[idx.z][idx.y][idx.x][0];
+    float rayHitDistanceSecondMomentGrad = params.rayHitDistanceSecondMomentGrad[idx.z][idx.y][idx.x][0];
+    float rayDepthDistortionGrad = rayIntegratedDepthDistortion > 0.0f ? params.rayDepthDistortionGrad[idx.z][idx.y][idx.x][0] : 0.0f;
     float3 rayShadingNormalGrad = make_float3(params.rayShadingNormalGrad[idx.z][idx.y][idx.x][0], params.rayShadingNormalGrad[idx.z][idx.y][idx.x][1], params.rayShadingNormalGrad[idx.z][idx.y][idx.x][2]);
 
     constexpr float epsT = 1e-9;
@@ -129,6 +133,7 @@ extern "C" __global__ void __raygen__rg() {
     float3 rayRadiance     = make_float3(0.f);
     float rayTransmittance = 1.f;
     float rayHitDistance   = 0.f;
+    float rayHitDistanceSecondMoment = 0.f;
     float3 rayShadingNormal = make_float3(0.f);
 
     RayPayload rayPayload;
@@ -167,6 +172,10 @@ extern "C" __global__ void __raygen__rg() {
                     rayIntegratedHitDistance,
                     rayHitDistance,
                     rayHitDistanceGrad,
+                    rayIntegratedHitDistanceSecondMoment,
+                    rayHitDistanceSecondMoment,
+                    rayHitDistanceSecondMomentGrad,
+                    rayDepthDistortionGrad,
                     rayIntegratedShadingNormal,
                     rayShadingNormal,
                     rayShadingNormalGrad);

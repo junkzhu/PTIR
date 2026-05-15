@@ -90,3 +90,20 @@ def mask_entropy_loss(pred_opacity, mask, eps=1e-6):
         image_mask * torch.log(rendered_opacity)
         + (1.0 - image_mask) * torch.log(1.0 - rendered_opacity)
     ).mean()
+
+
+@torch.cuda.nvtx.range("depth_distortion_loss")
+def depth_distortion_loss(pred_depth_distortion):
+    """
+    Mean depth distortion regularizer over rendered pixels.
+
+    Args:
+        pred_depth_distortion: Per-pixel distortion map, shaped [B, H, W, 1] or [B, H, W].
+    """
+    if pred_depth_distortion is None:
+        raise ValueError("pred_depth_distortion must be provided for depth_distortion_loss")
+
+    if pred_depth_distortion.numel() == 0:
+        return pred_depth_distortion.sum() * 0.0
+
+    return pred_depth_distortion.mean()

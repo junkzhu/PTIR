@@ -123,13 +123,17 @@ loss:
   lambda_opacity: 0.0
 
   use_mask_entropy: true
-  lambda_mask_entropy: 0.05
+  lambda_mask_entropy: 0.1
 
   use_scale: false
   lambda_scale: 0.0
 
   use_shading_normal: true
   lambda_shading_normal: 0.05
+
+  use_depth_distortion: true
+  depth_distortion_start_iteration: 15000
+  lambda_depth_distortion: 100
 
 # Post-processing configuration
 post_processing:

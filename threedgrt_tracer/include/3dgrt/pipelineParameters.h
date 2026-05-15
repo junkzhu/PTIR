@@ -35,6 +35,8 @@ struct PipelineParameters {
     PackedTensorAccessor32<float, 4> rayRadiance;    ///< output integrated ray radiance
     PackedTensorAccessor32<float, 4> rayDensity;     ///< output integrated ray density
     PackedTensorAccessor32<float, 4> rayHitDistance; ///< output integrated ray hit distance
+    PackedTensorAccessor32<float, 4> rayHitDistanceSecondMoment; ///< output integrated squared ray hit distance
+    PackedTensorAccessor32<float, 4> rayDepthDistortion; ///< output ray depth distortion
     PackedTensorAccessor32<float, 4> rayNormal;      ///< output integrated ray normal
     PackedTensorAccessor32<float, 4> rayShadingNormal; ///< output integrated ray shading normal
     PackedTensorAccessor32<float, 4> rayHitsCount;   ///< output (only in AH pipeline) number of hits per ray
@@ -92,6 +94,8 @@ struct PipelineBackwardParameters : PipelineParameters {
     PackedTensorAccessor32<float, 4> rayRadianceGrad;    ///< integrated ray radiance gradient
     PackedTensorAccessor32<float, 4> rayDensityGrad;     ///< integrated ray density gradient
     PackedTensorAccessor32<float, 4> rayHitDistanceGrad; ///< integrated ray hit distance gradient
+    PackedTensorAccessor32<float, 4> rayHitDistanceSecondMomentGrad; ///< integrated squared ray hit distance gradient
+    PackedTensorAccessor32<float, 4> rayDepthDistortionGrad; ///< ray depth distortion gradient
     PackedTensorAccessor32<float, 4> rayNormalGrad;      ///< integrated ray hit distance gradient
     PackedTensorAccessor32<float, 4> rayShadingNormalGrad; ///< integrated ray shading normal gradient
 

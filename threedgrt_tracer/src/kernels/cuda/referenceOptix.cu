@@ -112,6 +112,8 @@ extern "C" __global__ void __raygen__rg() {
     float3 rayRadiance     = make_float3(0.0f);
     float rayTransmittance = 1.0f;
     float rayHitDistance   = 0.f;
+    float rayHitDistanceSecondMoment = 0.f;
+    float rayDepthDistortion = 0.f;
 #ifdef ENABLE_NORMALS
     float3 rayNormal = make_float3(0.f);
     float3 rayShadingNormal = make_float3(0.f);
@@ -150,6 +152,7 @@ extern "C" __global__ void __raygen__rg() {
                     &rayTransmittance,
                     &rayRadiance,
                     &rayHitDistance,
+                    &rayHitDistanceSecondMoment,
 #ifdef ENABLE_NORMALS
                     &rayShadingNormal,
                     &rayNormal
@@ -158,6 +161,10 @@ extern "C" __global__ void __raygen__rg() {
                     nullptr
 #endif
                 );
+                if (acceptedHit) {
+                    const float rayOpacity = 1.0f - rayTransmittance;
+                    rayDepthDistortion = fmaxf(rayOpacity * rayHitDistanceSecondMoment - rayHitDistance * rayHitDistance, 0.0f);
+                }
 
                 // NOTE(qi): Race condition here, but as we are writing the same value, it seems it is safe.
                 if (acceptedHit) {
@@ -179,6 +186,8 @@ extern "C" __global__ void __raygen__rg() {
     params.rayDensity[idx.z][idx.y][idx.x][0]     = 1 - rayTransmittance;
     params.rayHitDistance[idx.z][idx.y][idx.x][0] = rayHitDistance;
     params.rayHitDistance[idx.z][idx.y][idx.x][1] = rayLastHitDistance;
+    params.rayHitDistanceSecondMoment[idx.z][idx.y][idx.x][0] = rayHitDistanceSecondMoment;
+    params.rayDepthDistortion[idx.z][idx.y][idx.x][0] = rayDepthDistortion;
 #ifdef ENABLE_NORMALS
     params.rayNormal[idx.z][idx.y][idx.x][0] = rayNormal.x;
     params.rayNormal[idx.z][idx.y][idx.x][1] = rayNormal.y;

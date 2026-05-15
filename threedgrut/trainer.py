@@ -33,7 +33,7 @@ from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 import threedgrut.datasets as datasets
 from threedgrut.datasets.protocols import BoundedMultiViewDataset
 from threedgrut.datasets.utils import DEFAULT_DEVICE, MultiEpochsDataLoader, PointCloud
-from threedgrut.model.losses import mask_entropy_loss, pseudo_normal_loss, ssim
+from threedgrut.model.losses import depth_distortion_loss, mask_entropy_loss, pseudo_normal_loss, ssim
 from threedgrut.model.model import MixtureOfGaussians
 from threedgrut.optimizers import SelectiveAdam
 from threedgrut.render import Renderer
@@ -599,6 +599,19 @@ class Trainer3DGRUT:
                     )
                     lambda_shading_normal = self.conf.loss.lambda_shading_normal
 
+        # Depth distortion loss
+        loss_depth_distortion = torch.zeros(1, device=self.device)
+        lambda_depth_distortion = 0.0
+        if (
+            self.conf.loss.use_depth_distortion
+            and self.global_step >= self.conf.loss.get("depth_distortion_start_iteration", 0)
+        ):
+            pred_depth_distortion = outputs.get("pred_depth_distortion")
+            if pred_depth_distortion is not None:
+                with torch.cuda.nvtx.range(f"loss-depth-distortion"):
+                    loss_depth_distortion = depth_distortion_loss(pred_depth_distortion)
+                    lambda_depth_distortion = self.conf.loss.lambda_depth_distortion
+
         # Total loss
         loss = (
             lambda_l1 * loss_l1
@@ -608,6 +621,7 @@ class Trainer3DGRUT:
             + lambda_mask_entropy * loss_mask_entropy
             + lambda_scale * loss_scale
             + lambda_shading_normal * loss_shading_normal
+            + lambda_depth_distortion * loss_depth_distortion
         )
         return dict(
             total_loss=loss,
@@ -618,6 +632,7 @@ class Trainer3DGRUT:
             mask_entropy_loss=lambda_mask_entropy * loss_mask_entropy,
             scale_loss=lambda_scale * loss_scale,
             shading_normal_loss=lambda_shading_normal * loss_shading_normal,
+            depth_distortion_loss=lambda_depth_distortion * loss_depth_distortion,
         )
 
     @torch.cuda.nvtx.range("log_validation_iter")

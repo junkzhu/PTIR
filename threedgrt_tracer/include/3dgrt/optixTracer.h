@@ -139,16 +139,16 @@ public:
 
     virtual ~OptixTracer();
 
-    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor> virtual trace(uint32_t frameNumber,
-                                                                                                                                      torch::Tensor rayToWorld,
-                                                                                                                                      torch::Tensor rayOri,
-                                                                                                                                      torch::Tensor rayDir,
-                                                                                                                                      torch::Tensor particleDensity,
-                                                                                                                                      torch::Tensor particleRadiance,
-                                                                                                                                      torch::Tensor particleShadingNormal,
-                                                                                                                                      uint32_t renderOpts,
-                                                                                                                                      int sphDegree,
-                                                                                                                                      float minTransmittance);
+    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor> virtual trace(uint32_t frameNumber,
+                                                                                                                                                                    torch::Tensor rayToWorld,
+                                                                                                                                                                    torch::Tensor rayOri,
+                                                                                                                                                                    torch::Tensor rayDir,
+                                                                                                                                                                    torch::Tensor particleDensity,
+                                                                                                                                                                    torch::Tensor particleRadiance,
+                                                                                                                                                                    torch::Tensor particleShadingNormal,
+                                                                                                                                                                    uint32_t renderOpts,
+                                                                                                                                                                    int sphDegree,
+                                                                                                                                                                    float minTransmittance);
 
     std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> virtual traceBwd(uint32_t frameNumber,
                                                                              torch::Tensor rayToWorld,
@@ -157,6 +157,8 @@ public:
                                                                              torch::Tensor rayRad,
                                                                              torch::Tensor rayDns,
                                                                              torch::Tensor rayHit,
+                                                                             torch::Tensor rayHitSecondMoment,
+                                                                             torch::Tensor rayDepthDistortion,
                                                                              torch::Tensor rayNrm,
                                                                              torch::Tensor rayShadingNrm,
                                                                              torch::Tensor particleDensity,
@@ -165,6 +167,8 @@ public:
                                                                              torch::Tensor rayRadGrd,
                                                                              torch::Tensor rayDnsGrd,
                                                                              torch::Tensor rayHitGrd,
+                                                                             torch::Tensor rayHitSecondMomentGrd,
+                                                                             torch::Tensor rayDepthDistortionGrd,
                                                                              torch::Tensor rayNrmGrd,
                                                                              torch::Tensor rayShadingNrmGrd,
                                                                              uint32_t renderOpts,

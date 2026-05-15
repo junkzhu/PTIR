@@ -340,6 +340,7 @@ __device__ inline bool processHit(
     float* transmittance,
     float3* radiance,
     float* depth,
+    float* depthSecondMoment,
     float3* shadingnormal,
     float3* normal) {
     float3 particlePosition;
@@ -388,6 +389,7 @@ __device__ inline bool processHit(
         *radiance += grad * weight;
         *transmittance *= (1 - galpha);
         *depth += hitT * weight;
+        *depthSecondMoment += hitT * hitT * weight;
 
         if (normal) {
             if (shadingnormal) {
@@ -491,6 +493,10 @@ __device__ inline void processHitBwd(
     float integratedDepth,
     float& depth,
     float depthGrad,
+    float integratedDepthSecondMoment,
+    float& depthSecondMoment,
+    float depthSecondMomentGrad,
+    float depthDistortionGrad,
     float3 integratedShadingNormal,
     float3& shadingnormal,
     float3 shadingNormalGrad) {
@@ -541,6 +547,11 @@ __device__ inline void processHitBwd(
             fmaxf((nextTransmit <= minTransmittance ? 0 : (integratedDepth - depth) / nextTransmit),
                   0);
 
+        depthSecondMoment += weight * gsqdist;
+        const float residualHitTSecondMoment =
+            fmaxf((nextTransmit <= minTransmittance ? 0 : (integratedDepthSecondMoment - depthSecondMoment) / nextTransmit),
+                  0);
+
         // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
         // ---> hitT = accumulatedHitT + galpha * prevTrm * gdist + (1-galpha) * prevTrm * residualHitT
         //
@@ -551,7 +562,11 @@ __device__ inline void processHitBwd(
         //
         // ===> d_hitT / d_gsqdist = weight / (2*gdist)
         // ===> d_gsqdist / d_grds =  2 * grds
-        const float3 grdsRayHitGrd = gsqdist > 0.0f ? ((2 * grds * weight) / (2 * gdist)) * depthGrad : make_float3(0.0f);
+        const float3 grdsRayHitGrd =
+            (gsqdist > 0.0f ? ((2 * grds * weight) / (2 * gdist)) * depthGrad : make_float3(0.0f)) +
+            2.0f * grds * weight * depthSecondMomentGrad +
+            2.0f * grds * weight * (1.0f - integratedTransmittance) * depthDistortionGrad -
+            2.0f * grds * weight * (integratedDepth / fmaxf(gdist, 1e-12f)) * depthDistortionGrad;
 
         // ---> grds = gscl * grd * p  where p = dot(grd, -gro) [non-surfel] or p = -gro.z/grd.z [surfel]
         //
