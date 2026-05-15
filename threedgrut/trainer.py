@@ -33,7 +33,13 @@ from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 import threedgrut.datasets as datasets
 from threedgrut.datasets.protocols import BoundedMultiViewDataset
 from threedgrut.datasets.utils import DEFAULT_DEVICE, MultiEpochsDataLoader, PointCloud
-from threedgrut.model.losses import depth_distortion_loss, mask_entropy_loss, pseudo_normal_loss, ssim
+from threedgrut.model.losses import (
+    depth_distortion_loss,
+    edge_aware_smoothness_loss,
+    mask_entropy_loss,
+    pseudo_normal_loss,
+    ssim,
+)
 from threedgrut.model.model import MixtureOfGaussians
 from threedgrut.optimizers import SelectiveAdam
 from threedgrut.render import Renderer
@@ -612,6 +618,24 @@ class Trainer3DGRUT:
                     loss_depth_distortion = depth_distortion_loss(pred_depth_distortion)
                     lambda_depth_distortion = self.conf.loss.lambda_depth_distortion
 
+        # Edge aware smoothness loss
+        loss_edge_aware_smoothness = torch.zeros(1, device=self.device)
+        lambda_edge_aware_smoothness = 0.0
+        if self.conf.loss.use_edge_aware_smoothness:
+            smoothness_output_key = self.conf.loss.get("edge_aware_smoothness_output", "pred_shadingnormal")
+            pred_smoothness_map = outputs.get(smoothness_output_key)
+            if pred_smoothness_map is not None:
+                with torch.cuda.nvtx.range(f"loss-edge-aware-smoothness"):
+                    edge_aware_smoothness_scale = self.conf.loss.get("edge_aware_smoothness_scale", 1.0)
+                    loss_edge_aware_smoothness = edge_aware_smoothness_loss(
+                        pred_smoothness_map,
+                        rgb_gt,
+                        mask=mask,
+                        eps=self.conf.loss.get("edge_aware_smoothness_eps", 1e-3),
+                        scale=edge_aware_smoothness_scale,
+                    )
+                    lambda_edge_aware_smoothness = self.conf.loss.get("lambda_edge_aware_smoothness", 0.0)
+
         # Total loss
         loss = (
             lambda_l1 * loss_l1
@@ -622,6 +646,7 @@ class Trainer3DGRUT:
             + lambda_scale * loss_scale
             + lambda_shading_normal * loss_shading_normal
             + lambda_depth_distortion * loss_depth_distortion
+            + lambda_edge_aware_smoothness * loss_edge_aware_smoothness
         )
         return dict(
             total_loss=loss,
@@ -633,6 +658,7 @@ class Trainer3DGRUT:
             scale_loss=lambda_scale * loss_scale,
             shading_normal_loss=lambda_shading_normal * loss_shading_normal,
             depth_distortion_loss=lambda_depth_distortion * loss_depth_distortion,
+            edge_aware_smoothness_loss=lambda_edge_aware_smoothness * loss_edge_aware_smoothness,
         )
 
     @torch.cuda.nvtx.range("log_validation_iter")
@@ -778,6 +804,9 @@ class Trainer3DGRUT:
             if self.conf.loss.get("use_shading_normal", False):
                 shading_normal_loss = np.mean(batch_metrics["losses"]["shading_normal_loss"])
                 writer.add_scalar("loss/shading_normal/train", shading_normal_loss, global_step)
+            if self.conf.loss.get("use_edge_aware_smoothness", False):
+                edge_aware_smoothness_loss = np.mean(batch_metrics["losses"]["edge_aware_smoothness_loss"])
+                writer.add_scalar("loss/edge_aware_smoothness/train", edge_aware_smoothness_loss, global_step)
             if self.post_processing is not None and "post_processing_reg_loss" in batch_metrics["losses"]:
                 post_processing_reg_loss = np.mean(batch_metrics["losses"]["post_processing_reg_loss"])
                 writer.add_scalar(

@@ -135,6 +135,10 @@ loss:
   depth_distortion_start_iteration: 15000
   lambda_depth_distortion: 100
 
+  use_edge_aware_smoothness: true
+  lambda_edge_aware_smoothness: 0.02
+  edge_aware_smoothness_scale: 10.0 # Scales the GT image gradient in exp(-scale * gt_grad); larger values reduce smoothing more strongly at GT edges.
+
 # Post-processing configuration
 post_processing:
   method: null # Possible values: null, "ppisp"

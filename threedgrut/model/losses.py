@@ -14,7 +14,7 @@
 # limitations under the License.
 
 import torch
-import torch.nn.functional as F
+from kornia.filters import spatial_gradient
 from fused_ssim import fused_ssim
 
 
@@ -107,3 +107,60 @@ def depth_distortion_loss(pred_depth_distortion):
         return pred_depth_distortion.sum() * 0.0
 
     return pred_depth_distortion.mean()
+
+
+def _mask_to_bhw1(mask, reference):
+    mask = mask.detach().to(device=reference.device, dtype=reference.dtype)
+
+    if mask.ndim == 3:
+        mask = mask.unsqueeze(-1)
+    elif mask.ndim == 4:
+        pass
+    else:
+        raise ValueError(f"mask must be shaped [B, H, W] or [B, H, W, 1], got {mask.ndim}D")
+
+    if mask.shape[-1] != 1:
+        mask = mask[..., :1]
+
+    if mask.shape[0] == 1 and reference.shape[0] != 1:
+        mask = mask.expand(reference.shape[0], -1, -1, -1)
+
+    if mask.shape[:3] != reference.shape[:3]:
+        raise ValueError(f"mask shape {tuple(mask.shape)} is not compatible with {tuple(reference.shape)}")
+
+    return mask.clamp(0.0, 1.0)
+
+
+def _edge_aware_spatial_gradients(value_map, gt_image):
+    value_map_nchw = value_map.permute(0, 3, 1, 2)
+    gt_image_nchw = gt_image.permute(0, 3, 1, 2)
+
+    value_grad = spatial_gradient(value_map_nchw, order=1).abs()
+    gt_grad = spatial_gradient(gt_image_nchw, order=1).abs()
+    return value_grad, gt_grad
+
+
+@torch.cuda.nvtx.range("edge_aware_smoothness_loss")
+def edge_aware_smoothness_loss(value_map, gt_image, mask=None, eps=1e-3, scale=1.0):
+    """
+    Edge-aware smoothness loss for rendered maps.
+
+    Args:
+        value_map: Rendered map to smooth, shaped [B, H, W, C].
+        gt_image: RGB guidance image in [0, 1], shaped [B, H, W, 3].
+        mask: Kept for backward compatibility; unused in the kornia formulation.
+        eps: Kept for backward compatibility; unused in the kornia formulation.
+        scale: Multiplier for the GT image gradient inside exp(-scale * gt_grad).
+    """
+    if value_map.ndim != 4:
+        raise ValueError(f"value_map must be shaped [B, H, W, C], got {value_map.ndim}D")
+    if gt_image.ndim != 4:
+        raise ValueError(f"gt_image must be shaped [B, H, W, C], got {gt_image.ndim}D")
+
+    if value_map.shape[:3] != gt_image.shape[:3]:
+        raise ValueError(
+            f"value_map and gt_image spatial shapes must match, got {tuple(value_map.shape)} and {tuple(gt_image.shape)}"
+        )
+
+    value_grad, gt_grad = _edge_aware_spatial_gradients(value_map, gt_image)
+    return (value_grad * torch.exp(-scale * gt_grad)).sum(dim=2).mean()
