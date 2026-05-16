@@ -33,8 +33,8 @@ reset_density:
 
 density_decay:
   gamma: 0.99
-  start_iteration: -1 # 500
-  end_iteration: -1 # 15000
+  start_iteration: 500
+  end_iteration: 15000
   frequency: 50
 
 prune_weight:
