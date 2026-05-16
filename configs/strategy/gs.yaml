@@ -9,6 +9,8 @@ densify:
   end_iteration: 15000 # densify_until_iter in 3DGS default value 15_000
   clone_grad_threshold: 0.0002 # Called densify_grad_threshold in 3DGS with default value 0.0002
   split_grad_threshold: 0.0002 # Called densify_grad_threshold in 3DGS with default value 0.0002
+  clone_shading_normal_grad_threshold: 1e-6
+  split_shading_normal_grad_threshold: 1e-6
   relative_size_threshold: 0.01 # Gaussians larger than relative_size_threshold * scene_extent will be split not cloned. Called percent_dense in 3DGS with default value 0.01
   split:
     n_gaussians: 2 # Hardcoded to 2 in 3DGS

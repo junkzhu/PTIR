@@ -33,17 +33,23 @@ class GSStrategy(BaseStrategy):
         self.prune_density_threshold = self.conf.strategy.prune.density_threshold
         self.clone_grad_threshold = self.conf.strategy.densify.clone_grad_threshold
         self.split_grad_threshold = self.conf.strategy.densify.split_grad_threshold
+        self.clone_shading_normal_grad_threshold = self.conf.strategy.densify.clone_shading_normal_grad_threshold
+        self.split_shading_normal_grad_threshold = self.conf.strategy.densify.split_shading_normal_grad_threshold
         self.new_max_density = self.conf.strategy.reset_density.new_max_density
 
         # Accumulation of the norms of the positions gradients
         self.densify_grad_norm_accum = torch.empty([0, 1])
         self.densify_grad_norm_denom = torch.empty([0, 1])
+        self.densify_shading_normal_grad_norm_accum = torch.empty([0, 1])
+        self.densify_shading_normal_grad_norm_denom = torch.empty([0, 1])
 
     def get_strategy_parameters(self) -> dict:
         params = {}
 
         params["densify_grad_norm_accum"] = (self.densify_grad_norm_accum,)
         params["densify_grad_norm_denom"] = (self.densify_grad_norm_denom,)
+        params["densify_shading_normal_grad_norm_accum"] = (self.densify_shading_normal_grad_norm_accum,)
+        params["densify_shading_normal_grad_norm_denom"] = (self.densify_shading_normal_grad_norm_denom,)
 
         return params
 
@@ -51,10 +57,24 @@ class GSStrategy(BaseStrategy):
         if checkpoint is not None:
             self.densify_grad_norm_accum = checkpoint["densify_grad_norm_accum"][0].detach()
             self.densify_grad_norm_denom = checkpoint["densify_grad_norm_denom"][0].detach()
+            self.densify_shading_normal_grad_norm_accum = checkpoint.get(
+                "densify_shading_normal_grad_norm_accum",
+                (torch.zeros_like(self.densify_grad_norm_accum),),
+            )[0].detach()
+            self.densify_shading_normal_grad_norm_denom = checkpoint.get(
+                "densify_shading_normal_grad_norm_denom",
+                (torch.zeros_like(self.densify_grad_norm_denom),),
+            )[0].detach()
         else:
             num_gaussians = self.model.num_gaussians
             self.densify_grad_norm_accum = torch.zeros((num_gaussians, 1), dtype=torch.float, device=self.model.device)
             self.densify_grad_norm_denom = torch.zeros((num_gaussians, 1), dtype=torch.int, device=self.model.device)
+            self.densify_shading_normal_grad_norm_accum = torch.zeros(
+                (num_gaussians, 1), dtype=torch.float, device=self.model.device
+            )
+            self.densify_shading_normal_grad_norm_denom = torch.zeros(
+                (num_gaussians, 1), dtype=torch.int, device=self.model.device
+            )
 
     def _post_backward(self, step: int, scene_extent: float, train_dataset, batch=None, writer=None) -> bool:
         """Callback function to be executed after the `loss.backward()` call."""
@@ -128,15 +148,25 @@ class GSStrategy(BaseStrategy):
     @torch.no_grad()
     @torch.cuda.nvtx.range("update-gradient-buffer")
     def update_gradient_buffer(self, sensor_position: torch.Tensor) -> None:
-        params_grad = self.model.positions.grad
-        mask = (params_grad != 0).max(dim=1)[0]
-        assert params_grad is not None
+        params_position_grad = self.model.positions.grad
+        mask = (params_position_grad != 0).max(dim=1)[0]
+        assert params_position_grad is not None
         distance_to_camera = (self.model.positions[mask] - sensor_position).norm(dim=1, keepdim=True)
 
         self.densify_grad_norm_accum[mask] += (
-            torch.norm(params_grad[mask] * distance_to_camera, dim=-1, keepdim=True) / 2
+            torch.norm(params_position_grad[mask] * distance_to_camera, dim=-1, keepdim=True) / 2
         )
         self.densify_grad_norm_denom[mask] += 1
+
+        params_shading_normal_grad = self.model.shading_normal.grad
+        if params_shading_normal_grad is not None:
+            mask = (params_shading_normal_grad != 0).max(dim=1)[0]
+            self.densify_shading_normal_grad_norm_accum[mask] += torch.norm(
+                params_shading_normal_grad[mask],
+                dim=-1,
+                keepdim=True,
+            )
+            self.densify_shading_normal_grad_norm_denom[mask] += 1
 
     @torch.cuda.nvtx.range("densify_gaussians")
     def densify_gaussians(self, scene_extent):
@@ -145,25 +175,42 @@ class GSStrategy(BaseStrategy):
         ), "Optimizer need to be initialized before splitting and cloning the Gaussians"
         densify_grad_norm = self.densify_grad_norm_accum / self.densify_grad_norm_denom
         densify_grad_norm[densify_grad_norm.isnan()] = 0.0
+        densify_shading_normal_grad_norm = (
+            self.densify_shading_normal_grad_norm_accum / self.densify_shading_normal_grad_norm_denom
+        )
+        densify_shading_normal_grad_norm[densify_shading_normal_grad_norm.isnan()] = 0.0
 
-        self.clone_gaussians(densify_grad_norm.squeeze(), scene_extent)
-        self.split_gaussians(densify_grad_norm.squeeze(), scene_extent)
+        self.clone_gaussians(densify_grad_norm.squeeze(), densify_shading_normal_grad_norm.squeeze(), scene_extent)
+        self.split_gaussians(densify_grad_norm.squeeze(), densify_shading_normal_grad_norm.squeeze(), scene_extent)
 
         torch.cuda.empty_cache()
 
     @torch.cuda.nvtx.range("split_gaussians")
-    def split_gaussians(self, densify_grad_norm: torch.Tensor, scene_extent: float):
+    def split_gaussians(
+        self,
+        densify_grad_norm: torch.Tensor,
+        densify_shading_normal_grad_norm: torch.Tensor,
+        scene_extent: float,
+    ):
         n_init_points = self.model.num_gaussians
 
         # Extract points that satisfy the gradient condition
         padded_grad = torch.zeros((n_init_points), device="cuda")
+        padded_shading_normal_grad = torch.zeros((n_init_points), device="cuda")
 
         # Here we already have the cloned points in the self.model.positions so only take the points up to size of the initial grad
         padded_grad[: densify_grad_norm.shape[0]] = densify_grad_norm.squeeze()
-        mask = torch.where(padded_grad >= self.split_grad_threshold, True, False)
-        mask = torch.logical_and(
-            mask, torch.max(self.model.get_scale(), dim=1).values > self.relative_size_threshold * scene_extent
+        padded_shading_normal_grad[: densify_shading_normal_grad_norm.shape[0]] = (
+            densify_shading_normal_grad_norm.squeeze()
         )
+        pos_mask = padded_grad >= self.split_grad_threshold
+        shading_normal_mask = padded_shading_normal_grad >= self.split_shading_normal_grad_threshold
+        mask = torch.logical_or(
+            pos_mask,
+            shading_normal_mask,
+        )
+        size_mask = torch.max(self.model.get_scale(), dim=1).values > self.relative_size_threshold * scene_extent
+        mask = torch.logical_and(mask, size_mask)
 
         stds = self.model.get_scale()[mask].repeat(self.split_n_gaussians, 1)
         means = torch.zeros((stds.size(0), 3), device="cuda")
@@ -172,9 +219,18 @@ class GSStrategy(BaseStrategy):
         offsets = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1)
         # stats
         if self.conf.strategy.print_stats:
-            n_before = mask.shape[0]
-            n_clone = mask.sum()
-            logger.info(f"Splitted {n_clone} / {n_before} ({n_clone/n_before*100:.2f}%) gaussians")
+            n_before = int(mask.shape[0])
+            n_split = int(mask.sum().item())
+            n_split_by_normal = int(torch.logical_and(shading_normal_mask, size_mask).sum().item())
+            n_split_by_normal_only = torch.logical_and(shading_normal_mask, torch.logical_not(pos_mask))
+            n_split_by_normal_only = int(torch.logical_and(n_split_by_normal_only, size_mask).sum().item())
+            normal_pct = n_split_by_normal / n_split * 100 if n_split > 0 else 0.0
+            normal_only_pct = n_split_by_normal_only / n_split * 100 if n_split > 0 else 0.0
+            logger.info(
+                f"Splitted {n_split} / {n_before} ({n_split/n_before*100:.2f}%) gaussians; "
+                f"normal-triggered={n_split_by_normal} ({normal_pct:.2f}% of split), "
+                f"normal-only={n_split_by_normal_only} ({normal_only_pct:.2f}% of split)"
+            )
 
         def update_param_fn(name: str, param: torch.Tensor) -> torch.Tensor:
             repeats = [self.split_n_gaussians] + [1] * (param.dim() - 1)
@@ -199,21 +255,36 @@ class GSStrategy(BaseStrategy):
         self.reset_densification_buffers()
 
     @torch.cuda.nvtx.range("clone_gaussians")
-    def clone_gaussians(self, densify_grad_norm: torch.Tensor, scene_extent: float):
+    def clone_gaussians(
+        self,
+        densify_grad_norm: torch.Tensor,
+        densify_shading_normal_grad_norm: torch.Tensor,
+        scene_extent: float,
+    ):
         assert densify_grad_norm is not None, "Positional gradients must be available in order to clone the Gaussians"
         # Extract points that satisfy the gradient condition
-        mask = torch.where(densify_grad_norm >= self.clone_grad_threshold, True, False)
+        pos_mask = densify_grad_norm >= self.clone_grad_threshold
+        shading_normal_mask = densify_shading_normal_grad_norm >= self.clone_shading_normal_grad_threshold
+        mask = torch.logical_or(pos_mask, shading_normal_mask)
 
         # If the gaussians are larger they shouldn't be cloned, but rather split
-        mask = torch.logical_and(
-            mask, torch.max(self.model.get_scale(), dim=1).values <= self.relative_size_threshold * scene_extent
-        )
+        size_mask = torch.max(self.model.get_scale(), dim=1).values <= self.relative_size_threshold * scene_extent
+        mask = torch.logical_and(mask, size_mask)
 
         # stats
         if self.conf.strategy.print_stats:
-            n_before = mask.shape[0]
-            n_clone = mask.sum()
-            logger.info(f"Cloned {n_clone} / {n_before} ({n_clone/n_before*100:.2f}%) gaussians")
+            n_before = int(mask.shape[0])
+            n_clone = int(mask.sum().item())
+            n_clone_by_normal = int(torch.logical_and(shading_normal_mask, size_mask).sum().item())
+            n_clone_by_normal_only = torch.logical_and(shading_normal_mask, torch.logical_not(pos_mask))
+            n_clone_by_normal_only = int(torch.logical_and(n_clone_by_normal_only, size_mask).sum().item())
+            normal_pct = n_clone_by_normal / n_clone * 100 if n_clone > 0 else 0.0
+            normal_only_pct = n_clone_by_normal_only / n_clone * 100 if n_clone > 0 else 0.0
+            logger.info(
+                f"Cloned {n_clone} / {n_before} ({n_clone/n_before*100:.2f}%) gaussians; "
+                f"normal-triggered={n_clone_by_normal} ({normal_pct:.2f}% of clone), "
+                f"normal-only={n_clone_by_normal_only} ({normal_only_pct:.2f}% of clone)"
+            )
 
         def update_param_fn(name: str, param: torch.Tensor) -> torch.Tensor:
             param_new = torch.cat([param, param[mask]])
@@ -294,11 +365,24 @@ class GSStrategy(BaseStrategy):
             device=self.model.device,
             dtype=self.densify_grad_norm_denom.dtype,
         )
+        self.densify_shading_normal_grad_norm_accum = torch.zeros(
+            (self.model.get_positions().shape[0], 1),
+            device=self.model.device,
+            dtype=self.densify_shading_normal_grad_norm_accum.dtype,
+        )
+
+        self.densify_shading_normal_grad_norm_denom = torch.zeros(
+            (self.model.get_positions().shape[0], 1),
+            device=self.model.device,
+            dtype=self.densify_shading_normal_grad_norm_denom.dtype,
+        )
 
     def prune_densification_buffers(self, valid_mask: torch.Tensor) -> None:
         # Update non-optimizable buffers
         self.densify_grad_norm_accum = self.densify_grad_norm_accum[valid_mask]
         self.densify_grad_norm_denom = self.densify_grad_norm_denom[valid_mask]
+        self.densify_shading_normal_grad_norm_accum = self.densify_shading_normal_grad_norm_accum[valid_mask]
+        self.densify_shading_normal_grad_norm_denom = self.densify_shading_normal_grad_norm_denom[valid_mask]
 
     def decay_density(self):
         def update_param_fn(name: str, param: torch.Tensor) -> torch.Tensor:
