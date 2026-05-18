@@ -143,13 +143,13 @@ loss:
   use_shading_normal: true
   lambda_shading_normal: 0.05
 
-  use_depth_distortion: true
+  use_depth_distortion: false
   depth_distortion_start_iteration: 15000
   lambda_depth_distortion: 100
 
   use_normal_prior_regularization: false
   normal_priors_end_iteration: 30000
-  lambda_normal_priors_regularization: 0.05
+  lambda_normal_priors_regularization: 0.02
 
   use_edge_aware_smoothness: true
   lambda_edge_aware_smoothness: 0.02
