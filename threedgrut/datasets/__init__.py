@@ -17,6 +17,9 @@ import os
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
+import torch
+
 from .dataset_colmap import ColmapDataset
 from .dataset_nerf import NeRFDataset
 from .dataset_scannetpp import ScannetppDataset
@@ -63,6 +66,59 @@ def _load_colmap_exif_exposures(
     return load_exif_exposures(image_paths)
 
 
+def _maybe_generate_diffusion_priors(config, train_dataset) -> None:
+    if not hasattr(train_dataset, "image_paths"):
+        return
+
+    if not config.loss.get("use_normal_prior_regularization", False):
+        return
+
+    from threedgrut.utils.rgb2x_prior import (
+        DEFAULT_RGB2X_CACHE_DIR,
+        DEFAULT_RGB2X_MODEL,
+        DEFAULT_RGB2X_OUTPUT_DIR,
+        rgb2x_prior_paths,
+    )
+
+    prior_config = config.get("diffusion_prior", {})
+    output_root = prior_config.get("output_dir", DEFAULT_RGB2X_OUTPUT_DIR)
+    aovs = tuple(prior_config.get("aovs", ["normal"]))
+    if not aovs:
+        return
+
+    if torch.cuda.is_available():
+        from threedgrut.utils.rgb2x_prior import generate_rgb2x_priors_in_subprocess
+
+        generate_rgb2x_priors_in_subprocess(
+            train_dataset.image_paths,
+            dataset_root=config.path,
+            camera_to_worlds=getattr(train_dataset, "poses", None),
+            output_root=output_root,
+            model_name_or_path=prior_config.get("model_name_or_path", DEFAULT_RGB2X_MODEL),
+            cache_dir=prior_config.get("cache_dir", DEFAULT_RGB2X_CACHE_DIR),
+            aovs=aovs,
+            input_size=prior_config.get("input_size", 512),
+            inference_steps=prior_config.get("inference_steps", 50),
+            seed=prior_config.get("seed", 42),
+            skip_existing=prior_config.get("skip_existing", True),
+            local_files_only=prior_config.get("local_files_only", False),
+            batch_size=prior_config.get("batch_size", 1),
+        )
+    else:
+        from threedgrut.utils.logger import logger
+
+        logger.warning("prior regularization is enabled but CUDA is unavailable; skipping rgb2x prior generation.")
+
+    if "normal" in aovs:
+        train_dataset.prior_normal_paths = np.array(
+            [
+                str(rgb2x_prior_paths(path, config.path, output_root, ("normal",))["normal"])
+                for path in train_dataset.image_paths
+            ],
+            dtype=str,
+        )
+
+
 def make(name: str, config, ray_jitter):
     match name:
         case "nerf":
@@ -96,6 +152,7 @@ def make(name: str, config, ray_jitter):
                 test_split_interval=config.dataset.test_split_interval,
                 ray_jitter=ray_jitter,
                 exif_exposures=exif_exposures,
+                bg_color=config.model.background.color,
             )
             val_dataset = ColmapDataset(
                 config.path,
@@ -103,6 +160,7 @@ def make(name: str, config, ray_jitter):
                 downsample_factor=config.dataset.downsample_factor,
                 test_split_interval=config.dataset.test_split_interval,
                 exif_exposures=exif_exposures,
+                bg_color=config.model.background.color,
             )
         case "scannetpp":
             train_dataset = ScannetppDataset(
@@ -182,6 +240,8 @@ def make(name: str, config, ray_jitter):
             raise ValueError(
                 f'Unsupported dataset type: {config.dataset.type}. Choose between: ["colmap", "nerf", "scannetpp", "ncore"].'
             )
+
+    _maybe_generate_diffusion_priors(config, train_dataset)
 
     return train_dataset, val_dataset
 

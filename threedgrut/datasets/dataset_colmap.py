@@ -31,7 +31,7 @@ from torch.utils.data import Dataset
 
 from threedgrut.utils.logger import logger
 
-from .protocols import Batch, BoundedMultiViewDataset, DatasetVisualization
+from .protocols import Batch, BatchPrior, BoundedMultiViewDataset, DatasetVisualization
 from .utils import (
     compute_max_radius,
     create_camera_visualization,
@@ -57,6 +57,7 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
         test_split_interval=8,
         ray_jitter=None,
         exif_exposures: Optional[list[Optional[float]]] = None,
+        bg_color=None,
     ):
         self.path = path
         self.device = device
@@ -65,6 +66,7 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
         self.ray_jitter = ray_jitter
         self.test_split_interval = test_split_interval
         self._all_exif_exposures = exif_exposures  # Exposure values for all frames (pre-split)
+        self.bg_color = bg_color
 
         # Worker-based GPU cache for multiprocessing compatibility
         self._worker_gpu_cache = {}
@@ -509,6 +511,20 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
             )
             output_dict["gradient_mask"] = gradient_mask
 
+        if hasattr(self, "prior_normal_paths"):
+            prior_normal_path = self.prior_normal_paths[idx]
+            if not os.path.exists(prior_normal_path):
+                raise FileNotFoundError(f"Diffusion prior normal path {prior_normal_path} does not exist.")
+            prior_normal = np.asarray(Image.open(prior_normal_path))
+            if prior_normal.shape[:2] != (actual_h, actual_w):
+                prior_normal = np.asarray(
+                    Image.fromarray(prior_normal).resize((actual_w, actual_h), Image.Resampling.BILINEAR)
+                )
+            if prior_normal.ndim == 3 and prior_normal.shape[2] == 4:
+                prior_normal = prior_normal[..., :3]
+            prior_normal = torch.from_numpy(prior_normal.astype(np.uint8)).reshape(1, actual_h, actual_w, 3)
+            output_dict["prior_normal"] = prior_normal
+
         # Add EXIF exposure if available for this frame
         if self.exif_exposures is not None and self.exif_exposures[idx] is not None:
             output_dict["exposure"] = torch.tensor(self.exif_exposures[idx], dtype=torch.float32)
@@ -550,6 +566,10 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
             gradient_mask = batch["gradient_mask"][0].to(self.device, non_blocking=True) / 255.0
             gradient_mask = (gradient_mask > 0.5).to(torch.float32)
             sample["gradient_mask"] = gradient_mask
+
+        if "prior_normal" in batch:
+            prior_normal = batch["prior_normal"][0].to(self.device, non_blocking=True) / 255.0
+            sample["prior"] = BatchPrior(normal=prior_normal * 2.0 - 1.0)
 
         # Add exposure prior from EXIF if available (move to GPU)
         if "exposure" in batch and batch["exposure"][0] is not None:

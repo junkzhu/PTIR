@@ -35,16 +35,17 @@ def ssim(img1, img2, window_size=11, size_average=True):
 
 
 @torch.cuda.nvtx.range("pseudo_normal_loss")
-def pseudo_normal_loss(render_normal, pseudo_normal, valid_mask=None, eps=1e-6):
+def pseudo_normal_loss(render_normal, pseudo_normal, valid_mask=None, eps=1e-6, detach_pseudo_normal=True):
     """
     Args:
         render_normal: [B, H, W, 3] or [H, W, 3], world-space rendered normal.
         pseudo_normal: Same shape as render_normal, world-space pseudo normal.
         valid_mask: Optional bool/float mask shaped [B, H, W, 1], [B, H, W], [H, W, 1], or [H, W].
         eps: Normalization epsilon.
+        detach_pseudo_normal: Whether to stop gradients through pseudo_normal.
     """
     n_render = render_normal
-    n_pseudo = pseudo_normal.detach()
+    n_pseudo = pseudo_normal.detach() if detach_pseudo_normal else pseudo_normal
 
     loss = 1.0 - (n_render * n_pseudo).sum(dim=-1)
 
@@ -56,6 +57,41 @@ def pseudo_normal_loss(render_normal, pseudo_normal, valid_mask=None, eps=1e-6):
 
     if loss.numel() == 0:
         return render_normal.sum() * 0.0
+
+    return loss.mean()
+
+
+@torch.cuda.nvtx.range("prior_normal_alignment_loss")
+def prior_normal_alignment_loss(render_normal, prior_normal, valid_mask=None, eps=1e-6):
+    """
+    Alignment loss between rendered shading normals and diffusion normal priors.
+
+    Args:
+        render_normal: [B, H, W, 3] rendered shading normal.
+        prior_normal: Same shape as render_normal, diffusion prior normal.
+        valid_mask: Optional mask shaped [B, H, W, 1], [B, H, W], [H, W, 1], or [H, W].
+        eps: Minimum denominator for masked reduction.
+    """
+    render_normal = render_normal
+    prior_normal = prior_normal.detach()
+    loss = 1.0 - (render_normal * prior_normal).sum(dim=-1)
+
+    if valid_mask is not None:
+        valid_mask = valid_mask.detach().to(device=render_normal.device, dtype=render_normal.dtype)
+        if valid_mask.ndim == loss.ndim + 1:
+            valid_mask = valid_mask.squeeze(-1)
+        elif valid_mask.ndim == loss.ndim:
+            pass
+        else:
+            raise ValueError(f"valid_mask must be compatible with {tuple(loss.shape)}, got {valid_mask.ndim}D")
+
+        if valid_mask.shape[0] == 1 and loss.shape[0] != 1:
+            valid_mask = valid_mask.expand(loss.shape[0], -1, -1)
+        if valid_mask.shape != loss.shape:
+            raise ValueError(f"valid_mask shape {tuple(valid_mask.shape)} is not compatible with {tuple(loss.shape)}")
+
+        loss = loss * valid_mask
+        return loss.sum() / torch.clamp(valid_mask.sum(), min=eps)
 
     return loss.mean()
 

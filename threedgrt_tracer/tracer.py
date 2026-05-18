@@ -287,7 +287,6 @@ class Tracer:
             pred_rgb, pred_opacity = gaussians.background(
                 gpu_batch.T_to_world.contiguous(), gpu_batch.rays_dir.contiguous(), pred_rgb, pred_opacity, train
             )
-            pred_shadingnormal = gaussians.background.apply_to_attribute(pred_shadingnormal, pred_opacity)
 
             pred_dist = pred_dist / pred_opacity
             pred_dist = torch.nan_to_num(pred_dist, 0.0, 0.0)

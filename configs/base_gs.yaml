@@ -23,6 +23,18 @@ log_frequency: 1
 compute_extra_metrics: true
 visualize_frequency: 1000
 
+diffusion_prior:
+  output_dir: rgb2x/outputs
+  model_name_or_path: zheng95z/rgb-to-x
+  cache_dir: rgb2x/model_cache
+  local_files_only: false
+  aovs: ["normal", "albedo", "roughness"]  # Extensible: add "albedo", "roughness", "metallic", "irradiance" later.
+  input_size: 800
+  inference_steps: 50
+  seed: 42
+  skip_existing: true
+  batch_size: 4
+
 enable_frame_timings: false
 
 enable_writer: true
@@ -135,9 +147,17 @@ loss:
   depth_distortion_start_iteration: 15000
   lambda_depth_distortion: 100
 
+  use_normal_prior_regularization: false
+  normal_priors_end_iteration: 30000
+  lambda_normal_priors_regularization: 0.05
+
   use_edge_aware_smoothness: true
   lambda_edge_aware_smoothness: 0.02
+  edge_aware_smoothness_outputs:
+    - pred_shadingnormal
+    #- pred_dist
   edge_aware_smoothness_scale: 1.0 # Scales the GT image gradient in exp(-scale * gt_grad); larger values reduce smoothing more strongly at GT edges.
+  edge_aware_smoothness_eps: 1.0e-3
 
 # Post-processing configuration
 post_processing:

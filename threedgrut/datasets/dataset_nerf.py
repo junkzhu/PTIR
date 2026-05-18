@@ -27,7 +27,7 @@ from torch.utils.data import Dataset
 
 from threedgrut.utils.logger import logger
 
-from .protocols import Batch, BoundedMultiViewDataset, DatasetVisualization
+from .protocols import Batch, BatchPrior, BoundedMultiViewDataset, DatasetVisualization
 from .utils import (
     create_camera_visualization,
     create_pixel_coords,
@@ -261,9 +261,21 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
                 normal_path,
                 self.img_wh,
                 return_alpha=False,
-                bg_color=self.bg_color,
+                bg_color=None,
             )
             output_dict["normal"] = torch.tensor(normal).reshape(out_shape)
+
+        if hasattr(self, "prior_normal_paths"):
+            prior_normal_path = self.prior_normal_paths[idx]
+            if not os.path.exists(prior_normal_path):
+                raise FileNotFoundError(f"Diffusion prior normal path {prior_normal_path} does not exist.")
+            prior_normal = NeRFDataset.__read_image(
+                prior_normal_path,
+                self.img_wh,
+                return_alpha=False,
+                bg_color=None,
+            )
+            output_dict["prior_normal"] = torch.tensor(prior_normal).reshape(out_shape)
 
         mask_path = self.mask_paths[idx]
         if os.path.exists(mask_path):
@@ -317,6 +329,10 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
         if "normal" in batch:
             normal = batch["normal"][0].to(self.device, non_blocking=True) / 255.0
             sample["normal_gt"] = normal * 2.0 - 1.0
+
+        if "prior_normal" in batch:
+            prior_normal = batch["prior_normal"][0].to(self.device, non_blocking=True) / 255.0
+            sample["prior"] = BatchPrior(normal=prior_normal * 2.0 - 1.0)
 
         return Batch(**sample)
 

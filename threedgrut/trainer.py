@@ -37,6 +37,7 @@ from threedgrut.model.losses import (
     depth_distortion_loss,
     edge_aware_smoothness_loss,
     mask_entropy_loss,
+    prior_normal_alignment_loss,
     pseudo_normal_loss,
     ssim,
 )
@@ -574,7 +575,7 @@ class Trainer3DGRUT:
         # Mask entropy loss on rendered opacity
         loss_mask_entropy = torch.zeros(1, device=self.device)
         lambda_mask_entropy = 0.0
-        if self.conf.loss.get("use_mask_entropy", False):
+        if self.conf.loss.use_mask_entropy:
             pred_opacity = outputs.get("pred_opacity")
             if mask is not None and pred_opacity is not None:
                 with torch.cuda.nvtx.range(f"loss-mask-entropy"):
@@ -589,6 +590,28 @@ class Trainer3DGRUT:
                 loss_scale = torch.abs(self.model.get_scale()).mean()
                 lambda_scale = self.conf.loss.lambda_scale
 
+
+        # Diffusion prior regularization on shading normals
+        loss_priors_regularization = torch.zeros(1, device=self.device)
+        lambda_priors_regularization = 0.0
+        use_normal_prior_regularization = self.conf.loss.use_normal_prior_regularization
+        normal_priors_end_iteration = self.conf.loss.normal_priors_end_iteration
+        normal_prior_active = use_normal_prior_regularization and (
+            normal_priors_end_iteration < 0 or self.global_step <= normal_priors_end_iteration
+        )
+        if normal_prior_active:
+            pred_shadingnormal = outputs.get("pred_shadingnormal")
+            prior = getattr(gpu_batch, "prior", None)
+            prior_normal = getattr(prior, "normal", None) if prior is not None else None
+            if pred_shadingnormal is not None and prior_normal is not None:
+                with torch.cuda.nvtx.range(f"loss-priors-regularization"):
+                    loss_priors_regularization = prior_normal_alignment_loss(
+                        pred_shadingnormal,
+                        prior_normal,
+                        valid_mask=mask,
+                    )
+                    lambda_priors_regularization = self.conf.loss.lambda_normal_priors_regularization
+
         # Shading normal loss
         loss_shading_normal = torch.zeros(1, device=self.device)
         lambda_shading_normal = 0.0
@@ -602,6 +625,7 @@ class Trainer3DGRUT:
                         pred_shadingnormal,
                         pseudo_normal,
                         valid_mask=pseudo_normal_mask,
+                        detach_pseudo_normal=not normal_prior_active,
                     )
                     lambda_shading_normal = self.conf.loss.lambda_shading_normal
 
@@ -610,7 +634,7 @@ class Trainer3DGRUT:
         lambda_depth_distortion = 0.0
         if (
             self.conf.loss.use_depth_distortion
-            and self.global_step >= self.conf.loss.get("depth_distortion_start_iteration", 0)
+            and self.global_step >= self.conf.loss.depth_distortion_start_iteration
         ):
             pred_depth_distortion = outputs.get("pred_depth_distortion")
             if pred_depth_distortion is not None:
@@ -622,19 +646,30 @@ class Trainer3DGRUT:
         loss_edge_aware_smoothness = torch.zeros(1, device=self.device)
         lambda_edge_aware_smoothness = 0.0
         if self.conf.loss.use_edge_aware_smoothness:
-            smoothness_output_key = self.conf.loss.get("edge_aware_smoothness_output", "pred_shadingnormal")
-            pred_smoothness_map = outputs.get(smoothness_output_key)
-            if pred_smoothness_map is not None:
-                with torch.cuda.nvtx.range(f"loss-edge-aware-smoothness"):
-                    edge_aware_smoothness_scale = self.conf.loss.get("edge_aware_smoothness_scale", 1.0)
-                    loss_edge_aware_smoothness = edge_aware_smoothness_loss(
-                        pred_smoothness_map,
-                        rgb_gt,
-                        mask=mask,
-                        eps=self.conf.loss.get("edge_aware_smoothness_eps", 1e-3),
-                        scale=edge_aware_smoothness_scale,
+            with torch.cuda.nvtx.range(f"loss-edge-aware-smoothness"):
+                edge_aware_smoothness_scale = self.conf.loss.edge_aware_smoothness_scale
+                edge_aware_smoothness_eps = self.conf.loss.edge_aware_smoothness_eps
+                edge_aware_smoothness_outputs = self.conf.loss.edge_aware_smoothness_outputs
+                if len(edge_aware_smoothness_outputs) == 0:
+                    raise ValueError("loss.edge_aware_smoothness_outputs must contain at least one output key")
+
+                edge_aware_terms = []
+                for smoothness_output_key in edge_aware_smoothness_outputs:
+                    pred_smoothness_map = outputs.get(smoothness_output_key)
+                    if pred_smoothness_map is None:
+                        raise KeyError(f"Configured edge-aware smoothness output '{smoothness_output_key}' was not rendered")
+                    edge_aware_terms.append(
+                        edge_aware_smoothness_loss(
+                            pred_smoothness_map,
+                            rgb_gt,
+                            mask=mask,
+                            eps=edge_aware_smoothness_eps,
+                            scale=edge_aware_smoothness_scale,
+                        )
                     )
-                    lambda_edge_aware_smoothness = self.conf.loss.get("lambda_edge_aware_smoothness", 0.0)
+
+                loss_edge_aware_smoothness = torch.stack(edge_aware_terms).mean()
+                lambda_edge_aware_smoothness = self.conf.loss.lambda_edge_aware_smoothness
 
         # Total loss
         loss = (
@@ -645,6 +680,7 @@ class Trainer3DGRUT:
             + lambda_mask_entropy * loss_mask_entropy
             + lambda_scale * loss_scale
             + lambda_shading_normal * loss_shading_normal
+            + lambda_priors_regularization * loss_priors_regularization
             + lambda_depth_distortion * loss_depth_distortion
             + lambda_edge_aware_smoothness * loss_edge_aware_smoothness
         )
@@ -657,6 +693,7 @@ class Trainer3DGRUT:
             mask_entropy_loss=lambda_mask_entropy * loss_mask_entropy,
             scale_loss=lambda_scale * loss_scale,
             shading_normal_loss=lambda_shading_normal * loss_shading_normal,
+            priors_regularization_loss=lambda_priors_regularization * loss_priors_regularization,
             depth_distortion_loss=lambda_depth_distortion * loss_depth_distortion,
             edge_aware_smoothness_loss=lambda_edge_aware_smoothness * loss_edge_aware_smoothness,
         )
@@ -795,16 +832,19 @@ class Trainer3DGRUT:
             if self.conf.loss.use_opacity:
                 opacity_loss = np.mean(batch_metrics["losses"]["opacity_loss"])
                 writer.add_scalar("loss/opacity/train", opacity_loss, global_step)
-            if self.conf.loss.get("use_mask_entropy", False):
+            if self.conf.loss.use_mask_entropy:
                 mask_entropy = np.mean(batch_metrics["losses"]["mask_entropy_loss"])
                 writer.add_scalar("loss/mask_entropy/train", mask_entropy, global_step)
             if self.conf.loss.use_scale:
                 scale_loss = np.mean(batch_metrics["losses"]["scale_loss"])
                 writer.add_scalar("loss/scale/train", scale_loss, global_step)
-            if self.conf.loss.get("use_shading_normal", False):
+            if self.conf.loss.use_shading_normal:
                 shading_normal_loss = np.mean(batch_metrics["losses"]["shading_normal_loss"])
                 writer.add_scalar("loss/shading_normal/train", shading_normal_loss, global_step)
-            if self.conf.loss.get("use_edge_aware_smoothness", False):
+            if self.conf.loss.use_normal_prior_regularization:
+                priors_regularization_loss = np.mean(batch_metrics["losses"]["priors_regularization_loss"])
+                writer.add_scalar("loss/priors_regularization/train", priors_regularization_loss, global_step)
+            if self.conf.loss.use_edge_aware_smoothness:
                 edge_aware_smoothness_loss = np.mean(batch_metrics["losses"]["edge_aware_smoothness_loss"])
                 writer.add_scalar("loss/edge_aware_smoothness/train", edge_aware_smoothness_loss, global_step)
             if self.post_processing is not None and "post_processing_reg_loss" in batch_metrics["losses"]:

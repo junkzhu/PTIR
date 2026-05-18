@@ -21,6 +21,16 @@ import torch
 
 
 @dataclass
+class BatchPrior:
+    normal: Optional[torch.Tensor] = None
+
+    def validate(self, batch_size: int):
+        if self.normal is not None:
+            assert self.normal.ndim == 4, "prior.normal must be a 4D tensor [B, H, W, 3]"
+            assert self.normal.shape[0] == batch_size, "prior.normal must have the same batch size"
+
+
+@dataclass
 class Batch:
     rays_ori: torch.Tensor  # [B, H, W, 3] ray origins in arbitrary space
     rays_dir: torch.Tensor  # [B, H, W, 3] ray directions in arbitrary space
@@ -44,6 +54,7 @@ class Batch:
     pixel_coords: Optional[torch.Tensor] = None  # [B, H, W, 2] (x, y) with +0.5 center offset
     # Exposure prior from EXIF metadata (mean-normalized log2 exposure [1], None if unavailable)
     exposure: Optional[torch.Tensor] = None
+    prior: Optional[BatchPrior] = None
 
     def __post_init__(self):
         batch_size = self.T_to_world.shape[0]
@@ -74,6 +85,8 @@ class Batch:
             assert self.pixel_coords.ndim == 4, "pixel_coords must be a 4D tensor [B, H, W, 2]"
             assert self.pixel_coords.shape[0] == batch_size, "pixel_coords must have the same batch size"
             assert self.pixel_coords.shape[3] == 2, "pixel_coords last dimension must be 2 (x, y)"
+        if self.prior is not None:
+            self.prior.validate(batch_size)
 
 
 class BoundedMultiViewDataset(Protocol):

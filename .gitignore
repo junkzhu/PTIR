@@ -13,6 +13,10 @@ extra_info/
 eval/
 extra_info/
 
+rgb2/outputs/
+rgb2x/model_cache/
+rgb2x/outputs/
+
 debug_**
 
 utils/ngc/grid_search_configs

@@ -18,6 +18,13 @@ einops
 imageio
 msgpack
 dataclasses_json
+# RGB2X diffusion prior
+diffusers
+transformers
+tokenizers
+accelerate
+safetensors
+socksio
 # JIT compilation
 setuptools==78.1.1
 # Fused-ssim
