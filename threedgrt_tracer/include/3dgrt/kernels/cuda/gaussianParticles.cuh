@@ -617,6 +617,12 @@ __device__ inline void processHitBwd(
         const float3 rayShadingNormal = weight * particleShadingNormal;
         shadingnormal += rayShadingNormal;
 
+        // Propagate shading-normal loss through weight = alpha * transmittance into density/geometry.
+        const float3 residualRayShadingNormal =
+            nextTransmit <= minTransmittance ? make_float3(0.0f) : (integratedShadingNormal - shadingnormal) / nextTransmit;
+        const float galphaRayShadingNormalGrd =
+            transmittance * dot(particleShadingNormal - residualRayShadingNormal, shadingNormalGrad);
+
         atomicAdd(&particlesShadingNormalGrad[particleIdx * 3 + 0], weight * shadingNormalGrad.x);
         atomicAdd(&particlesShadingNormalGrad[particleIdx * 3 + 1], weight * shadingNormalGrad.y);
         atomicAdd(&particlesShadingNormalGrad[particleIdx * 3 + 2], weight * shadingNormalGrad.z);
@@ -633,7 +639,7 @@ __device__ inline void processHitBwd(
         // ===> d_rayRad / d_gdns = gres * transmit * grad - gres * transmit * residualRayRad
         atomicAdd(
             &particleDensityGrad.density,
-            gres * (galphaRayHitGrd + galphaRayDnsGrd + transmittance * (grad.x - residualRayRad.x) * radianceGrad.x +
+            gres * (galphaRayHitGrd + galphaRayDnsGrd + galphaRayShadingNormalGrd + transmittance * (grad.x - residualRayRad.x) * radianceGrad.x +
                     transmittance * (grad.y - residualRayRad.y) * radianceGrad.y +
                     transmittance * (grad.z - residualRayRad.z) * radianceGrad.z));
 
@@ -648,7 +654,7 @@ __device__ inline void processHitBwd(
         //                  transmit * residualRayRad
         // ===> d_rayRad / d_gres = gdns * transmit * grad - gdns * transmit * residualRayRad
         const float gresGrd =
-            particleDensity * (galphaRayHitGrd + galphaRayDnsGrd + transmittance * (grad.x - residualRayRad.x) * radianceGrad.x +
+            particleDensity * (galphaRayHitGrd + galphaRayDnsGrd + galphaRayShadingNormalGrd + transmittance * (grad.x - residualRayRad.x) * radianceGrad.x +
                                transmittance * (grad.y - residualRayRad.y) * radianceGrad.y +
                                transmittance * (grad.z - residualRayRad.z) * radianceGrad.z);
 
