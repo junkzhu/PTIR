@@ -40,7 +40,7 @@ def setup_threedgptir(conf):
     ]
 
     # Compile slang kernels
-    slang_build_dir = os.path.join(os.path.dirname(__file__), "include", "3dgrt", "kernels", "slang")
+    slang_build_dir = os.path.join(os.path.dirname(__file__), "include", "3dgptir", "kernels", "slang")
     jit.compile_slang_kernel(
         kernel_files=[
             f"{os.path.join(slang_build_dir,'models/gaussianParticles.slang')}",

@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <3dgrt/kernels/slang/common/transforms.slang>
+#include <3dgptir/kernels/slang/common/transforms.slang>
 namespace gaussianParticle {
 static const int KernelDegree               = GAUSSIAN_PARTICLE_KERNEL_DEGREE;
 static const float MinParticleKernelDensity = GAUSSIAN_PARTICLE_MIN_KERNEL_DENSITY;

@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <3dgrt/kernels/slang/common/sphericalHarmonics.slang>
+#include <3dgptir/kernels/slang/common/sphericalHarmonics.slang>
 
 namespace shRadiativeParticle
 {

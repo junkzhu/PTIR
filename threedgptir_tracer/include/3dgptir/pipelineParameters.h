@@ -17,9 +17,9 @@
 
 #include <optix.h>
 
-#include <3dgrt/particleDensity.h>
-#include <3dgrt/pipelineDefinitions.h>
-#include <3dgrt/tensorAccessor.h>
+#include <3dgptir/particleDensity.h>
+#include <3dgptir/pipelineDefinitions.h>
+#include <3dgptir/tensorAccessor.h>
 
 struct PipelineParameters {
     float4 rayToWorld[3];                          ///< float3x4 ray to world transformation (row-major)

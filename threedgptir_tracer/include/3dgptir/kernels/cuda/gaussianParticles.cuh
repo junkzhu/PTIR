@@ -15,8 +15,8 @@
 
 #include <optix.h>
 
-#include <3dgrt/mathUtils.h>
-#include <3dgrt/particleDensity.h>
+#include <3dgptir/mathUtils.h>
+#include <3dgptir/particleDensity.h>
 
 // Define integer types for NVRTC compatibility
 typedef int int32_t;

@@ -15,9 +15,9 @@
 
 #pragma once
 
-#include <3dgrt/pipelineParams.h>
-#include <3dgrt/tensorAccessor.h>
-#include <3playground/cutexture.h>
+#include <3dgptir/pipelineParameters.h>
+#include <3dgptir/tensorAccessor.h>
+#include <playground/cutexture.h>
 
 #include <optix.h>
 

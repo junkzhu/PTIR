@@ -27,11 +27,11 @@
 #include <torch/extension.h>
 #endif
 
-#include <3dgrt/cuoptixMacros.h>
-#include <3dgrt/optixTracer.h>
-#include <3dgrt/particlePrimitives.h>
-#include <3dgrt/pipelineParameters.h>
-#include <3dgrt/tensorBuffering.h>
+#include <3dgptir/cuoptixMacros.h>
+#include <3dgptir/optixTracer.h>
+#include <3dgptir/particlePrimitives.h>
+#include <3dgptir/pipelineParameters.h>
+#include <3dgptir/tensorBuffering.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <ATen/cuda/CUDAUtils.h>
 #include <algorithm>
@@ -857,6 +857,7 @@ OptixTracer::trace(uint32_t frameNumber,
                    torch::Tensor rayOri,
                    torch::Tensor rayDir,
                    torch::Tensor particleDensity,
+                   torch::Tensor particleMaterial,
                    torch::Tensor particleRadiance,
                    torch::Tensor particleShadingNormal,
                    uint32_t renderOpts,
@@ -893,6 +894,7 @@ OptixTracer::trace(uint32_t frameNumber,
     paramsHost.rayDirection = packed_accessor32<float, 4>(rayDir);
 
     paramsHost.particleDensity      = getPtr<const ParticleDensity>(particleDensity);
+    (void)particleMaterial;
     paramsHost.particleRadiance     = getPtr<const float>(particleRadiance);
     paramsHost.particleShadingNormal = getPtr<const float>(particleShadingNormal);
     paramsHost.particleExtendedData = reinterpret_cast<const void*>(_state->gPipelineParticleData);
@@ -923,7 +925,7 @@ OptixTracer::trace(uint32_t frameNumber,
         rayRad, rayDns, rayHit, rayHitSecondMoment, rayDepthDistortion, rayNrm, rayShadingNrm, rayHitsCount, particleVisibility);
 }
 
-std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
 OptixTracer::traceBwd(uint32_t frameNumber,
                       torch::Tensor rayToWorld,
                       torch::Tensor rayOri,
@@ -936,6 +938,7 @@ OptixTracer::traceBwd(uint32_t frameNumber,
                       torch::Tensor rayNrm,
                       torch::Tensor rayShadingNrm,
                       torch::Tensor particleDensity,
+                      torch::Tensor particleMaterial,
                       torch::Tensor particleRadiance,
                       torch::Tensor particleShadingNormal,
                       torch::Tensor rayRadGrd,
@@ -951,6 +954,7 @@ OptixTracer::traceBwd(uint32_t frameNumber,
 
     const torch::TensorOptions opts    = torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA);
     torch::Tensor particleDensityGrad  = torch::zeros({particleDensity.size(0), particleDensity.size(1)}, opts);
+    torch::Tensor particleMaterialGrad  = torch::zeros({particleMaterial.size(0), particleMaterial.size(1)}, opts);
     torch::Tensor particleRadianceGrad = torch::zeros({particleRadiance.size(0), particleRadiance.size(1)}, opts);
     torch::Tensor particleShadingNormalGrad = torch::zeros({particleShadingNormal.size(0), particleShadingNormal.size(1)}, opts);
 
@@ -973,6 +977,7 @@ OptixTracer::traceBwd(uint32_t frameNumber,
     paramsHost.rayDirection = packed_accessor32<float, 4>(rayDir);
 
     paramsHost.particleDensity      = getPtr<const ParticleDensity>(particleDensity);
+    (void)particleMaterial;
     paramsHost.particleRadiance     = getPtr<const float>(particleRadiance);
     paramsHost.particleShadingNormal = getPtr<const float>(particleShadingNormal);
     paramsHost.particleExtendedData = reinterpret_cast<const void*>(_state->gPipelineParticleData);
@@ -1007,6 +1012,6 @@ OptixTracer::traceBwd(uint32_t frameNumber,
                             sizeof(PipelineBackwardParameters), &_state->sbtTracingBwd,
                             rayRad.size(2), rayRad.size(1), rayRad.size(0)));
 
-    return std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>(
-        particleDensityGrad, particleRadianceGrad, particleShadingNormalGrad);
+    return std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>(
+        particleDensityGrad, particleMaterialGrad, particleRadianceGrad, particleShadingNormalGrad);
 }

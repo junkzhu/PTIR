@@ -16,7 +16,7 @@
 #pragma once
 
 // -----------------------------------------------------------------------------------------------
-// - 3dgrtTracer.cuh exposes 3dgrt as a utility, to be used by other shaders.                    -
+// - 3dgrtTracer.cuh exposes 3dgptir as a utility, to be used by other shaders.                    -
 // - Applications should define launch parameters of base type PipelineParameters prior          -
 // - to the inclusion of this module:                                                            -
 // -    extern "C" {                                                                             -
@@ -25,7 +25,7 @@
 // -----------------------------------------------------------------------------------------------
 
 // clang-format off
-#include <3dgrt/kernels/slang/gaussianParticles.cuh>
+#include <3dgptir/kernels/slang/gaussianParticles.cuh>
 // clang-format on
 
 struct RayHit {

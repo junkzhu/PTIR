@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <3dgrt/mathUtils.h>
-#include <3dgrt/pipelineDefinitions.h>
+#include <3dgptir/mathUtils.h>
+#include <3dgptir/pipelineDefinitions.h>
 // clang-format on
 
 #include <torch/extension.h>

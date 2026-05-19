@@ -21,7 +21,7 @@
 #include <torch/extension.h>
 #endif
 
-#include <3dgrt/tensorAccessor.h>
+#include <3dgptir/tensorAccessor.h>
 
 //------------------------------------------------------------------------------
 // Torch access

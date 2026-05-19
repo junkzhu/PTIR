@@ -15,7 +15,7 @@
 
 #pragma once
 
-#include <3dgrt/pipelineDefinitions.h>
+#include <3dgptir/pipelineDefinitions.h>
 #include <cuda_runtime.h>
 #include <optix.h>
 #include <optix_stack_size.h>
@@ -139,41 +139,45 @@ public:
 
     virtual ~OptixTracer();
 
-    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor> virtual trace(uint32_t frameNumber,
-                                                                                                                                                                    torch::Tensor rayToWorld,
-                                                                                                                                                                    torch::Tensor rayOri,
-                                                                                                                                                                    torch::Tensor rayDir,
-                                                                                                                                                                    torch::Tensor particleDensity,
-                                                                                                                                                                    torch::Tensor particleRadiance,
-                                                                                                                                                                    torch::Tensor particleShadingNormal,
-                                                                                                                                                                    uint32_t renderOpts,
-                                                                                                                                                                    int sphDegree,
-                                                                                                                                                                    float minTransmittance);
+    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor> virtual trace(
+        uint32_t frameNumber,
+        torch::Tensor rayToWorld,
+        torch::Tensor rayOri,
+        torch::Tensor rayDir,
+        torch::Tensor particleDensity,
+        torch::Tensor particleMaterial,
+        torch::Tensor particleRadiance,
+        torch::Tensor particleShadingNormal,
+        uint32_t renderOpts,
+        int sphDegree,
+        float minTransmittance);
 
-    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> virtual traceBwd(uint32_t frameNumber,
-                                                                             torch::Tensor rayToWorld,
-                                                                             torch::Tensor rayOri,
-                                                                             torch::Tensor rayDir,
-                                                                             torch::Tensor rayRad,
-                                                                             torch::Tensor rayDns,
-                                                                             torch::Tensor rayHit,
-                                                                             torch::Tensor rayHitSecondMoment,
-                                                                             torch::Tensor rayDepthDistortion,
-                                                                             torch::Tensor rayNrm,
-                                                                             torch::Tensor rayShadingNrm,
-                                                                             torch::Tensor particleDensity,
-                                                                             torch::Tensor particleRadiance,
-                                                                             torch::Tensor particleShadingNormal,
-                                                                             torch::Tensor rayRadGrd,
-                                                                             torch::Tensor rayDnsGrd,
-                                                                             torch::Tensor rayHitGrd,
-                                                                             torch::Tensor rayHitSecondMomentGrd,
-                                                                             torch::Tensor rayDepthDistortionGrd,
-                                                                             torch::Tensor rayNrmGrd,
-                                                                             torch::Tensor rayShadingNrmGrd,
-                                                                             uint32_t renderOpts,
-                                                                             int sphDegree,
-                                                                             float minTransmittance);
+    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor> virtual traceBwd(
+        uint32_t frameNumber,
+        torch::Tensor rayToWorld,
+        torch::Tensor rayOri,
+        torch::Tensor rayDir,
+        torch::Tensor rayRad,
+        torch::Tensor rayDns,
+        torch::Tensor rayHit,
+        torch::Tensor rayHitSecondMoment,
+        torch::Tensor rayDepthDistortion,
+        torch::Tensor rayNrm,
+        torch::Tensor rayShadingNrm,
+        torch::Tensor particleDensity,
+        torch::Tensor particleMaterial,
+        torch::Tensor particleRadiance,
+        torch::Tensor particleShadingNormal,
+        torch::Tensor rayRadGrd,
+        torch::Tensor rayDnsGrd,
+        torch::Tensor rayHitGrd,
+        torch::Tensor rayHitSecondMomentGrd,
+        torch::Tensor rayDepthDistortionGrd,
+        torch::Tensor rayNrmGrd,
+        torch::Tensor rayShadingNrmGrd,
+        uint32_t renderOpts,
+        int sphDegree,
+        float minTransmittance);
 
     virtual void buildBVH(torch::Tensor mogPos,
                           torch::Tensor mogRot,
