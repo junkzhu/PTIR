@@ -384,6 +384,7 @@ class Trainer3DGRUT:
         self.visualizer = TrainingVisualizer(
             output_dir=self.tracking.output_dir,
             frequency=getattr(conf, "visualize_frequency", 0),
+            has_normal_gt=conf.dataset.get("normal", False),
         )
 
     def init_normal_utils(self):

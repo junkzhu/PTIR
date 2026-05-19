@@ -29,10 +29,11 @@ class VisualizationRowSpec:
 class TrainingVisualizer:
     """Save periodic training visualizations to disk."""
 
-    def __init__(self, output_dir: str | os.PathLike, frequency: int):
+    def __init__(self, output_dir: str | os.PathLike, frequency: int, has_normal_gt: bool = True):
         self.frequency = int(frequency)
         self.enabled = self.frequency > 0
         self.output_dir = Path(output_dir) / "visualizations"
+        self.has_normal_gt = bool(has_normal_gt)
         self.row_specs = [
             VisualizationRowSpec(
                 name="rgb",
@@ -93,15 +94,13 @@ class TrainingVisualizer:
 
         ours = self._to_channel_last_batch(outputs.get(spec.ours_key))
         gt = self._to_channel_last_batch(getattr(batch, spec.gt_attr, None))
-        if ours is None or gt is None:
+        if ours is None:
             return None
 
         ours_image = spec.ours_transform(self._to_image_batch(ours))
-        gt_image = spec.gt_transform(self._to_image_batch(gt))
-        gt_mask = self._gt_image_mask(gt_image) if spec.name == "normal" else None
-
-        err_map = spec.error(ours, gt)
-        err_image = self._error_batch_to_image(err_map, gt_mask, fixed_max_error=spec.fixed_max_error)
+        gt_image, err_image = self._build_gt_and_error_images(spec, ours, ours_image, gt)
+        if gt_image is None or err_image is None:
+            return None
 
         row_images = [
             ours_image,
@@ -116,6 +115,26 @@ class TrainingVisualizer:
             row_images.insert(1, pseudo_normal_image)
 
         return self._concat_images(row_images, dim=-1)
+
+    def _build_gt_and_error_images(
+        self,
+        spec: VisualizationRowSpec,
+        ours: torch.Tensor,
+        ours_image: torch.Tensor,
+        gt: Optional[torch.Tensor],
+    ) -> tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
+        if spec.name == "normal" and not self.has_normal_gt:
+            return torch.zeros_like(ours_image), torch.zeros_like(ours_image)
+
+        if gt is None:
+            return None, None
+
+        gt_image = spec.gt_transform(self._to_image_batch(gt))
+        gt_mask = self._gt_image_mask(gt_image) if spec.name == "normal" else None
+
+        err_map = spec.error(ours, gt)
+        err_image = self._error_batch_to_image(err_map, gt_mask, fixed_max_error=spec.fixed_max_error)
+        return gt_image, err_image
 
     @staticmethod
     def _normal_angle_error(ours: torch.Tensor, gt: torch.Tensor) -> torch.Tensor:

@@ -69,6 +69,23 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
         # Clear existing worker caches to force recreation with new intrinsics
         self._worker_gpu_cache.clear()
 
+    def _resolve_transforms_path(self, split: str) -> str:
+        if split == "val":
+            candidates = ("transforms_val.json", "transforms_test.json")
+        elif split == "trainval":
+            candidates = ("transforms_train.json", "transforms_val.json", "transforms_test.json")
+        else:
+            candidates = (f"transforms_{split}.json",)
+
+        for filename in candidates:
+            path = os.path.join(self.root_dir, filename)
+            if os.path.exists(path):
+                return path
+
+        raise FileNotFoundError(
+            f"No transforms file found for split={split!r} in {self.root_dir}. Tried: {', '.join(candidates)}"
+        )
+
     def _lazy_worker_ray_tensors_cache(self):
         """Create GPU-cached ray directions and pixel coordinates for current worker."""
         worker_id = get_worker_id()
@@ -99,7 +116,7 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
         return self._worker_gpu_cache[worker_id]
 
     def read_intrinsics(self):
-        with open(os.path.join(self.root_dir, "transforms_train.json"), "r") as f:
+        with open(self._resolve_transforms_path("train"), "r") as f:
             meta = json.load(f)
 
         # !! Assumptions !!
@@ -138,12 +155,12 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
         self.normal_paths = []
 
         if split == "trainval":
-            with open(os.path.join(self.root_dir, "transforms_train.json"), "r") as f:
+            with open(self._resolve_transforms_path("train"), "r") as f:
                 frames = json.load(f)["frames"]
-            with open(os.path.join(self.root_dir, "transforms_val.json"), "r") as f:
+            with open(self._resolve_transforms_path("val"), "r") as f:
                 frames += json.load(f)["frames"]
         else:
-            with open(os.path.join(self.root_dir, f"transforms_{split}.json"), "r") as f:
+            with open(self._resolve_transforms_path(split), "r") as f:
                 frames = json.load(f)["frames"]
 
         cam_centers = []
