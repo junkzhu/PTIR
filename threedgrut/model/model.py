@@ -23,6 +23,7 @@ import numpy as np
 import torch
 from plyfile import PlyData, PlyElement
 
+import threedgptir_tracer
 import threedgrt_tracer
 import threedgrut.model.background as background
 from threedgrut.datasets.protocols import Batch
@@ -204,6 +205,8 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         # Rendering method
         if conf.render.method == "3dgrt":
             self.renderer = threedgrt_tracer.Tracer(conf)
+        elif conf.render.method in ("3dgptir", "3dgptir"):
+            self.renderer = threedgptir_tracer.Tracer(conf)
         else:
             raise ValueError(f"Unknown rendering method: {conf.render.method}")
 

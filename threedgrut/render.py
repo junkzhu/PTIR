@@ -101,7 +101,7 @@ class Renderer:
 
         conf = checkpoint["config"]
         # overrides
-        if conf["render"]["method"] == "3dgrt":
+        if conf["render"]["method"] in ("3dgrt", "3dgptir"):
             conf["render"]["particle_kernel_density_clamping"] = True
             conf["render"]["min_transmittance"] = 0.03
         conf["render"]["enable_kernel_timings"] = True
