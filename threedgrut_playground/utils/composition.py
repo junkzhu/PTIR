@@ -25,7 +25,18 @@ def join_gaussians(*gaussians):
     """
     main_gaussian = gaussians[0]
     composition = MixtureOfGaussians(conf=main_gaussian.conf, scene_extent=main_gaussian.scene_extent)
-    fields = ["positions", "rotation", "scale", "density", "features_albedo", "features_specular"]
+    fields = [
+        "positions",
+        "rotation",
+        "scale",
+        "density",
+        "features_albedo",
+        "features_specular",
+        "shading_normal",
+        "material_albedo",
+        "material_roughness",
+        "material_metallic",
+    ]
     concatenated_fields = {}
 
     for field in fields:

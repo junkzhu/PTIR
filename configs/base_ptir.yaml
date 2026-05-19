@@ -1,0 +1,43 @@
+# @package _global_
+
+# order in which configs override each other (/* - denotes a relative search path)
+defaults:
+  - /base_gs
+  - _self_
+
+model:
+  freeze_geometry: true
+  optimize_density: false
+  optimize_features_albedo: false
+  optimize_features_specular: false
+  optimize_position: false
+  optimize_rotation: false
+  optimize_scale: false
+  
+  optimize_shading_normal: false
+  optimize_material_albedo: true
+  optimize_material_roughness: true
+  optimize_material_metallic: false
+
+optimizer:
+  params:
+    density:
+      lr: 0.0
+    features_albedo:
+      lr: 0.0
+    features_specular:
+      lr: 0.0
+    positions:
+      lr: 0.0
+    rotation:
+      lr: 0.0
+    scale:
+      lr: 0.0
+    shading_normal:
+      lr: 0.0
+    material_albedo:
+      lr: 0.0025
+    material_roughness:
+      lr: 0.0025
+    material_metallic:
+      lr: 0.0

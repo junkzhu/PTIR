@@ -73,6 +73,9 @@ model:
   optimize_rotation: true
   optimize_scale: true
   optimize_shading_normal: true
+  optimize_material_albedo: false
+  optimize_material_roughness: false
+  optimize_material_metallic: false
   bvh_update_frequency: 1
   progressive_training:
     feature_type: "sh" # one of [sh, mlp], currently only sh supported

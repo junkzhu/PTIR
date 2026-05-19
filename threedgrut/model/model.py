@@ -75,6 +75,21 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
     def get_features_specular(self) -> torch.Tensor:
         return self.features_specular
 
+    def get_material_albedo(self, preactivation=False) -> torch.Tensor:
+        if preactivation:
+            return self.material_albedo
+        return self.material_albedo_activation(self.material_albedo)
+
+    def get_material_roughness(self, preactivation=False) -> torch.Tensor:
+        if preactivation:
+            return self.material_roughness
+        return self.material_roughness_activation(self.material_roughness)
+
+    def get_material_metallic(self, preactivation=False) -> torch.Tensor:
+        if preactivation:
+            return self.material_metallic
+        return self.material_metallic_activation(self.material_metallic)
+
     def get_shading_normal(self, preactivation=False) -> torch.Tensor:
         if preactivation:
             return self.shading_normal
@@ -122,6 +137,9 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
             "scale": self.scale,
             "density": self.density,
             "shading_normal": self.shading_normal,
+            "material_albedo": self.material_albedo,
+            "material_roughness": self.material_roughness,
+            "material_metallic": self.material_metallic,
             "background": self.background.state_dict(),
             # Add other attributes that we need at restore
             "n_active_features": self.n_active_features,
@@ -174,6 +192,15 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         self.shading_normal = torch.nn.Parameter(
             torch.empty([0, 3])
         )  # Shading normal direction for each Gaussian [n_gaussians, 3]
+        self.material_albedo = torch.nn.Parameter(
+            torch.empty([0, 3])
+        )  # PBR base color per Gaussian [n_gaussians, 3]
+        self.material_roughness = torch.nn.Parameter(
+            torch.empty([0, 1])
+        )  # PBR roughness per Gaussian [n_gaussians, 1]
+        self.material_metallic = torch.nn.Parameter(
+            torch.empty([0, 1])
+        )  # PBR metallic per Gaussian [n_gaussians, 1]
 
         self.conf = conf
         self.scene_extent = scene_extent
@@ -187,6 +214,12 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         self.scale_activation_inv = get_activation_function(self.conf.model.scale_activation, inverse=True)
         self.rotation_activation = get_activation_function("normalize")  # The default value of the dim parameter is 1
         self.shading_normal_activation = get_activation_function("normalize")
+        self.material_albedo_activation = get_activation_function("sigmoid")
+        self.material_albedo_activation_inv = get_activation_function("sigmoid", inverse=True)
+        self.material_roughness_activation = get_activation_function("sigmoid")
+        self.material_roughness_activation_inv = get_activation_function("sigmoid", inverse=True)
+        self.material_metallic_activation = get_activation_function("sigmoid")
+        self.material_metallic_activation_inv = get_activation_function("sigmoid", inverse=True)
 
         self.background = background.make(self.conf.model.background.name, self.conf.model.background)
 
@@ -210,7 +243,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         else:
             raise ValueError(f"Unknown rendering method: {conf.render.method}")
 
-        # State of gradients of Gaussian parameters
+        self._geometry_frozen = False
         self._gaussians_frozen = False
 
     @torch.no_grad()
@@ -223,7 +256,17 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         This prevents Gaussians from being updated by any loss (including regularization)
         while the controller learns to predict per-frame corrections.
         """
-        if self._gaussians_frozen:
+        self.freeze_geometry()
+        self.material_albedo.requires_grad = False
+        self.material_roughness.requires_grad = False
+        self.material_metallic.requires_grad = False
+        if not self._gaussians_frozen:
+            self._gaussians_frozen = True
+            logger.info("❄️ [Distillation] Gaussian parameters frozen")
+
+    def freeze_geometry(self) -> None:
+        """Freeze all geometry-related Gaussian parameters."""
+        if self._geometry_frozen:
             return
 
         self.positions.requires_grad = False
@@ -234,8 +277,8 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         self.features_specular.requires_grad = False
         self.shading_normal.requires_grad = False
 
-        self._gaussians_frozen = True
-        logger.info("❄️ [Distillation] Gaussian parameters frozen")
+        self._geometry_frozen = True
+        logger.info("❄️ Geometry parameters frozen")
 
     def validate_fields(self):
         num_gaussians = self.num_gaussians
@@ -244,6 +287,9 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         assert self.rotation.shape == (num_gaussians, 4)
         assert self.scale.shape == (num_gaussians, 3)
         assert self.shading_normal.shape == (num_gaussians, 3)
+        assert self.material_albedo.shape == (num_gaussians, 3)
+        assert self.material_roughness.shape == (num_gaussians, 1)
+        assert self.material_metallic.shape == (num_gaussians, 1)
 
         if self.feature_type == "sh":
             assert self.features_albedo.shape == (num_gaussians, 3)
@@ -467,6 +513,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
 
         self.features_specular = torch.nn.Parameter(feats_sph)
         self.shading_normal = torch.nn.Parameter(self._default_shading_normal(self.rotation))
+        self._initialize_default_material_parameters(num_gaussians, dtype=self.features_albedo.dtype)
 
         if set_optimizable_parameters:
             self.set_optimizable_parameters()
@@ -490,7 +537,6 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         )
         # sh albedo in [0, 0.0039]
         fused_color = torch.rand((num_gaussians, 3), dtype=dtype, device=self.device) / 255.0
-
         features_albedo = features_specular = None
         if self.feature_type == "sh":
             features_albedo = fused_color.contiguous()
@@ -517,6 +563,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         self.features_albedo = torch.nn.Parameter(features_albedo.to(dtype=dtype, device=self.device))
         self.features_specular = torch.nn.Parameter(features_specular.to(dtype=dtype, device=self.device))
         self.shading_normal = torch.nn.Parameter(self._default_shading_normal(self.rotation))
+        self._initialize_default_material_parameters(num_gaussians, dtype=dtype)
 
         if set_optimizable_parameters:
             self.set_optimizable_parameters()
@@ -537,6 +584,27 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
                 )
             ),
         )
+        self.material_albedo = checkpoint.get(
+            "material_albedo",
+            self._default_material_albedo(
+                self.positions.shape[0],
+                self.positions.dtype
+            ),
+        )
+        self.material_roughness = checkpoint.get(
+            "material_roughness",
+            self._default_material_roughness(
+                self.positions.shape[0],
+                self.positions.dtype,
+            ),
+        )
+        self.material_metallic = checkpoint.get(
+            "material_metallic",
+            self._default_material_metallic(
+                self.positions.shape[0],
+                self.positions.dtype,
+            ),
+        )
         self.n_active_features = checkpoint["n_active_features"]
         self.max_n_features = checkpoint["max_n_features"]
         self.scene_extent = checkpoint["scene_extent"]
@@ -546,8 +614,8 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
             self.feature_dim_increase_step = checkpoint["feature_dim_increase_step"]
 
         self.background.load_state_dict(checkpoint["background"])
+        self.set_optimizable_parameters()
         if setup_optimizer:
-            self.set_optimizable_parameters()
             self.setup_optimizer(state_dict=checkpoint["optimizer"])
         self.validate_fields()
 
@@ -623,6 +691,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         self.features_albedo = torch.nn.Parameter(features_albedo.to(dtype=dtype, device=self.device))
         self.features_specular = torch.nn.Parameter(features_specular.to(dtype=dtype, device=self.device))
         self.shading_normal = torch.nn.Parameter(self._default_shading_normal(self.rotation))
+        self._initialize_default_material_parameters(N, dtype=dtype)
 
         self.set_optimizable_parameters()
         self.setup_optimizer()
@@ -630,6 +699,31 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
 
     def _default_shading_normal(self, rotation: torch.Tensor) -> torch.Tensor:
         return NormalUtils().initialize_shading_normal_from_rotation(rotation)
+
+    def _default_material_albedo(
+        self,
+        num_gaussians: int,
+        dtype: torch.dtype,
+    ) -> torch.nn.Parameter:
+        albedo = torch.full((num_gaussians, 3), 0.5, dtype=dtype, device=self.device)
+        return torch.nn.Parameter(self.material_albedo_activation_inv(albedo))
+
+    def _default_material_roughness(self, num_gaussians: int, dtype: torch.dtype) -> torch.nn.Parameter:
+        roughness = torch.full((num_gaussians, 1), 1.0 - 1e-4, dtype=dtype, device=self.device)
+        return torch.nn.Parameter(self.material_roughness_activation_inv(roughness))
+
+    def _default_material_metallic(self, num_gaussians: int, dtype: torch.dtype) -> torch.nn.Parameter:
+        metallic = torch.full((num_gaussians, 1), 1e-4, dtype=dtype, device=self.device)
+        return torch.nn.Parameter(self.material_metallic_activation_inv(metallic))
+
+    def _initialize_default_material_parameters(
+        self,
+        num_gaussians: int,
+        dtype: torch.dtype,
+    ) -> None:
+        self.material_albedo = self._default_material_albedo(num_gaussians, dtype)
+        self.material_roughness = self._default_material_roughness(num_gaussians, dtype)
+        self.material_metallic = self._default_material_metallic(num_gaussians, dtype)
 
     def setup_optimizer(self, state_dict=None):
         params = []
@@ -703,6 +797,14 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
             self.positions.requires_grad = False
         if not self.conf.model.optimize_shading_normal:
             self.shading_normal.requires_grad = False
+        if getattr(self.conf.model, "freeze_geometry", False):
+            self.freeze_geometry()
+        if not self.conf.model.optimize_material_albedo:
+            self.material_albedo.requires_grad = False
+        if not self.conf.model.optimize_material_roughness:
+            self.material_roughness.requires_grad = False
+        if not self.conf.model.optimize_material_metallic:
+            self.material_metallic.requires_grad = False
 
     def update_optimizable_parameters(self, optimizable_tensors: dict[str, torch.Tensor]):
         for name, value in optimizable_tensors.items():
@@ -824,6 +926,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         self.shading_normal = torch.nn.Parameter(
             self._default_shading_normal(self.rotation)
         )
+        self._initialize_default_material_parameters(num_gaussians, dtype=self.material_albedo.dtype)
 
         self.n_active_features = self.max_n_features
 
@@ -847,6 +950,9 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
             self.features_albedo = torch.nn.Parameter(other.features_albedo.clone())
             self.features_specular = torch.nn.Parameter(other.features_specular.clone())
             self.shading_normal = torch.nn.Parameter(other.shading_normal.clone())
+            self.material_albedo = torch.nn.Parameter(other.material_albedo.clone())
+            self.material_roughness = torch.nn.Parameter(other.material_roughness.clone())
+            self.material_metallic = torch.nn.Parameter(other.material_metallic.clone())
         else:  # shared tensors
             self.positions = torch.nn.Parameter(other.positions)
             self.rotation = torch.nn.Parameter(other.rotation)
@@ -855,6 +961,9 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
             self.features_albedo = torch.nn.Parameter(other.features_albedo)
             self.features_specular = torch.nn.Parameter(other.features_specular)
             self.shading_normal = torch.nn.Parameter(other.shading_normal)
+            self.material_albedo = torch.nn.Parameter(other.material_albedo)
+            self.material_roughness = torch.nn.Parameter(other.material_roughness)
+            self.material_metallic = torch.nn.Parameter(other.material_metallic)
         self.max_sh_degree = other.max_sh_degree
         self.n_active_features = other.n_active_features
         self.scene_extent = other.scene_extent
@@ -879,6 +988,9 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         sliced.features_albedo = torch.nn.Parameter(sliced.features_albedo[idx])
         sliced.features_specular = torch.nn.Parameter(sliced.features_specular[idx])
         sliced.shading_normal = torch.nn.Parameter(sliced.shading_normal[idx])
+        sliced.material_albedo = torch.nn.Parameter(sliced.material_albedo[idx])
+        sliced.material_roughness = torch.nn.Parameter(sliced.material_roughness[idx])
+        sliced.material_metallic = torch.nn.Parameter(sliced.material_metallic[idx])
         return sliced
 
     def __len__(self):
