@@ -150,11 +150,14 @@ class Trainer3DGRUT:
         from threedgrut.datasets.utils import configure_dataloader_for_platform
 
         train_dataset, val_dataset = datasets.make(name=conf.dataset.type, config=conf, ray_jitter=None)
+        train_shuffle_generator = torch.Generator()
+        train_shuffle_generator.manual_seed(int(conf.get("train_shuffle_seed", conf.seed_initialization)))
         train_dataloader_kwargs = configure_dataloader_for_platform(
             {
                 "num_workers": conf.num_workers,
                 "batch_size": 1,
                 "shuffle": True,
+                "generator": train_shuffle_generator,
                 "pin_memory": True,
                 "persistent_workers": True if conf.num_workers > 0 else False,
             }

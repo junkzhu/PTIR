@@ -15,6 +15,7 @@ with_viser_gui: false
 gui_update_from_device: true
 val_frequency: 5000
 num_workers: 24
+train_shuffle_seed: ${seed_initialization}
 use_wandb: false
 wandb_project: "3dgrt"
 test_last: true
