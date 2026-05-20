@@ -101,8 +101,10 @@ struct PipelineBackwardParameters : PipelineParameters {
     PackedTensorAccessor32<float, 4> rayDepthDistortionGrad; ///< ray depth distortion gradient
     PackedTensorAccessor32<float, 4> rayNormalGrad;      ///< integrated ray hit distance gradient
     PackedTensorAccessor32<float, 4> rayShadingNormalGrad; ///< integrated ray shading normal gradient
+    PackedTensorAccessor32<float, 4> rayMaterialGrad;    ///< integrated ray material gradient
 
     ParticleDensity* particleDensityGrad; ///< output position, scale, quaternions, density gradient
+    Material* particleMaterialGrad;       ///< output per-particle material gradient
     float* particleRadianceGrad;          ///< output spherical harmonics coefficients gradient
     float* particleShadingNormalGrad;     ///< output per-particle shading normal gradient
 };

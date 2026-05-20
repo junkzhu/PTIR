@@ -506,6 +506,8 @@ __device__ inline void processHitBwd(
     int32_t particleIdx,
     const ParticleDensity* particleDensityPtr,
     ParticleDensity* particleDensityGradPtr,
+    const Material* particlesMaterial,
+    Material* particlesMaterialGrad,
     const float* particleRadiancePtr,
     float* particleRadianceGradPtr,
     const float* particlesShadingNormal,
@@ -529,7 +531,10 @@ __device__ inline void processHitBwd(
     float depthDistortionGrad,
     float3 integratedShadingNormal,
     float3& shadingnormal,
-    float3 shadingNormalGrad) {
+    float3 shadingNormalGrad,
+    Material integratedMaterial,
+    Material& material,
+    Material materialGrad) {
     float3 particlePosition;
     float3 gscl;
     float33 particleRotation;
@@ -640,6 +645,36 @@ __device__ inline void processHitBwd(
         const float3 residualRayRad = maxf3((nextTransmit <= minTransmittance ? make_float3(0) : (integratedRadiance - radiance) / nextTransmit),
                                             make_float3(0));
 
+        float3 particleAlbedo;
+        float particleRoughness;
+        float particleMetallic;
+        fetchParticleMaterial(
+            particleIdx,
+            particlesMaterial,
+            particleAlbedo,
+            particleRoughness,
+            particleMetallic);
+        material.albedo += weight * particleAlbedo;
+        material.roughness += weight * particleRoughness;
+        material.metallic += weight * particleMetallic;
+
+        const Material residualRayMaterial(
+            nextTransmit <= minTransmittance ? make_float3(0.0f) : (integratedMaterial.albedo - material.albedo) / nextTransmit,
+            nextTransmit <= minTransmittance ? 0.0f : (integratedMaterial.roughness - material.roughness) / nextTransmit,
+            nextTransmit <= minTransmittance ? 0.0f : (integratedMaterial.metallic - material.metallic) / nextTransmit);
+        const float galphaRayMaterialGrd =
+            transmittance * (
+                dot(particleAlbedo - residualRayMaterial.albedo, materialGrad.albedo) +
+                (particleRoughness - residualRayMaterial.roughness) * materialGrad.roughness +
+                (particleMetallic - residualRayMaterial.metallic) * materialGrad.metallic);
+
+        Material& particleMaterialGrad = particlesMaterialGrad[particleIdx];
+        atomicAdd(&particleMaterialGrad.albedo.x, weight * materialGrad.albedo.x);
+        atomicAdd(&particleMaterialGrad.albedo.y, weight * materialGrad.albedo.y);
+        atomicAdd(&particleMaterialGrad.albedo.z, weight * materialGrad.albedo.z);
+        atomicAdd(&particleMaterialGrad.roughness, weight * materialGrad.roughness);
+        atomicAdd(&particleMaterialGrad.metallic, weight * materialGrad.metallic);
+
         const float3 particleShadingNormal = make_float3(
             particlesShadingNormal[particleIdx * 3 + 0],
             particlesShadingNormal[particleIdx * 3 + 1],
@@ -669,7 +704,7 @@ __device__ inline void processHitBwd(
         // ===> d_rayRad / d_gdns = gres * transmit * grad - gres * transmit * residualRayRad
         atomicAdd(
             &particleDensityGrad.density,
-            gres * (galphaRayHitGrd + galphaRayDnsGrd + galphaRayShadingNormalGrd + transmittance * (grad.x - residualRayRad.x) * radianceGrad.x +
+            gres * (galphaRayHitGrd + galphaRayDnsGrd + galphaRayShadingNormalGrd + galphaRayMaterialGrd + transmittance * (grad.x - residualRayRad.x) * radianceGrad.x +
                     transmittance * (grad.y - residualRayRad.y) * radianceGrad.y +
                     transmittance * (grad.z - residualRayRad.z) * radianceGrad.z));
 
@@ -684,7 +719,7 @@ __device__ inline void processHitBwd(
         //                  transmit * residualRayRad
         // ===> d_rayRad / d_gres = gdns * transmit * grad - gdns * transmit * residualRayRad
         const float gresGrd =
-            particleDensity * (galphaRayHitGrd + galphaRayDnsGrd + galphaRayShadingNormalGrd + transmittance * (grad.x - residualRayRad.x) * radianceGrad.x +
+            particleDensity * (galphaRayHitGrd + galphaRayDnsGrd + galphaRayShadingNormalGrd + galphaRayMaterialGrd + transmittance * (grad.x - residualRayRad.x) * radianceGrad.x +
                                transmittance * (grad.y - residualRayRad.y) * radianceGrad.y +
                                transmittance * (grad.z - residualRayRad.z) * radianceGrad.z);
 

@@ -193,6 +193,13 @@ static __device__ __inline__ void rayIntersectBwd(
         pipelineParams.rayShadingNormal[idx.z][idx.y][idx.x][0],
         pipelineParams.rayShadingNormal[idx.z][idx.y][idx.x][1],
         pipelineParams.rayShadingNormal[idx.z][idx.y][idx.x][2]);
+    const Material rayIntegratedMaterial(
+        make_float3(
+            pipelineParams.rayMaterial[idx.z][idx.y][idx.x][0],
+            pipelineParams.rayMaterial[idx.z][idx.y][idx.x][1],
+            pipelineParams.rayMaterial[idx.z][idx.y][idx.x][2]),
+        pipelineParams.rayMaterial[idx.z][idx.y][idx.x][3],
+        pipelineParams.rayMaterial[idx.z][idx.y][idx.x][4]);
 
     const float3 rayRadianceGrad = make_float3(
         pipelineParams.rayRadianceGrad[idx.z][idx.y][idx.x][0],
@@ -206,6 +213,13 @@ static __device__ __inline__ void rayIntersectBwd(
         pipelineParams.rayShadingNormalGrad[idx.z][idx.y][idx.x][0],
         pipelineParams.rayShadingNormalGrad[idx.z][idx.y][idx.x][1],
         pipelineParams.rayShadingNormalGrad[idx.z][idx.y][idx.x][2]);
+    const Material rayMaterialGrad(
+        make_float3(
+            pipelineParams.rayMaterialGrad[idx.z][idx.y][idx.x][0],
+            pipelineParams.rayMaterialGrad[idx.z][idx.y][idx.x][1],
+            pipelineParams.rayMaterialGrad[idx.z][idx.y][idx.x][2]),
+        pipelineParams.rayMaterialGrad[idx.z][idx.y][idx.x][3],
+        pipelineParams.rayMaterialGrad[idx.z][idx.y][idx.x][4]);
 
     constexpr float epsT = 1e-9;
     const float2 minMaxT = intersectAABB(pipelineParams.aabb, ray);
@@ -217,6 +231,7 @@ static __device__ __inline__ void rayIntersectBwd(
     float rayHitDistance = 0.f;
     float rayHitDistanceSecondMoment = 0.f;
     float3 rayShadingNormal = make_float3(0.f);
+    Material rayMaterial;
     RayPayload hitPayload;
 
     while (startT < endT) {
@@ -236,6 +251,8 @@ static __device__ __inline__ void rayIntersectBwd(
                     rayHit.particleId,
                     pipelineParams.particleDensity,
                     pipelineParams.particleDensityGrad,
+                    pipelineParams.particleMaterial,
+                    pipelineParams.particleMaterialGrad,
                     pipelineParams.particleRadiance,
                     pipelineParams.particleRadianceGrad,
                     pipelineParams.particleShadingNormal,
@@ -259,7 +276,10 @@ static __device__ __inline__ void rayIntersectBwd(
                     rayDepthDistortionGrad,
                     rayIntegratedShadingNormal,
                     rayShadingNormal,
-                    rayShadingNormalGrad);
+                    rayShadingNormalGrad,
+                    rayIntegratedMaterial,
+                    rayMaterial,
+                    rayMaterialGrad);
 
                 startT = fmaxf(startT, rayHit.distance);
             }

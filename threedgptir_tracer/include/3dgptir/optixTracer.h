@@ -164,6 +164,7 @@ public:
         torch::Tensor rayDepthDistortion,
         torch::Tensor rayNrm,
         torch::Tensor rayShadingNrm,
+        torch::Tensor rayMaterial,
         torch::Tensor particleDensity,
         torch::Tensor particleMaterial,
         torch::Tensor particleRadiance,
@@ -175,6 +176,7 @@ public:
         torch::Tensor rayDepthDistortionGrd,
         torch::Tensor rayNrmGrd,
         torch::Tensor rayShadingNrmGrd,
+        torch::Tensor rayMaterialGrd,
         uint32_t renderOpts,
         int sphDegree,
         float minTransmittance);

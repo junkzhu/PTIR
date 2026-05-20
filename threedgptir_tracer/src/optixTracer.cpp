@@ -939,6 +939,7 @@ OptixTracer::traceBwd(uint32_t frameNumber,
                       torch::Tensor rayDepthDistortion,
                       torch::Tensor rayNrm,
                       torch::Tensor rayShadingNrm,
+                      torch::Tensor rayMaterial,
                       torch::Tensor particleDensity,
                       torch::Tensor particleMaterial,
                       torch::Tensor particleRadiance,
@@ -950,6 +951,7 @@ OptixTracer::traceBwd(uint32_t frameNumber,
                       torch::Tensor rayDepthDistortionGrd,
                       torch::Tensor rayNrmGrd,
                       torch::Tensor rayShadingNrmGrd,
+                      torch::Tensor rayMaterialGrd,
                       uint32_t renderOpts,
                       int sphDegree,
                       float minTransmittance) {
@@ -991,8 +993,10 @@ OptixTracer::traceBwd(uint32_t frameNumber,
     paramsHost.rayDepthDistortion = packed_accessor32<float, 4>(rayDepthDistortion);
     paramsHost.rayNormal      = packed_accessor32<float, 4>(rayNrm);
     paramsHost.rayShadingNormal = packed_accessor32<float, 4>(rayShadingNrm);
+    paramsHost.rayMaterial    = packed_accessor32<float, 4>(rayMaterial);
 
     paramsHost.particleDensityGrad  = getPtr<ParticleDensity>(particleDensityGrad);
+    paramsHost.particleMaterialGrad = getPtr<Material>(particleMaterialGrad);
     paramsHost.particleRadianceGrad = getPtr<float>(particleRadianceGrad);
     paramsHost.particleShadingNormalGrad = getPtr<float>(particleShadingNormalGrad);
 
@@ -1003,6 +1007,7 @@ OptixTracer::traceBwd(uint32_t frameNumber,
     paramsHost.rayDepthDistortionGrad = packed_accessor32<float, 4>(rayDepthDistortionGrd);
     paramsHost.rayNormalGrad      = packed_accessor32<float, 4>(rayNrmGrd);
     paramsHost.rayShadingNormalGrad = packed_accessor32<float, 4>(rayShadingNrmGrd);
+    paramsHost.rayMaterialGrad    = packed_accessor32<float, 4>(rayMaterialGrd);
 
     cudaStream_t cudaStream = at::cuda::getCurrentCUDAStream();
 
