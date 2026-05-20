@@ -29,11 +29,18 @@ class VisualizationRowSpec:
 class TrainingVisualizer:
     """Save periodic training visualizations to disk."""
 
-    def __init__(self, output_dir: str | os.PathLike, frequency: int, has_normal_gt: bool = True):
+    def __init__(
+        self,
+        output_dir: str | os.PathLike,
+        frequency: int,
+        has_normal_gt: bool = True,
+        show_pbr_material: bool = False,
+    ):
         self.frequency = int(frequency)
         self.enabled = self.frequency > 0
         self.output_dir = Path(output_dir) / "visualizations"
         self.has_normal_gt = bool(has_normal_gt)
+        self.show_pbr_material = bool(show_pbr_material)
         self.row_specs = [
             VisualizationRowSpec(
                 name="rgb",
@@ -80,6 +87,11 @@ class TrainingVisualizer:
             if row is None:
                 continue
             rows.append(row)
+
+        if self.show_pbr_material:
+            pbr_row = self._build_pbr_material_row(outputs)
+            if pbr_row is not None:
+                rows.append(pbr_row)
 
         return rows
 
@@ -228,6 +240,35 @@ class TrainingVisualizer:
 
         return image
 
+    def _build_pbr_material_row(self, outputs: dict) -> Optional[torch.Tensor]:
+        material = self._to_material_batch(outputs.get("pred_material"))
+        if material is None:
+            return None
+
+        pbr_image = self._to_image_batch(outputs.get("pred_rgb"))
+        if pbr_image is None:
+            pbr_image = torch.zeros(
+                material.shape[0],
+                3,
+                material.shape[1],
+                material.shape[2],
+                dtype=material.dtype,
+            )
+        else:
+            pbr_image = pbr_image.clip(0.0, 1.0)
+
+        albedo_image = material[..., 0:3].permute(0, 3, 1, 2).clip(0.0, 1.0)
+        roughness_image = material[..., 3:4].permute(0, 3, 1, 2).repeat(1, 3, 1, 1).clip(0.0, 1.0)
+        metallic_image = material[..., 4:5].permute(0, 3, 1, 2).repeat(1, 3, 1, 1).clip(0.0, 1.0)
+
+        row_images = [
+            pbr_image,
+            albedo_image,
+            roughness_image,
+            metallic_image,
+        ]
+        return self._concat_images(row_images, dim=-1)
+
     @staticmethod
     def _concat_rows(rows: list[torch.Tensor]) -> torch.Tensor:
         width = rows[0].shape[-1]
@@ -287,6 +328,25 @@ class TrainingVisualizer:
             return tensor.float()
         if tensor.shape[1] in (1, 3, 4):
             return tensor.permute(0, 2, 3, 1).float()
+
+        return None
+
+    @staticmethod
+    def _to_material_batch(tensor: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
+        if tensor is None:
+            return None
+
+        tensor = tensor.detach()
+        if tensor.ndim == 3:
+            tensor = tensor.unsqueeze(0)
+
+        if tensor.ndim != 4:
+            return None
+
+        if tensor.shape[-1] == 5:
+            return tensor.float().cpu()
+        if tensor.shape[1] == 5:
+            return tensor.permute(0, 2, 3, 1).float().cpu()
 
         return None
 

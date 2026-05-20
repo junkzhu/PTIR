@@ -388,6 +388,7 @@ class Trainer3DGRUT:
             output_dir=self.tracking.output_dir,
             frequency=getattr(conf, "visualize_frequency", 0),
             has_normal_gt=conf.dataset.get("normal", False),
+            show_pbr_material=conf.render.method == "3dgptir",
         )
 
     def init_normal_utils(self):
@@ -701,6 +702,193 @@ class Trainer3DGRUT:
             depth_distortion_loss=lambda_depth_distortion * loss_depth_distortion,
             edge_aware_smoothness_loss=lambda_edge_aware_smoothness * loss_edge_aware_smoothness,
         )
+
+    @torch.cuda.nvtx.range("get_pbr_losses")
+    def get_pbr_losses(
+        self, gpu_batch: dict[str, torch.Tensor], outputs: dict[str, torch.Tensor]
+    ) -> dict[str, torch.Tensor]:
+        """Computes dictionary of PBR losses for current batch.
+        Args:
+            gpu_batch: GT data of current batch
+            outputs: model prediction for current batch
+        Returns:
+            losses: dictionary of loss terms computed for current batch.
+        """
+        rgb_gt = gpu_batch.rgb_gt
+        rgb_pred = outputs["pred_rgb"]
+        mask = gpu_batch.mask
+        gradient_mask = gpu_batch.gradient_mask
+
+        # Mask out the invalid pixels if a gradient mask is provided.
+        if gradient_mask is not None:
+            rgb_gt = rgb_gt * gradient_mask
+            rgb_pred = rgb_pred * gradient_mask
+
+        # L1 loss
+        loss_l1 = torch.zeros(1, device=self.device)
+        lambda_l1 = 0.0
+        if self.conf.loss.use_l1:
+            with torch.cuda.nvtx.range(f"loss-l1"):
+                loss_l1 = torch.abs(rgb_pred - rgb_gt).mean()
+                lambda_l1 = self.conf.loss.lambda_l1
+
+        # L2 loss
+        loss_l2 = torch.zeros(1, device=self.device)
+        lambda_l2 = 0.0
+        if self.conf.loss.use_l2:
+            with torch.cuda.nvtx.range(f"loss-l2"):
+                loss_l2 = torch.nn.functional.mse_loss(outputs["pred_rgb"], rgb_gt)
+                lambda_l2 = self.conf.loss.lambda_l2
+
+        # DSSIM loss
+        loss_ssim = torch.zeros(1, device=self.device)
+        lambda_ssim = 0.0
+        if self.conf.loss.use_ssim:
+            with torch.cuda.nvtx.range(f"loss-ssim"):
+                rgb_gt_full = torch.permute(rgb_gt, (0, 3, 1, 2))
+                pred_rgb_full = torch.permute(rgb_pred, (0, 3, 1, 2))
+                loss_ssim = 1.0 - ssim(pred_rgb_full, rgb_gt_full)
+                lambda_ssim = self.conf.loss.lambda_ssim
+
+        # Opacity regularization
+        loss_opacity = torch.zeros(1, device=self.device)
+        lambda_opacity = 0.0
+        if self.conf.loss.use_opacity:
+            with torch.cuda.nvtx.range(f"loss-opacity"):
+                loss_opacity = torch.abs(self.model.get_density()).mean()
+                lambda_opacity = self.conf.loss.lambda_opacity
+
+        # Mask entropy loss on rendered opacity
+        loss_mask_entropy = torch.zeros(1, device=self.device)
+        lambda_mask_entropy = 0.0
+        if self.conf.loss.use_mask_entropy:
+            pred_opacity = outputs.get("pred_opacity")
+            if mask is not None and pred_opacity is not None:
+                with torch.cuda.nvtx.range(f"loss-mask-entropy"):
+                    loss_mask_entropy = mask_entropy_loss(pred_opacity, mask)
+                    lambda_mask_entropy = self.conf.loss.lambda_mask_entropy
+
+        # Scale regularization
+        loss_scale = torch.zeros(1, device=self.device)
+        lambda_scale = 0.0
+        if self.conf.loss.use_scale:
+            with torch.cuda.nvtx.range(f"loss-scale"):
+                loss_scale = torch.abs(self.model.get_scale()).mean()
+                lambda_scale = self.conf.loss.lambda_scale
+
+        # Diffusion prior regularization on shading normals
+        loss_priors_regularization = torch.zeros(1, device=self.device)
+        lambda_priors_regularization = 0.0
+        use_normal_prior_regularization = self.conf.loss.use_normal_prior_regularization
+        normal_priors_end_iteration = self.conf.loss.normal_priors_end_iteration
+        normal_prior_active = use_normal_prior_regularization and (
+            normal_priors_end_iteration < 0 or self.global_step <= normal_priors_end_iteration
+        )
+        if normal_prior_active:
+            pred_shadingnormal = outputs.get("pred_shadingnormal")
+            prior = getattr(gpu_batch, "prior", None)
+            prior_normal = getattr(prior, "normal", None) if prior is not None else None
+            if pred_shadingnormal is not None and prior_normal is not None:
+                with torch.cuda.nvtx.range(f"loss-priors-regularization"):
+                    loss_priors_regularization = prior_normal_alignment_loss(
+                        pred_shadingnormal,
+                        prior_normal,
+                        valid_mask=mask,
+                    )
+                    lambda_priors_regularization = self.conf.loss.lambda_normal_priors_regularization
+
+        # Shading normal loss
+        loss_shading_normal = torch.zeros(1, device=self.device)
+        lambda_shading_normal = 0.0
+        if self.conf.loss.use_pseudo_normal_supervision:
+            pred_shadingnormal = outputs.get("pred_shadingnormal")
+            pseudo_normal = getattr(gpu_batch, "pseudo_normal", None)
+            pseudo_normal_mask = getattr(gpu_batch, "pseudo_normal_mask", None)
+            if pred_shadingnormal is not None and pseudo_normal is not None and pseudo_normal_mask is not None:
+                with torch.cuda.nvtx.range(f"loss-shading-normal"):
+                    loss_shading_normal = pseudo_normal_loss(
+                        pred_shadingnormal,
+                        pseudo_normal,
+                        valid_mask=pseudo_normal_mask,
+                        detach_pseudo_normal=not normal_prior_active,
+                    )
+                    lambda_shading_normal = self.conf.loss.lambda_shading_normal
+
+        # Depth distortion loss
+        loss_depth_distortion = torch.zeros(1, device=self.device)
+        lambda_depth_distortion = 0.0
+        if (
+            self.conf.loss.use_depth_distortion
+            and self.global_step >= self.conf.loss.depth_distortion_start_iteration
+        ):
+            pred_depth_distortion = outputs.get("pred_depth_distortion")
+            if pred_depth_distortion is not None:
+                with torch.cuda.nvtx.range(f"loss-depth-distortion"):
+                    loss_depth_distortion = depth_distortion_loss(pred_depth_distortion)
+                    lambda_depth_distortion = self.conf.loss.lambda_depth_distortion
+
+        # Edge aware smoothness loss
+        loss_edge_aware_smoothness = torch.zeros(1, device=self.device)
+        lambda_edge_aware_smoothness = 0.0
+        if self.conf.loss.use_edge_aware_smoothness:
+            with torch.cuda.nvtx.range(f"loss-edge-aware-smoothness"):
+                edge_aware_smoothness_scale = self.conf.loss.edge_aware_smoothness_scale
+                edge_aware_smoothness_eps = self.conf.loss.edge_aware_smoothness_eps
+                edge_aware_smoothness_outputs = self.conf.loss.edge_aware_smoothness_outputs
+                if len(edge_aware_smoothness_outputs) == 0:
+                    raise ValueError("loss.edge_aware_smoothness_outputs must contain at least one output key")
+
+                edge_aware_terms = []
+                for smoothness_output_key in edge_aware_smoothness_outputs:
+                    pred_smoothness_map = outputs.get(smoothness_output_key)
+                    if pred_smoothness_map is None:
+                        raise KeyError(f"Configured edge-aware smoothness output '{smoothness_output_key}' was not rendered")
+                    edge_aware_terms.append(
+                        edge_aware_smoothness_loss(
+                            pred_smoothness_map,
+                            rgb_gt,
+                            mask=mask,
+                            eps=edge_aware_smoothness_eps,
+                            scale=edge_aware_smoothness_scale,
+                        )
+                    )
+
+                loss_edge_aware_smoothness = torch.stack(edge_aware_terms).mean()
+                lambda_edge_aware_smoothness = self.conf.loss.lambda_edge_aware_smoothness
+
+        # Total loss
+        loss = (
+            lambda_l1 * loss_l1
+            + lambda_l2 * loss_l2
+            + lambda_ssim * loss_ssim
+            + lambda_opacity * loss_opacity
+            + lambda_mask_entropy * loss_mask_entropy
+            + lambda_scale * loss_scale
+            + lambda_shading_normal * loss_shading_normal
+            + lambda_priors_regularization * loss_priors_regularization
+            + lambda_depth_distortion * loss_depth_distortion
+            + lambda_edge_aware_smoothness * loss_edge_aware_smoothness
+        )
+        return dict(
+            total_loss=loss,
+            l1_loss=lambda_l1 * loss_l1,
+            l2_loss=lambda_l2 * loss_l2,
+            ssim_loss=lambda_ssim * loss_ssim,
+            opacity_loss=lambda_opacity * loss_opacity,
+            mask_entropy_loss=lambda_mask_entropy * loss_mask_entropy,
+            scale_loss=lambda_scale * loss_scale,
+            shading_normal_loss=lambda_shading_normal * loss_shading_normal,
+            priors_regularization_loss=lambda_priors_regularization * loss_priors_regularization,
+            depth_distortion_loss=lambda_depth_distortion * loss_depth_distortion,
+            edge_aware_smoothness_loss=lambda_edge_aware_smoothness * loss_edge_aware_smoothness,
+        )
+
+    def _compute_losses(
+        self, gpu_batch: dict[str, torch.Tensor], outputs: dict[str, torch.Tensor]
+    ) -> dict[str, torch.Tensor]:
+        if self.conf.render.method == "3dgptir":
+            return self.get_pbr_losses(gpu_batch, outputs)
+        return self.get_losses(gpu_batch, outputs)
 
     @torch.cuda.nvtx.range("log_validation_iter")
     def log_validation_iter(
@@ -1101,7 +1289,7 @@ class Trainer3DGRUT:
 
         # Compute the losses of a single batch
         with torch.cuda.nvtx.range(f"train_{global_step}_loss"):
-            batch_losses = self.get_losses(gpu_batch, outputs)
+            batch_losses = self._compute_losses(gpu_batch, outputs)
             # Add post-processing regularization loss
             if self.post_processing is not None:
                 post_processing_reg_loss = self.post_processing.get_regularization_loss()
@@ -1272,7 +1460,7 @@ class Trainer3DGRUT:
                     outputs = apply_post_processing(self.post_processing, outputs, gpu_batch, training=False)
                 profilers["inference"].end()
 
-                batch_losses = self.get_losses(gpu_batch, outputs)
+                batch_losses = self._compute_losses(gpu_batch, outputs)
                 batch_metrics = self.get_metrics(
                     gpu_batch,
                     outputs,

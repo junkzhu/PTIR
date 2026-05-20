@@ -15,6 +15,7 @@
 
 #include <optix.h>
 
+#include <3dgptir/material.h>
 #include <3dgptir/mathUtils.h>
 #include <3dgptir/particleDensity.h>
 
@@ -184,6 +185,19 @@ static inline __device__ void fetchParticleDensity(
     particleDensity = particleData.density;
 }
 
+static inline __device__ void fetchParticleMaterial(
+    const int32_t particleIdx,
+    const Material* particlesMaterial,
+    float3& particleAlbedo,
+    float& particleRoughness,
+    float& particleMetallic) {
+    const Material particleData = particlesMaterial[particleIdx];
+
+    particleAlbedo    = particleData.albedo;
+    particleRoughness = particleData.roughness;
+    particleMetallic  = particleData.metallic;
+}
+
 static inline __device__ void fetchParticleSphCoefficients(
     const int32_t particleIdx,
     const float* particlesSphCoefficients,
@@ -332,6 +346,7 @@ __device__ inline bool processHit(
     const float3& rayDirection,
     const int32_t particleIdx,
     const ParticleDensity* particlesDensity,
+    const Material* particlesMaterial,
     const float* particlesSphCoefficients,
     const float minParticleKernelDensity,
     const float minParticleAlpha,
@@ -341,12 +356,16 @@ __device__ inline bool processHit(
     float3* radiance,
     float* depth,
     float* depthSecondMoment,
+    Material* material,
     float3* shadingnormal,
     float3* normal) {
     float3 particlePosition;
     float3 particleScale;
     float33 particleRotation;
     float particleDensity;
+    float3 particleAlbedo;
+    float particleRoughness;
+    float particleMetallic;
 
     fetchParticleDensity(
         particleIdx,
@@ -355,6 +374,12 @@ __device__ inline bool processHit(
         particleScale,
         particleRotation,
         particleDensity);
+    fetchParticleMaterial(
+        particleIdx,
+        particlesMaterial,
+        particleAlbedo,
+        particleRoughness,
+        particleMetallic);
 
     const float3 giscl   = make_float3(1 / particleScale.x, 1 / particleScale.y, 1 / particleScale.z);
     const float3 gposc   = (rayOrigin - particlePosition);
@@ -387,6 +412,11 @@ __device__ inline bool processHit(
         const float3 grad = radianceFromSpH(sphEvalDegree, &sphCoefficients[0], rayDirection);
 
         *radiance += grad * weight;
+        if (material) {
+            material->albedo += particleAlbedo * weight;
+            material->roughness += particleRoughness * weight;
+            material->metallic += particleMetallic * weight;
+        }
         *transmittance *= (1 - galpha);
         *depth += hitT * weight;
         *depthSecondMoment += hitT * hitT * weight;

@@ -17,6 +17,7 @@
 
 #include <optix.h>
 
+#include <3dgptir/material.h>
 #include <3dgptir/particleDensity.h>
 #include <3dgptir/pipelineDefinitions.h>
 #include <3dgptir/tensorAccessor.h>
@@ -27,6 +28,7 @@ struct PipelineParameters {
     PackedTensorAccessor32<float, 4> rayDirection; ///< ray direction
 
     const ParticleDensity* particleDensity; ///< position, scale, quaternions, density
+    const Material* particleMaterial;       ///< per-particle material parameters
     const float* particleRadiance;          ///< spherical harmonics coefficients
     const float* particleShadingNormal;     ///< per-particle shading normal
     const void* particleExtendedData;       ///< pipeline specific particle data
@@ -39,6 +41,7 @@ struct PipelineParameters {
     PackedTensorAccessor32<float, 4> rayDepthDistortion; ///< output ray depth distortion
     PackedTensorAccessor32<float, 4> rayNormal;      ///< output integrated ray normal
     PackedTensorAccessor32<float, 4> rayShadingNormal; ///< output integrated ray shading normal
+    PackedTensorAccessor32<float, 4> rayMaterial;    ///< output integrated ray material: albedo.xyz, roughness, metallic
     PackedTensorAccessor32<float, 4> rayHitsCount;   ///< output (only in AH pipeline) number of hits per ray
 
     OptixTraversableHandle handle;
