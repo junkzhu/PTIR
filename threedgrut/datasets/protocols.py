@@ -39,6 +39,10 @@ class Batch:
     rays_in_world_space: bool = False  # True if rays are already in world space (no transform needed)
     rgb_gt: Optional[torch.Tensor] = None
     normal_gt: Optional[torch.Tensor] = None
+    material_gt: Optional[torch.Tensor] = None
+    material_albedo_gt: Optional[torch.Tensor] = None
+    material_roughness_gt: Optional[torch.Tensor] = None
+    material_metallic_gt: Optional[torch.Tensor] = None
     pseudo_normal: Optional[torch.Tensor] = None
     pseudo_normal_mask: Optional[torch.Tensor] = None
     mask: Optional[torch.Tensor] = None
@@ -66,6 +70,19 @@ class Batch:
         if self.normal_gt is not None:
             assert self.normal_gt.ndim == 4, "normal_gt must be a 4D tensor [B, H, W, 3]"
             assert self.normal_gt.shape[0] == batch_size, "normal_gt must have the same batch size"
+        if self.material_gt is not None:
+            assert self.material_gt.ndim == 4, "material_gt must be a 4D tensor [B, H, W, 5]"
+            assert self.material_gt.shape[0] == batch_size, "material_gt must have the same batch size"
+            assert self.material_gt.shape[-1] == 5, "material_gt last dimension must be 5"
+        if self.material_albedo_gt is not None:
+            assert self.material_albedo_gt.ndim == 4, "material_albedo_gt must be a 4D tensor [B, H, W, 3]"
+            assert self.material_albedo_gt.shape[0] == batch_size, "material_albedo_gt must have the same batch size"
+        if self.material_roughness_gt is not None:
+            assert self.material_roughness_gt.ndim == 4, "material_roughness_gt must be a 4D tensor [B, H, W, 1]"
+            assert self.material_roughness_gt.shape[0] == batch_size, "material_roughness_gt must have the same batch size"
+        if self.material_metallic_gt is not None:
+            assert self.material_metallic_gt.ndim == 4, "material_metallic_gt must be a 4D tensor [B, H, W, 1]"
+            assert self.material_metallic_gt.shape[0] == batch_size, "material_metallic_gt must have the same batch size"
         if self.pseudo_normal is not None:
             assert self.pseudo_normal.ndim == 4, "pseudo_normal must be a 4D tensor [B, H, W, 3]"
             assert self.pseudo_normal.shape[0] == batch_size, "pseudo_normal must have the same batch size"

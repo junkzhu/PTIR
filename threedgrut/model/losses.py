@@ -28,6 +28,17 @@ def l2_loss(network_output, gt):
     return ((network_output - gt) ** 2).mean()
 
 
+@torch.cuda.nvtx.range("masked_l2_loss")
+def masked_l2_loss(network_output, gt, mask=None, eps=1e-6):
+    loss = (network_output - gt) ** 2
+
+    if mask is None:
+        return loss.mean()
+
+    mask = _mask_to_bhw1(mask, loss)
+    return (loss * mask).sum() / torch.clamp(mask.sum() * loss.shape[-1], min=eps)
+
+
 @torch.cuda.nvtx.range("ssim")
 def ssim(img1, img2, window_size=11, size_average=True):
     # predicted_image, gt_image: [BS, CH, H, W], predicted_image is differentiable

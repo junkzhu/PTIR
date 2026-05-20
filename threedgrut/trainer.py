@@ -37,6 +37,7 @@ from threedgrut.model.losses import (
     depth_distortion_loss,
     edge_aware_smoothness_loss,
     mask_entropy_loss,
+    masked_l2_loss,
     prior_normal_alignment_loss,
     pseudo_normal_loss,
     ssim,
@@ -750,82 +751,50 @@ class Trainer3DGRUT:
                 loss_ssim = 1.0 - ssim(pred_rgb_full, rgb_gt_full)
                 lambda_ssim = self.conf.loss.lambda_ssim
 
-        # Opacity regularization
-        loss_opacity = torch.zeros(1, device=self.device)
-        lambda_opacity = 0.0
-        if self.conf.loss.use_opacity:
-            with torch.cuda.nvtx.range(f"loss-opacity"):
-                loss_opacity = torch.abs(self.model.get_density()).mean()
-                lambda_opacity = self.conf.loss.lambda_opacity
+        # Material prior regularization
+        loss_albedo_priors_regularization = torch.zeros(1, device=self.device)
+        lambda_albedo_priors_regularization = 0.0
+        loss_roughness_priors_regularization = torch.zeros(1, device=self.device)
+        lambda_roughness_priors_regularization = 0.0
 
-        # Mask entropy loss on rendered opacity
-        loss_mask_entropy = torch.zeros(1, device=self.device)
-        lambda_mask_entropy = 0.0
-        if self.conf.loss.use_mask_entropy:
-            pred_opacity = outputs.get("pred_opacity")
-            if mask is not None and pred_opacity is not None:
-                with torch.cuda.nvtx.range(f"loss-mask-entropy"):
-                    loss_mask_entropy = mask_entropy_loss(pred_opacity, mask)
-                    lambda_mask_entropy = self.conf.loss.lambda_mask_entropy
+        pred_material = outputs.get("pred_material")
+        material_mask = mask
+        if gradient_mask is not None:
+            material_mask = gradient_mask if material_mask is None else material_mask * gradient_mask
 
-        # Scale regularization
-        loss_scale = torch.zeros(1, device=self.device)
-        lambda_scale = 0.0
-        if self.conf.loss.use_scale:
-            with torch.cuda.nvtx.range(f"loss-scale"):
-                loss_scale = torch.abs(self.model.get_scale()).mean()
-                lambda_scale = self.conf.loss.lambda_scale
-
-        # Diffusion prior regularization on shading normals
-        loss_priors_regularization = torch.zeros(1, device=self.device)
-        lambda_priors_regularization = 0.0
-        use_normal_prior_regularization = self.conf.loss.use_normal_prior_regularization
-        normal_priors_end_iteration = self.conf.loss.normal_priors_end_iteration
-        normal_prior_active = use_normal_prior_regularization and (
-            normal_priors_end_iteration < 0 or self.global_step <= normal_priors_end_iteration
+        use_albedo_prior_regularization = self.conf.loss.get("use_albedo_prior_regularization", False)
+        albedo_priors_end_iteration = self.conf.loss.get("albedo_priors_end_iteration", -1)
+        albedo_prior_active = use_albedo_prior_regularization and (
+            albedo_priors_end_iteration < 0 or self.global_step <= albedo_priors_end_iteration
         )
-        if normal_prior_active:
-            pred_shadingnormal = outputs.get("pred_shadingnormal")
-            prior = getattr(gpu_batch, "prior", None)
-            prior_normal = getattr(prior, "normal", None) if prior is not None else None
-            if pred_shadingnormal is not None and prior_normal is not None:
-                with torch.cuda.nvtx.range(f"loss-priors-regularization"):
-                    loss_priors_regularization = prior_normal_alignment_loss(
-                        pred_shadingnormal,
-                        prior_normal,
-                        valid_mask=mask,
+        if albedo_prior_active and pred_material is not None:
+            material_albedo_gt = getattr(gpu_batch, "material_albedo_gt", None)
+            if material_albedo_gt is not None:
+                with torch.cuda.nvtx.range(f"loss-albedo-priors-regularization"):
+                    pred_albedo = pred_material[..., :3]
+                    loss_albedo_priors_regularization = masked_l2_loss(
+                        pred_albedo,
+                        material_albedo_gt,
+                        material_mask,
                     )
-                    lambda_priors_regularization = self.conf.loss.lambda_normal_priors_regularization
+                    lambda_albedo_priors_regularization = self.conf.loss.lambda_albedo_priors_regularization
 
-        # Shading normal loss
-        loss_shading_normal = torch.zeros(1, device=self.device)
-        lambda_shading_normal = 0.0
-        if self.conf.loss.use_pseudo_normal_supervision:
-            pred_shadingnormal = outputs.get("pred_shadingnormal")
-            pseudo_normal = getattr(gpu_batch, "pseudo_normal", None)
-            pseudo_normal_mask = getattr(gpu_batch, "pseudo_normal_mask", None)
-            if pred_shadingnormal is not None and pseudo_normal is not None and pseudo_normal_mask is not None:
-                with torch.cuda.nvtx.range(f"loss-shading-normal"):
-                    loss_shading_normal = pseudo_normal_loss(
-                        pred_shadingnormal,
-                        pseudo_normal,
-                        valid_mask=pseudo_normal_mask,
-                        detach_pseudo_normal=not normal_prior_active,
+        use_roughness_prior_regularization = self.conf.loss.get("use_roughness_prior_regularization", False)
+        roughness_priors_end_iteration = self.conf.loss.get("roughness_priors_end_iteration", -1)
+        roughness_prior_active = use_roughness_prior_regularization and (
+            roughness_priors_end_iteration < 0 or self.global_step <= roughness_priors_end_iteration
+        )
+        if roughness_prior_active and pred_material is not None:
+            material_roughness_gt = getattr(gpu_batch, "material_roughness_gt", None)
+            if material_roughness_gt is not None:
+                with torch.cuda.nvtx.range(f"loss-roughness-priors-regularization"):
+                    pred_roughness = pred_material[..., 3:4]
+                    loss_roughness_priors_regularization = masked_l2_loss(
+                        pred_roughness,
+                        material_roughness_gt,
+                        material_mask,
                     )
-                    lambda_shading_normal = self.conf.loss.lambda_shading_normal
-
-        # Depth distortion loss
-        loss_depth_distortion = torch.zeros(1, device=self.device)
-        lambda_depth_distortion = 0.0
-        if (
-            self.conf.loss.use_depth_distortion
-            and self.global_step >= self.conf.loss.depth_distortion_start_iteration
-        ):
-            pred_depth_distortion = outputs.get("pred_depth_distortion")
-            if pred_depth_distortion is not None:
-                with torch.cuda.nvtx.range(f"loss-depth-distortion"):
-                    loss_depth_distortion = depth_distortion_loss(pred_depth_distortion)
-                    lambda_depth_distortion = self.conf.loss.lambda_depth_distortion
+                    lambda_roughness_priors_regularization = self.conf.loss.lambda_roughness_priors_regularization
 
         # Edge aware smoothness loss
         loss_edge_aware_smoothness = torch.zeros(1, device=self.device)
@@ -861,12 +830,8 @@ class Trainer3DGRUT:
             lambda_l1 * loss_l1
             + lambda_l2 * loss_l2
             + lambda_ssim * loss_ssim
-            + lambda_opacity * loss_opacity
-            + lambda_mask_entropy * loss_mask_entropy
-            + lambda_scale * loss_scale
-            + lambda_shading_normal * loss_shading_normal
-            + lambda_priors_regularization * loss_priors_regularization
-            + lambda_depth_distortion * loss_depth_distortion
+            + lambda_albedo_priors_regularization * loss_albedo_priors_regularization
+            + lambda_roughness_priors_regularization * loss_roughness_priors_regularization
             + lambda_edge_aware_smoothness * loss_edge_aware_smoothness
         )
         return dict(
@@ -874,12 +839,8 @@ class Trainer3DGRUT:
             l1_loss=lambda_l1 * loss_l1,
             l2_loss=lambda_l2 * loss_l2,
             ssim_loss=lambda_ssim * loss_ssim,
-            opacity_loss=lambda_opacity * loss_opacity,
-            mask_entropy_loss=lambda_mask_entropy * loss_mask_entropy,
-            scale_loss=lambda_scale * loss_scale,
-            shading_normal_loss=lambda_shading_normal * loss_shading_normal,
-            priors_regularization_loss=lambda_priors_regularization * loss_priors_regularization,
-            depth_distortion_loss=lambda_depth_distortion * loss_depth_distortion,
+            albedo_priors_regularization_loss=lambda_albedo_priors_regularization * loss_albedo_priors_regularization,
+            roughness_priors_regularization_loss=lambda_roughness_priors_regularization * loss_roughness_priors_regularization,
             edge_aware_smoothness_loss=lambda_edge_aware_smoothness * loss_edge_aware_smoothness,
         )
 
@@ -1021,21 +982,41 @@ class Trainer3DGRUT:
             if self.conf.loss.use_ssim:
                 ssim_loss = np.mean(batch_metrics["losses"]["ssim_loss"])
                 writer.add_scalar("loss/ssim/train", ssim_loss, global_step)
-            if self.conf.loss.use_opacity:
+            if self.conf.loss.use_opacity and "opacity_loss" in batch_metrics["losses"]:
                 opacity_loss = np.mean(batch_metrics["losses"]["opacity_loss"])
                 writer.add_scalar("loss/opacity/train", opacity_loss, global_step)
-            if self.conf.loss.use_mask_entropy:
+            if self.conf.loss.use_mask_entropy and "mask_entropy_loss" in batch_metrics["losses"]:
                 mask_entropy = np.mean(batch_metrics["losses"]["mask_entropy_loss"])
                 writer.add_scalar("loss/mask_entropy/train", mask_entropy, global_step)
-            if self.conf.loss.use_scale:
+            if self.conf.loss.use_scale and "scale_loss" in batch_metrics["losses"]:
                 scale_loss = np.mean(batch_metrics["losses"]["scale_loss"])
                 writer.add_scalar("loss/scale/train", scale_loss, global_step)
-            if self.conf.loss.use_pseudo_normal_supervision:
+            if self.conf.loss.use_pseudo_normal_supervision and "shading_normal_loss" in batch_metrics["losses"]:
                 shading_normal_loss = np.mean(batch_metrics["losses"]["shading_normal_loss"])
                 writer.add_scalar("loss/shading_normal/train", shading_normal_loss, global_step)
-            if self.conf.loss.use_normal_prior_regularization:
+            if self.conf.loss.get("use_normal_prior_regularization", False) and "priors_regularization_loss" in batch_metrics["losses"]:
                 priors_regularization_loss = np.mean(batch_metrics["losses"]["priors_regularization_loss"])
                 writer.add_scalar("loss/priors_regularization/train", priors_regularization_loss, global_step)
+            if (
+                self.conf.loss.get("use_albedo_prior_regularization", False)
+                and "albedo_priors_regularization_loss" in batch_metrics["losses"]
+            ):
+                albedo_priors_regularization_loss = np.mean(
+                    batch_metrics["losses"]["albedo_priors_regularization_loss"]
+                )
+                writer.add_scalar("loss/albedo_priors_regularization/train", albedo_priors_regularization_loss, global_step)
+            if (
+                self.conf.loss.get("use_roughness_prior_regularization", False)
+                and "roughness_priors_regularization_loss" in batch_metrics["losses"]
+            ):
+                roughness_priors_regularization_loss = np.mean(
+                    batch_metrics["losses"]["roughness_priors_regularization_loss"]
+                )
+                writer.add_scalar(
+                    "loss/roughness_priors_regularization/train",
+                    roughness_priors_regularization_loss,
+                    global_step,
+                )
             if self.conf.loss.use_edge_aware_smoothness:
                 edge_aware_smoothness_loss = np.mean(batch_metrics["losses"]["edge_aware_smoothness_loss"])
                 writer.add_scalar("loss/edge_aware_smoothness/train", edge_aware_smoothness_loss, global_step)

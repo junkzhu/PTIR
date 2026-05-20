@@ -17,7 +17,7 @@ import json
 import os
 
 import cv2
-import imageio
+import imageio.v2 as imageio
 import numpy as np
 import torch
 from einops import rearrange
@@ -37,13 +37,23 @@ from .utils import (
 
 
 class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
-    def __init__(self, path, device="cuda", split="train", ray_jitter=None, bg_color=None, load_normals=False):
+    def __init__(
+        self,
+        path,
+        device="cuda",
+        split="train",
+        ray_jitter=None,
+        bg_color=None,
+        load_normals=False,
+        load_materials=False,
+    ):
         self.root_dir = path
         self.device = device
         self.split = split
         self.ray_jitter = ray_jitter
         self.bg_color = bg_color
         self.load_normals = load_normals
+        self.load_materials = load_materials
 
         # Cache for per-worker GPU tensors (thread-local storage)
         self._worker_gpu_cache = {}
@@ -143,6 +153,8 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
         self.mask_paths = []
         self.gradient_mask_paths = []
         self.normal_paths = []
+        self.material_albedo_paths = []
+        self.material_roughness_paths = []
 
         if split == "trainval":
             with open(self._resolve_transforms_path("train"), "r") as f:
@@ -163,6 +175,9 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
             img_path = self._resolve_image_path(frame["file_path"])
             self.image_paths.append(img_path)
             self.normal_paths.append(self._normal_path_from_image_path(img_path))
+            material_paths = self._material_paths_from_image_path(img_path)
+            self.material_albedo_paths.append(material_paths["albedo"])
+            self.material_roughness_paths.append(material_paths["roughness"])
 
             # We assume that the mask is stored in the same folder as the image with the same name but with _mask.png extension.
             # If the mask does not exist, we will return None in the batch
@@ -179,6 +194,8 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
         self.mask_paths = np.stack(self.mask_paths, dtype=str)
         self.gradient_mask_paths = np.stack(self.gradient_mask_paths, dtype=str)
         self.normal_paths = np.stack(self.normal_paths, dtype=str)
+        self.material_albedo_paths = np.stack(self.material_albedo_paths, dtype=str)
+        self.material_roughness_paths = np.stack(self.material_roughness_paths, dtype=str)
         self.poses = np.array(self.poses).astype(np.float32)  # (N_images, 4, 4)
 
     @torch.no_grad()
@@ -272,6 +289,20 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
             )
             output_dict["normal"] = torch.tensor(normal).reshape(out_shape)
 
+        if self.load_materials:
+            albedo_path = self.material_albedo_paths[idx]
+            roughness_path = self.material_roughness_paths[idx]
+            if not os.path.exists(albedo_path):
+                raise FileNotFoundError(f"Material albedo path {albedo_path} does not exist.")
+            if not os.path.exists(roughness_path):
+                raise FileNotFoundError(f"Material roughness path {roughness_path} does not exist.")
+
+            albedo = NeRFDataset.__read_linear_image(albedo_path, self.img_wh, num_channels=3)
+            roughness = NeRFDataset.__read_linear_image(roughness_path, self.img_wh, num_channels=1)
+
+            output_dict["material_albedo"] = torch.from_numpy(albedo).reshape(out_shape)
+            output_dict["material_roughness"] = torch.from_numpy(roughness).reshape(1, self.image_h, self.image_w, 1)
+
         if hasattr(self, "prior_normal_paths"):
             prior_normal_path = self.prior_normal_paths[idx]
             if not os.path.exists(prior_normal_path):
@@ -337,6 +368,12 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
             normal = batch["normal"][0].to(self.device, non_blocking=True) / 255.0
             sample["normal_gt"] = normal * 2.0 - 1.0
 
+        if "material_albedo" in batch:
+            material_albedo = batch["material_albedo"][0].to(self.device, non_blocking=True)
+            material_roughness = batch["material_roughness"][0].to(self.device, non_blocking=True)
+            sample["material_albedo_gt"] = material_albedo
+            sample["material_roughness_gt"] = material_roughness
+
         if "prior_normal" in batch:
             prior_normal = batch["prior_normal"][0].to(self.device, non_blocking=True) / 255.0
             sample["prior"] = BatchPrior(normal=prior_normal * 2.0 - 1.0)
@@ -347,6 +384,14 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
     def _normal_path_from_image_path(image_path: str) -> str:
         normal_path = image_path.replace("rgba", "normal")
         return normal_path
+
+    @staticmethod
+    def _material_paths_from_image_path(image_path: str) -> dict[str, str]:
+        image_dir = os.path.dirname(image_path)
+        return {
+            "albedo": os.path.join(image_dir, "albedo.png"),
+            "roughness": os.path.join(image_dir, "roughness.png"),
+        }
 
     def _resolve_image_path(self, frame_path: str) -> str:
         image_path = os.path.join(self.root_dir, frame_path)
@@ -529,3 +574,35 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
             return img, alpha
         else:
             return img
+
+    @staticmethod
+    def __read_linear_image(img_path, img_wh, num_channels):
+        img = imageio.imread(img_path)
+        if img.ndim == 2:
+            img = img[..., None]
+        if img.ndim != 3:
+            raise ValueError(f"Expected image with shape [H, W, C] for {img_path}, got {img.shape}")
+        if img.shape[2] == 4:
+            img = img[..., :3]
+
+        if np.issubdtype(img.dtype, np.integer):
+            img = img.astype(np.float32) / float(np.iinfo(img.dtype).max)
+        else:
+            img = img.astype(np.float32)
+
+        img = cv2.resize(img, img_wh)
+        if img.ndim == 2:
+            img = img[..., None]
+
+        if num_channels == 1:
+            img = img[..., :1]
+        elif num_channels == 3:
+            if img.shape[2] == 1:
+                img = np.repeat(img, 3, axis=2)
+            else:
+                img = img[..., :3]
+        else:
+            raise ValueError(f"Unsupported material image channel count: {num_channels}")
+
+        img = np.clip(img, 0.0, 1.0).astype(np.float32)
+        return rearrange(img, "h w c -> (h w) c")
