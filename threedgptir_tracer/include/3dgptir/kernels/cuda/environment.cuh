@@ -1,0 +1,205 @@
+// SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+#pragma once
+
+#ifdef __CUDACC__
+
+#include <3dgptir/environment.h>
+#include <3dgptir/mathUtils.h>
+#include <math_constants.h>
+
+static __device__ __forceinline__ int environmentClampInt(int value, int lo, int hi) {
+    return max(lo, min(value, hi));
+}
+
+static __device__ __forceinline__ int environmentWrapInt(int value, int size) {
+    if (size <= 0) {
+        return 0;
+    }
+
+    int wrapped = value % size;
+    if (wrapped < 0) {
+        wrapped += size;
+    }
+    return wrapped;
+}
+
+struct EnvironmentBilinearFootprint {
+    int x0;
+    int x1;
+    int y0;
+    int y1;
+    float w00;
+    float w10;
+    float w01;
+    float w11;
+};
+
+static __device__ __forceinline__ float4 loadEnvironmentTexel(int x, int y) {
+    return params.environment.data[y * params.environment.width + x];
+}
+
+static __device__ __forceinline__ EnvironmentBilinearFootprint computeEnvironmentBilinearFootprint(float u, float v) {
+    u = u - floorf(u);
+    v = fminf(fmaxf(v, 0.0f), 1.0f);
+
+    const float x = u * static_cast<float>(params.environment.width) - 0.5f;
+    const float y = v * static_cast<float>(params.environment.height) - 0.5f;
+
+    const int x0Raw = static_cast<int>(floorf(x));
+    const int y0Raw = static_cast<int>(floorf(y));
+    const int x1Raw = x0Raw + 1;
+    const int y1Raw = y0Raw + 1;
+
+    const float ax = x - static_cast<float>(x0Raw);
+    const float ay = y - static_cast<float>(y0Raw);
+
+    EnvironmentBilinearFootprint footprint{};
+    footprint.x0  = environmentWrapInt(x0Raw, params.environment.width);
+    footprint.x1  = environmentWrapInt(x1Raw, params.environment.width);
+    footprint.y0  = environmentClampInt(y0Raw, 0, params.environment.height - 1);
+    footprint.y1  = environmentClampInt(y1Raw, 0, params.environment.height - 1);
+    footprint.w00 = (1.0f - ax) * (1.0f - ay);
+    footprint.w10 = ax * (1.0f - ay);
+    footprint.w01 = (1.0f - ax) * ay;
+    footprint.w11 = ax * ay;
+    return footprint;
+}
+
+static __device__ __forceinline__ float4 sampleEnvironmentBilinear(const EnvironmentBilinearFootprint& footprint) {
+    const float4 c00 = loadEnvironmentTexel(footprint.x0, footprint.y0);
+    const float4 c10 = loadEnvironmentTexel(footprint.x1, footprint.y0);
+    const float4 c01 = loadEnvironmentTexel(footprint.x0, footprint.y1);
+    const float4 c11 = loadEnvironmentTexel(footprint.x1, footprint.y1);
+
+    return make_float4(
+        footprint.w00 * c00.x + footprint.w10 * c10.x + footprint.w01 * c01.x + footprint.w11 * c11.x,
+        footprint.w00 * c00.y + footprint.w10 * c10.y + footprint.w01 * c01.y + footprint.w11 * c11.y,
+        footprint.w00 * c00.z + footprint.w10 * c10.z + footprint.w01 * c01.z + footprint.w11 * c11.z,
+        footprint.w00 * c00.w + footprint.w10 * c10.w + footprint.w01 * c01.w + footprint.w11 * c11.w);
+}
+
+static __device__ __forceinline__ float3 rotateEnvironmentDirection(const float3& rayDir) {
+    const float rotZ = params.environment.offset.x * 2.0f * CUDART_PI_F + 0.5f * CUDART_PI_F;
+    const float rotX = params.environment.offset.y * 2.0f * CUDART_PI_F;
+
+    const float3 rotatedDir = make_float3(
+        rayDir.x * cosf(rotZ) - rayDir.y * sinf(rotZ),
+        rayDir.x * sinf(rotZ) + rayDir.y * cosf(rotZ),
+        rayDir.z);
+
+    return make_float3(
+        rotatedDir.x,
+        rotatedDir.y * cosf(rotX) - rotatedDir.z * sinf(rotX),
+        rotatedDir.y * sinf(rotX) + rotatedDir.z * cosf(rotX));
+}
+
+static __device__ __forceinline__ void dirToCubemapFaceUV(const float3& dir, int& face, float& u, float& v) {
+    const float absX = fabsf(dir.x);
+    const float absY = fabsf(dir.y);
+    const float absZ = fabsf(dir.z);
+
+    float ma, sc, tc;
+    if (absX >= absY && absX >= absZ) {
+        ma = absX;
+        if (dir.x > 0.0f) {
+            face = 0;
+            sc   = -dir.z;
+            tc   = -dir.y;
+        } else {
+            face = 1;
+            sc   = dir.z;
+            tc   = -dir.y;
+        }
+    } else if (absY >= absX && absY >= absZ) {
+        ma = absY;
+        if (dir.y > 0.0f) {
+            face = 2;
+            sc   = dir.x;
+            tc   = dir.z;
+        } else {
+            face = 3;
+            sc   = dir.x;
+            tc   = -dir.z;
+        }
+    } else {
+        ma = absZ;
+        if (dir.z > 0.0f) {
+            face = 4;
+            sc   = dir.x;
+            tc   = -dir.y;
+        } else {
+            face = 5;
+            sc   = -dir.x;
+            tc   = -dir.y;
+        }
+    }
+
+    const float invMa = 1.0f / fmaxf(ma, 1e-12f);
+    u = 0.5f * (sc * invMa + 1.0f);
+    v = 0.5f * (tc * invMa + 1.0f);
+}
+
+static __device__ __forceinline__ EnvironmentBilinearFootprint computeCubemapBilinearFootprint(
+    int face, float u, float v) {
+    const int faceSize = params.environment.width;
+
+    u = fminf(fmaxf(u, 0.0f), 1.0f);
+    v = fminf(fmaxf(v, 0.0f), 1.0f);
+
+    const float x = u * static_cast<float>(faceSize) - 0.5f;
+    const float y = v * static_cast<float>(faceSize) - 0.5f;
+
+    const int x0Raw = static_cast<int>(floorf(x));
+    const int y0Raw = static_cast<int>(floorf(y));
+    const int x1Raw = x0Raw + 1;
+    const int y1Raw = y0Raw + 1;
+
+    const float ax = x - static_cast<float>(x0Raw);
+    const float ay = y - static_cast<float>(y0Raw);
+    const int yOffset = face * faceSize;
+
+    EnvironmentBilinearFootprint footprint{};
+    footprint.x0  = environmentClampInt(x0Raw, 0, faceSize - 1);
+    footprint.x1  = environmentClampInt(x1Raw, 0, faceSize - 1);
+    footprint.y0  = environmentClampInt(y0Raw + yOffset, yOffset, yOffset + faceSize - 1);
+    footprint.y1  = environmentClampInt(y1Raw + yOffset, yOffset, yOffset + faceSize - 1);
+    footprint.w00 = (1.0f - ax) * (1.0f - ay);
+    footprint.w10 = ax * (1.0f - ay);
+    footprint.w01 = (1.0f - ax) * ay;
+    footprint.w11 = ax * ay;
+    return footprint;
+}
+
+static __device__ __forceinline__ float3 getBackgroundColorEquirect(const float3& dir) {
+    const float theta = atan2f(dir.x, dir.y);
+    const float zcl   = fminf(1.0f, fmaxf(-1.0f, -dir.z));
+    const float phi   = asinf(zcl);
+    const float u     = (theta + CUDART_PI_F) * (0.5f * (1.0f / CUDART_PI_F));
+    const float v     = 0.5f + phi * (1.0f / CUDART_PI_F);
+    const float4 env  = sampleEnvironmentBilinear(computeEnvironmentBilinearFootprint(u, v));
+    return make_float3(env.x, env.y, env.z);
+}
+
+static __device__ __forceinline__ float3 getBackgroundColorCubemap(const float3& dir) {
+    int face;
+    float u, v;
+    dirToCubemapFaceUV(dir, face, u, v);
+    const float4 env = sampleEnvironmentBilinear(computeCubemapBilinearFootprint(face, u, v));
+    return make_float3(env.x, env.y, env.z);
+}
+
+static __device__ __forceinline__ float3 getBackgroundColor(const float3 rayDir) {
+    if (params.environment.data == nullptr || params.environment.width <= 0 || params.environment.height <= 0) {
+        return make_float3(0.0f);
+    }
+
+    const float3 dir = rotateEnvironmentDirection(rayDir);
+    if (params.environment.type == EnvironmentType_Cube) {
+        return getBackgroundColorCubemap(dir);
+    }
+    return getBackgroundColorEquirect(dir);
+}
+
+#endif // __CUDACC__

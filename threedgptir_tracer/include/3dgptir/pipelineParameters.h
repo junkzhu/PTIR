@@ -17,6 +17,7 @@
 
 #include <optix.h>
 
+#include <3dgptir/environment.h>
 #include <3dgptir/material.h>
 #include <3dgptir/particleDensity.h>
 #include <3dgptir/pipelineDefinitions.h>
@@ -43,6 +44,8 @@ struct PipelineParameters {
     PackedTensorAccessor32<float, 4> rayShadingNormal; ///< output integrated ray shading normal
     PackedTensorAccessor32<float, 4> rayMaterial;    ///< output integrated ray material: albedo.xyz, roughness, metallic
     PackedTensorAccessor32<float, 4> rayHitsCount;   ///< output (only in AH pipeline) number of hits per ray
+
+    Environment environment;
 
     OptixTraversableHandle handle;
     OptixAabb aabb;
@@ -103,6 +106,7 @@ struct PipelineBackwardParameters : PipelineParameters {
     PackedTensorAccessor32<float, 4> rayNormalGrad;      ///< integrated ray hit distance gradient
     PackedTensorAccessor32<float, 4> rayShadingNormalGrad; ///< integrated ray shading normal gradient
     PackedTensorAccessor32<float, 4> rayMaterialGrad;    ///< integrated ray material gradient
+    PackedTensorAccessor32<float, 3> environmentGrad;    ///< optional environment map gradient
 
     ParticleDensity* particleDensityGrad; ///< output position, scale, quaternions, density gradient
     Material* particleMaterialGrad;       ///< output per-particle material gradient

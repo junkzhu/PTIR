@@ -33,6 +33,7 @@ from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 import threedgrut.datasets as datasets
 from threedgrut.datasets.protocols import BoundedMultiViewDataset
 from threedgrut.datasets.utils import DEFAULT_DEVICE, MultiEpochsDataLoader, PointCloud
+from threedgrut.model.environment import Environment
 from threedgrut.model.losses import (
     depth_distortion_loss,
     edge_aware_smoothness_loss,
@@ -122,6 +123,8 @@ class Trainer3DGRUT:
         """ Global configuration of model, scene, optimization, etc"""
         self.device = device if device is not None else DEFAULT_DEVICE
         """ Device used for training and visualizations """
+        self.environment = None
+        """ Optional environment map loaded from conf.environment. """
         self.global_step = 0
         """ Current global iteration of the trainer """
         self.n_iterations = conf.n_iterations
@@ -137,6 +140,8 @@ class Trainer3DGRUT:
         self.init_scene_extents(self.train_dataset)
         logger.log_rule("Initialize Model")
         self.init_model(conf, self.scene_extent)
+        if OmegaConf.select(conf, "environment", default=None) is not None:
+            self.init_environment(conf)
         self.init_densification_and_pruning_strategy(conf)
         logger.log_rule("Setup Model Weights & Training")
         self.init_metrics()
@@ -203,6 +208,27 @@ class Trainer3DGRUT:
         """Initializes the gaussian model and the optix context"""
         self.model = MixtureOfGaussians(conf, scene_extent=scene_extent)
 
+    def init_environment(self, conf: DictConfig) -> None:
+        env_path = OmegaConf.select(conf, "environment.path", default=None)
+        env_type = OmegaConf.select(conf, "environment.type", default="2d")
+        optimize_environment = bool(OmegaConf.select(conf, "model.optimize_environment", default=False))
+        self.environment = Environment(
+            path=env_path,
+            device=self.device,
+            environment_type=env_type,
+            optimize_environment=optimize_environment,
+        )
+        self.model.environment = self.environment.get_environment()
+
+    def restore_environment_from_checkpoint(self, checkpoint: dict, conf: DictConfig) -> None:
+        environment_state = checkpoint.get("environment_state")
+        if self.environment is None or environment_state is None:
+            return
+
+        self.environment.load_state_dict(environment_state)
+        self.environment.configure_optimization(bool(OmegaConf.select(conf, "model.optimize_environment", default=False)))
+        self.model.environment = self.environment.get_environment()
+
     def init_densification_and_pruning_strategy(self, conf: DictConfig) -> None:
         """Set pre-train / post-train iteration logic. i.e. densification and pruning"""
         assert self.model is not None
@@ -238,7 +264,9 @@ class Trainer3DGRUT:
         if conf.resume:  # Load a checkpoint
             logger.info(f"🤸 Loading a pretrained checkpoint from {conf.resume}!")
             checkpoint = torch.load(conf.resume, weights_only=False)
-            model.init_from_checkpoint(checkpoint)
+            model.init_from_checkpoint(checkpoint, setup_optimizer=False)
+            self.restore_environment_from_checkpoint(checkpoint, conf)
+            model.setup_optimizer(state_dict=checkpoint["optimizer"])
             self.strategy.init_densification_buffer(checkpoint)
             global_step = checkpoint["global_step"]
 
@@ -302,6 +330,7 @@ class Trainer3DGRUT:
                 case "checkpoint":
                     checkpoint = torch.load(conf.initialization.path, weights_only=False)
                     model.init_from_checkpoint(checkpoint, setup_optimizer=False)
+                    self.restore_environment_from_checkpoint(checkpoint, conf)
                 case "lidar":
                     assert isinstance(
                         train_dataset, datasets.NCoreDataset
@@ -1166,6 +1195,8 @@ class Trainer3DGRUT:
         out_dir = self.tracking.output_dir
         parameters = self.model.get_model_parameters()
         parameters |= {"global_step": self.global_step, "epoch": self.n_epochs - 1}
+        if self.environment is not None:
+            parameters["environment_state"] = self.environment.state_dict()
 
         strategy_parameters = self.strategy.get_strategy_parameters()
         parameters = {**parameters, **strategy_parameters}

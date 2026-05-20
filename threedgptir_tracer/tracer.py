@@ -67,6 +67,7 @@ class Tracer:
             mog_malb,
             mog_mrgh,
             mog_mmet,
+            environment,
             render_opts,
             sph_degree,
             min_transmittance,
@@ -94,6 +95,7 @@ class Tracer:
                 particle_material,
                 mog_sph,
                 mog_snrm,
+                environment,
                 render_opts,
                 sph_degree,
                 min_transmittance,
@@ -115,6 +117,7 @@ class Tracer:
                 particle_material,
                 mog_sph,
                 mog_snrm,
+                environment,
             )
             ctx.frame_id = frame_id
             ctx.render_opts = render_opts
@@ -165,9 +168,10 @@ class Tracer:
                 particle_material,
                 mog_sph,
                 mog_snrm,
+                environment,
             ) = ctx.saved_variables
             frame_id = ctx.frame_id
-            particle_density_grd, particle_material_grd, mog_sph_grd, mog_sn_grd = ctx.tracer_wrapper.trace_bwd(
+            particle_density_grd, particle_material_grd, mog_sph_grd, mog_sn_grd, environment_grd = ctx.tracer_wrapper.trace_bwd(
                 frame_id,
                 ray_to_world,
                 ray_ori,
@@ -184,6 +188,7 @@ class Tracer:
                 particle_material,
                 mog_sph,
                 mog_snrm,
+                environment,
                 ray_radiance_grd,
                 ray_density_grd,
                 ray_hit_distance_grd,
@@ -218,6 +223,7 @@ class Tracer:
                 mog_malb_grd,
                 mog_mrgh_grd,
                 mog_mmet_grd,
+                environment_grd,
                 None,
                 None,
                 None,
@@ -426,6 +432,7 @@ class Tracer:
                     frame_id + spp_start,
                     jitter=chunk_jitter,
                 )
+                environment = gaussians.environment
 
                 (
                     chunk_pred_rgb,
@@ -453,6 +460,7 @@ class Tracer:
                     gaussians.get_material_albedo().contiguous(),
                     gaussians.get_material_roughness().contiguous(),
                     gaussians.get_material_metallic().contiguous(),
+                    environment,
                     Tracer.RenderOpts.DEFAULT,
                     gaussians.n_active_features,
                     self.conf.render.min_transmittance,

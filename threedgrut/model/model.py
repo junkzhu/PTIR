@@ -222,6 +222,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         self.material_metallic_activation_inv = get_activation_function("sigmoid", inverse=True)
 
         self.background = background.make(self.conf.model.background.name, self.conf.model.background)
+        self.environment = None
 
         # Check if we would like to do progressive training
         self.feature_type = self.conf.model.progressive_training.feature_type
@@ -816,6 +817,10 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
             self.material_roughness.requires_grad = False
         if not self.conf.model.optimize_material_metallic:
             self.material_metallic.requires_grad = False
+        environment = getattr(self, "environment", None)
+        optimize_environment = self.conf.model.get("optimize_environment", False)
+        if environment is not None and not optimize_environment:
+            environment.requires_grad_(False)
 
     def update_optimizable_parameters(self, optimizable_tensors: dict[str, torch.Tensor]):
         for name, value in optimizable_tensors.items():

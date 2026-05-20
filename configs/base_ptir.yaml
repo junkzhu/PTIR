@@ -6,6 +6,7 @@ defaults:
   - _self_
 
 # n_iterations: 600
+visualize_frequency: 20
 
 model:
   freeze_geometry: true
@@ -13,6 +14,11 @@ model:
   optimize_material_albedo: true
   optimize_material_roughness: true
   optimize_material_metallic: false
+  optimize_environment: true
+
+environment:
+  path: null
+  type: "2d" #Supported types: "2d" or "cube".
 
 optimizer:
   params:
@@ -22,6 +28,8 @@ optimizer:
       lr: 0.0025
     material_metallic:
       lr: 0.0
+    environment:
+      lr: 0.0025
 
 strategy:
   densify:

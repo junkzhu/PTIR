@@ -197,6 +197,22 @@ inline MOGPrimitiveTypes primitiveTypeFromStr(const std::string& primitiveTypeSt
 // OptixTracer
 //------------------------------------------------------------------------------
 
+Environment::Environment(const torch::Tensor& environment)
+    : data(nullptr),
+      width(0),
+      height(0),
+      type(EnvironmentType_2D),
+      offset{0.0f, 0.0f} {
+    if (environment.dim() >= 3 && environment.size(0) > 0 && environment.size(1) > 0 && environment.size(2) == 4 && environment.numel() > 0) {
+        data   = reinterpret_cast<const float4*>(environment.data_ptr<float>());
+        height = static_cast<int>(environment.size(0));
+        width  = static_cast<int>(environment.size(1));
+        if (environment.size(0) == 6 * environment.size(1)) {
+            type = EnvironmentType_Cube;
+        }
+    }
+}
+
 std::vector<std::string> OptixTracer::generateDefines(
     float particleKernelDegree,
     bool particleKernelDensityClamping,
@@ -860,6 +876,7 @@ OptixTracer::trace(uint32_t frameNumber,
                    torch::Tensor particleMaterial,
                    torch::Tensor particleRadiance,
                    torch::Tensor particleShadingNormal,
+                   torch::Tensor environment,
                    uint32_t renderOpts,
                    int sphDegree,
                    float minTransmittance,
@@ -913,6 +930,8 @@ OptixTracer::trace(uint32_t frameNumber,
     paramsHost.rayMaterial    = packed_accessor32<float, 4>(rayMaterial);
     paramsHost.rayHitsCount   = packed_accessor32<float, 4>(rayHitsCount);
 
+    paramsHost.environment = Environment(environment);
+
     cudaStream_t cudaStream = at::cuda::getCurrentCUDAStream();
     reallocateParamsDevice(sizeof(paramsHost), cudaStream);
 
@@ -929,7 +948,7 @@ OptixTracer::trace(uint32_t frameNumber,
         rayRad, rayDns, rayHit, rayHitSecondMoment, rayDepthDistortion, rayNrm, rayShadingNrm, rayMaterial, rayHitsCount, particleVisibility);
 }
 
-std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
 OptixTracer::traceBwd(uint32_t frameNumber,
                       torch::Tensor rayToWorld,
                       torch::Tensor rayOri,
@@ -946,6 +965,7 @@ OptixTracer::traceBwd(uint32_t frameNumber,
                       torch::Tensor particleMaterial,
                       torch::Tensor particleRadiance,
                       torch::Tensor particleShadingNormal,
+                      torch::Tensor environment,
                       torch::Tensor rayRadGrd,
                       torch::Tensor rayDnsGrd,
                       torch::Tensor rayHitGrd,
@@ -964,6 +984,7 @@ OptixTracer::traceBwd(uint32_t frameNumber,
     torch::Tensor particleMaterialGrad  = torch::zeros({particleMaterial.size(0), particleMaterial.size(1)}, opts);
     torch::Tensor particleRadianceGrad = torch::zeros({particleRadiance.size(0), particleRadiance.size(1)}, opts);
     torch::Tensor particleShadingNormalGrad = torch::zeros({particleShadingNormal.size(0), particleShadingNormal.size(1)}, opts);
+    torch::Tensor environmentGrad = torch::zeros_like(environment);
 
     PipelineBackwardParameters paramsHost;
     paramsHost.handle = _state->gasHandle;
@@ -1012,6 +1033,9 @@ OptixTracer::traceBwd(uint32_t frameNumber,
     paramsHost.rayNormalGrad      = packed_accessor32<float, 4>(rayNrmGrd);
     paramsHost.rayShadingNormalGrad = packed_accessor32<float, 4>(rayShadingNrmGrd);
     paramsHost.rayMaterialGrad    = packed_accessor32<float, 4>(rayMaterialGrd);
+    paramsHost.environmentGrad    = packed_accessor32<float, 3>(environmentGrad);
+
+    paramsHost.environment = Environment(environment);
 
     cudaStream_t cudaStream = at::cuda::getCurrentCUDAStream();
 
@@ -1023,6 +1047,6 @@ OptixTracer::traceBwd(uint32_t frameNumber,
                             sizeof(PipelineBackwardParameters), &_state->sbtTracingBwd,
                             rayRad.size(2), rayRad.size(1), rayRad.size(0)));
 
-    return std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>(
-        particleDensityGrad, particleMaterialGrad, particleRadianceGrad, particleShadingNormalGrad);
+    return std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>(
+        particleDensityGrad, particleMaterialGrad, particleRadianceGrad, particleShadingNormalGrad, environmentGrad);
 }

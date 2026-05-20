@@ -148,12 +148,13 @@ public:
         torch::Tensor particleMaterial,
         torch::Tensor particleRadiance,
         torch::Tensor particleShadingNormal,
+        torch::Tensor environment,
         uint32_t renderOpts,
         int sphDegree,
         float minTransmittance,
         uint32_t maxBounces);
 
-    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor> virtual traceBwd(
+    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor> virtual traceBwd(
         uint32_t frameNumber,
         torch::Tensor rayToWorld,
         torch::Tensor rayOri,
@@ -170,6 +171,7 @@ public:
         torch::Tensor particleMaterial,
         torch::Tensor particleRadiance,
         torch::Tensor particleShadingNormal,
+        torch::Tensor environment,
         torch::Tensor rayRadGrd,
         torch::Tensor rayDnsGrd,
         torch::Tensor rayHitGrd,
