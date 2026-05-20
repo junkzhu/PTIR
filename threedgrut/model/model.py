@@ -257,6 +257,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         while the controller learns to predict per-frame corrections.
         """
         self.freeze_geometry()
+        self.shading_normal.requires_grad = False
         self.material_albedo.requires_grad = False
         self.material_roughness.requires_grad = False
         self.material_metallic.requires_grad = False
@@ -265,7 +266,10 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
             logger.info("❄️ [Distillation] Gaussian parameters frozen")
 
     def freeze_geometry(self) -> None:
-        """Freeze all geometry-related Gaussian parameters."""
+        """Freeze Gaussian geometry/radiance parameters.
+
+        Shading normals stay controlled by model.optimize_shading_normal.
+        """
         if self._geometry_frozen:
             return
 
@@ -275,7 +279,6 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         self.density.requires_grad = False
         self.features_albedo.requires_grad = False
         self.features_specular.requires_grad = False
-        self.shading_normal.requires_grad = False
 
         self._geometry_frozen = True
         logger.info("❄️ Geometry parameters frozen")
@@ -709,7 +712,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         return torch.nn.Parameter(self.material_albedo_activation_inv(albedo))
 
     def _default_material_roughness(self, num_gaussians: int, dtype: torch.dtype) -> torch.nn.Parameter:
-        roughness = torch.full((num_gaussians, 1), 1.0 - 1e-4, dtype=dtype, device=self.device)
+        roughness = torch.full((num_gaussians, 1), 0.9, dtype=dtype, device=self.device)
         return torch.nn.Parameter(self.material_roughness_activation_inv(roughness))
 
     def _default_material_metallic(self, num_gaussians: int, dtype: torch.dtype) -> torch.nn.Parameter:
@@ -783,6 +786,14 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
                     param_group["lr"] = lr
 
     def set_optimizable_parameters(self):
+        if getattr(self.conf.model, "freeze_geometry", False):
+            self.conf.model.optimize_density = False
+            self.conf.model.optimize_features_albedo = False
+            self.conf.model.optimize_features_specular = False
+            self.conf.model.optimize_rotation = False
+            self.conf.model.optimize_scale = False
+            self.conf.model.optimize_position = False
+
         if not self.conf.model.optimize_density:
             self.density.requires_grad = False
         if not self.conf.model.optimize_features_albedo:

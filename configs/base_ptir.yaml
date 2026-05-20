@@ -5,15 +5,10 @@ defaults:
   - /base_gs
   - _self_
 
+# n_iterations: 600
+
 model:
   freeze_geometry: true
-  optimize_density: false
-  optimize_features_albedo: false
-  optimize_features_specular: false
-  optimize_position: false
-  optimize_rotation: false
-  optimize_scale: false
-  
   optimize_shading_normal: false
   optimize_material_albedo: true
   optimize_material_roughness: true
@@ -21,23 +16,47 @@ model:
 
 optimizer:
   params:
-    density:
-      lr: 0.0
-    features_albedo:
-      lr: 0.0
-    features_specular:
-      lr: 0.0
-    positions:
-      lr: 0.0
-    rotation:
-      lr: 0.0
-    scale:
-      lr: 0.0
-    shading_normal:
-      lr: 0.0
     material_albedo:
       lr: 0.0025
     material_roughness:
       lr: 0.0025
     material_metallic:
       lr: 0.0
+
+strategy:
+  densify:
+    start_iteration: -1
+    end_iteration: 0
+  prune:
+    start_iteration: -1
+  reset_density:
+    start_iteration: -1
+  density_decay:
+    start_iteration: -1
+  prune_scale:
+    start_iteration: -1
+
+loss:
+  use_l1: true
+  lambda_l1: 0.8
+
+  use_l2: false
+  lambda_l2: 1.0
+
+  use_ssim: true
+  lambda_ssim: 0.2
+
+  use_albedo_prior_regularization: true
+  albedo_priors_end_iteration: -1
+  lambda_albedo_priors_regularization: 0.02
+
+  use_roughness_prior_regularization: true
+  roughness_priors_end_iteration: -1
+  lambda_roughness_priors_regularization: 0.02
+
+  use_edge_aware_smoothness: true
+  lambda_edge_aware_smoothness: 0.02
+  edge_aware_smoothness_outputs:
+    - pred_material
+  edge_aware_smoothness_scale: 1.0 # Scales the GT image gradient in exp(-scale * gt_grad); larger values reduce smoothing more strongly at GT edges.
+  edge_aware_smoothness_eps: 1.0e-3

@@ -210,4 +210,5 @@ def edge_aware_smoothness_loss(value_map, gt_image, mask=None, eps=1e-3, scale=1
         )
 
     value_grad, gt_grad = _edge_aware_spatial_gradients(value_map, gt_image)
-    return (value_grad * torch.exp(-scale * gt_grad)).sum(dim=2).mean()
+    edge_weight = torch.exp(-scale * gt_grad.mean(dim=1, keepdim=True))
+    return (value_grad * edge_weight).sum(dim=2).mean()

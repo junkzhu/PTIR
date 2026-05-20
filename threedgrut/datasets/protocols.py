@@ -23,11 +23,19 @@ import torch
 @dataclass
 class BatchPrior:
     normal: Optional[torch.Tensor] = None
+    albedo: Optional[torch.Tensor] = None
+    roughness: Optional[torch.Tensor] = None
 
     def validate(self, batch_size: int):
         if self.normal is not None:
             assert self.normal.ndim == 4, "prior.normal must be a 4D tensor [B, H, W, 3]"
             assert self.normal.shape[0] == batch_size, "prior.normal must have the same batch size"
+        if self.albedo is not None:
+            assert self.albedo.ndim == 4, "prior.albedo must be a 4D tensor [B, H, W, 3]"
+            assert self.albedo.shape[0] == batch_size, "prior.albedo must have the same batch size"
+        if self.roughness is not None:
+            assert self.roughness.ndim == 4, "prior.roughness must be a 4D tensor [B, H, W, 1]"
+            assert self.roughness.shape[0] == batch_size, "prior.roughness must have the same batch size"
 
 
 @dataclass

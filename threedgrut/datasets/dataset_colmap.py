@@ -525,6 +525,28 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
             prior_normal = torch.from_numpy(prior_normal.astype(np.uint8)).reshape(1, actual_h, actual_w, 3)
             output_dict["prior_normal"] = prior_normal
 
+        if hasattr(self, "prior_albedo_paths"):
+            prior_albedo_path = self.prior_albedo_paths[idx]
+            if not os.path.exists(prior_albedo_path):
+                raise FileNotFoundError(f"Diffusion prior albedo path {prior_albedo_path} does not exist.")
+            output_dict["prior_albedo"] = self._read_prior_image(
+                prior_albedo_path,
+                actual_w,
+                actual_h,
+                num_channels=3,
+            )
+
+        if hasattr(self, "prior_roughness_paths"):
+            prior_roughness_path = self.prior_roughness_paths[idx]
+            if not os.path.exists(prior_roughness_path):
+                raise FileNotFoundError(f"Diffusion prior roughness path {prior_roughness_path} does not exist.")
+            output_dict["prior_roughness"] = self._read_prior_image(
+                prior_roughness_path,
+                actual_w,
+                actual_h,
+                num_channels=1,
+            )
+
         # Add EXIF exposure if available for this frame
         if self.exif_exposures is not None and self.exif_exposures[idx] is not None:
             output_dict["exposure"] = torch.tensor(self.exif_exposures[idx], dtype=torch.float32)
@@ -567,15 +589,49 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
             gradient_mask = (gradient_mask > 0.5).to(torch.float32)
             sample["gradient_mask"] = gradient_mask
 
+        prior_kwargs = {}
         if "prior_normal" in batch:
             prior_normal = batch["prior_normal"][0].to(self.device, non_blocking=True) / 255.0
-            sample["prior"] = BatchPrior(normal=prior_normal * 2.0 - 1.0)
+            prior_kwargs["normal"] = prior_normal * 2.0 - 1.0
+        if "prior_albedo" in batch:
+            prior_kwargs["albedo"] = batch["prior_albedo"][0].to(self.device, non_blocking=True)
+        if "prior_roughness" in batch:
+            prior_kwargs["roughness"] = batch["prior_roughness"][0].to(self.device, non_blocking=True)
+        if prior_kwargs:
+            sample["prior"] = BatchPrior(**prior_kwargs)
 
         # Add exposure prior from EXIF if available (move to GPU)
         if "exposure" in batch and batch["exposure"][0] is not None:
             sample["exposure"] = batch["exposure"].to(self.device)
 
         return Batch(**sample)
+
+    @staticmethod
+    def _read_prior_image(path: str, width: int, height: int, num_channels: int) -> torch.Tensor:
+        image = np.asarray(Image.open(path))
+        if image.shape[:2] != (height, width):
+            image = np.asarray(Image.fromarray(image).resize((width, height), Image.Resampling.BILINEAR))
+        if image.ndim == 2:
+            image = image[..., None]
+        if image.ndim == 3 and image.shape[2] == 4:
+            image = image[..., :3]
+
+        image = image.astype(np.float32)
+        if image.max() > 1.0:
+            image /= 255.0
+
+        if num_channels == 1:
+            image = image[..., :1]
+        elif num_channels == 3:
+            if image.shape[2] == 1:
+                image = np.repeat(image, 3, axis=2)
+            else:
+                image = image[..., :3]
+        else:
+            raise ValueError(f"Unsupported prior image channel count: {num_channels}")
+
+        image = np.clip(image, 0.0, 1.0).astype(np.float32)
+        return torch.from_numpy(image).reshape(1, height, width, num_channels)
 
     def create_dataset_camera_visualization(self):
         """Create a visualization of the dataset cameras."""

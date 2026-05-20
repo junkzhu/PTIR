@@ -315,6 +315,25 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
             )
             output_dict["prior_normal"] = torch.tensor(prior_normal).reshape(out_shape)
 
+        if hasattr(self, "prior_albedo_paths"):
+            prior_albedo_path = self.prior_albedo_paths[idx]
+            if not os.path.exists(prior_albedo_path):
+                raise FileNotFoundError(f"Diffusion prior albedo path {prior_albedo_path} does not exist.")
+            prior_albedo = NeRFDataset.__read_linear_image(prior_albedo_path, self.img_wh, num_channels=3)
+            output_dict["prior_albedo"] = torch.from_numpy(prior_albedo).reshape(out_shape)
+
+        if hasattr(self, "prior_roughness_paths"):
+            prior_roughness_path = self.prior_roughness_paths[idx]
+            if not os.path.exists(prior_roughness_path):
+                raise FileNotFoundError(f"Diffusion prior roughness path {prior_roughness_path} does not exist.")
+            prior_roughness = NeRFDataset.__read_linear_image(prior_roughness_path, self.img_wh, num_channels=1)
+            output_dict["prior_roughness"] = torch.from_numpy(prior_roughness).reshape(
+                1,
+                self.image_h,
+                self.image_w,
+                1,
+            )
+
         mask_path = self.mask_paths[idx]
         if os.path.exists(mask_path):
             mask = torch.from_numpy(np.array(Image.open(mask_path).convert("L"))).reshape(1, self.image_h, self.image_w, 1)
@@ -374,9 +393,16 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
             sample["material_albedo_gt"] = material_albedo
             sample["material_roughness_gt"] = material_roughness
 
+        prior_kwargs = {}
         if "prior_normal" in batch:
             prior_normal = batch["prior_normal"][0].to(self.device, non_blocking=True) / 255.0
-            sample["prior"] = BatchPrior(normal=prior_normal * 2.0 - 1.0)
+            prior_kwargs["normal"] = prior_normal * 2.0 - 1.0
+        if "prior_albedo" in batch:
+            prior_kwargs["albedo"] = batch["prior_albedo"][0].to(self.device, non_blocking=True)
+        if "prior_roughness" in batch:
+            prior_kwargs["roughness"] = batch["prior_roughness"][0].to(self.device, non_blocking=True)
+        if prior_kwargs:
+            sample["prior"] = BatchPrior(**prior_kwargs)
 
         return Batch(**sample)
 

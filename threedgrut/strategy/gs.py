@@ -149,14 +149,14 @@ class GSStrategy(BaseStrategy):
     @torch.cuda.nvtx.range("update-gradient-buffer")
     def update_gradient_buffer(self, sensor_position: torch.Tensor) -> None:
         params_position_grad = self.model.positions.grad
-        mask = (params_position_grad != 0).max(dim=1)[0]
-        assert params_position_grad is not None
-        distance_to_camera = (self.model.positions[mask] - sensor_position).norm(dim=1, keepdim=True)
+        if params_position_grad is not None:
+            mask = (params_position_grad != 0).max(dim=1)[0]
+            distance_to_camera = (self.model.positions[mask] - sensor_position).norm(dim=1, keepdim=True)
 
-        self.densify_grad_norm_accum[mask] += (
-            torch.norm(params_position_grad[mask] * distance_to_camera, dim=-1, keepdim=True) / 2
-        )
-        self.densify_grad_norm_denom[mask] += 1
+            self.densify_grad_norm_accum[mask] += (
+                torch.norm(params_position_grad[mask] * distance_to_camera, dim=-1, keepdim=True) / 2
+            )
+            self.densify_grad_norm_denom[mask] += 1
 
         params_shading_normal_grad = self.model.shading_normal.grad
         if params_shading_normal_grad is not None:

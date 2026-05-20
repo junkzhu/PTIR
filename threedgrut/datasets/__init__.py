@@ -70,7 +70,14 @@ def _maybe_generate_diffusion_priors(config, train_dataset) -> None:
     if not hasattr(train_dataset, "image_paths"):
         return
 
-    if not config.loss.get("use_normal_prior_regularization", False):
+    needed_aovs = []
+    if config.loss.get("use_normal_prior_regularization", False):
+        needed_aovs.append("normal")
+    if config.loss.get("use_albedo_prior_regularization", False):
+        needed_aovs.append("albedo")
+    if config.loss.get("use_roughness_prior_regularization", False):
+        needed_aovs.append("roughness")
+    if not needed_aovs:
         return
 
     from threedgrut.utils.rgb2x_prior import (
@@ -82,7 +89,8 @@ def _maybe_generate_diffusion_priors(config, train_dataset) -> None:
 
     prior_config = config.get("diffusion_prior", {})
     output_root = prior_config.get("output_dir", DEFAULT_RGB2X_OUTPUT_DIR)
-    aovs = tuple(prior_config.get("aovs", ["normal"]))
+    configured_aovs = tuple(prior_config.get("aovs", needed_aovs))
+    aovs = tuple(dict.fromkeys([aov for aov in configured_aovs if aov in needed_aovs] + needed_aovs))
     if not aovs:
         return
 
@@ -109,13 +117,17 @@ def _maybe_generate_diffusion_priors(config, train_dataset) -> None:
 
         logger.warning("prior regularization is enabled but CUDA is unavailable; skipping rgb2x prior generation.")
 
-    if "normal" in aovs:
-        train_dataset.prior_normal_paths = np.array(
-            [
-                str(rgb2x_prior_paths(path, config.path, output_root, ("normal",))["normal"])
-                for path in train_dataset.image_paths
-            ],
-            dtype=str,
+    for aov in aovs:
+        setattr(
+            train_dataset,
+            f"prior_{aov}_paths",
+            np.array(
+                [
+                    str(rgb2x_prior_paths(path, config.path, output_root, (aov,))[aov])
+                    for path in train_dataset.image_paths
+                ],
+                dtype=str,
+            ),
         )
 
 

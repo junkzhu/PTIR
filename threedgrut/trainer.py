@@ -758,6 +758,7 @@ class Trainer3DGRUT:
         lambda_roughness_priors_regularization = 0.0
 
         pred_material = outputs.get("pred_material")
+        prior = getattr(gpu_batch, "prior", None)
         material_mask = mask
         if gradient_mask is not None:
             material_mask = gradient_mask if material_mask is None else material_mask * gradient_mask
@@ -768,13 +769,13 @@ class Trainer3DGRUT:
             albedo_priors_end_iteration < 0 or self.global_step <= albedo_priors_end_iteration
         )
         if albedo_prior_active and pred_material is not None:
-            material_albedo_gt = getattr(gpu_batch, "material_albedo_gt", None)
-            if material_albedo_gt is not None:
+            prior_albedo = getattr(prior, "albedo", None) if prior is not None else None
+            if prior_albedo is not None:
                 with torch.cuda.nvtx.range(f"loss-albedo-priors-regularization"):
                     pred_albedo = pred_material[..., :3]
                     loss_albedo_priors_regularization = masked_l2_loss(
                         pred_albedo,
-                        material_albedo_gt,
+                        prior_albedo,
                         material_mask,
                     )
                     lambda_albedo_priors_regularization = self.conf.loss.lambda_albedo_priors_regularization
@@ -785,13 +786,13 @@ class Trainer3DGRUT:
             roughness_priors_end_iteration < 0 or self.global_step <= roughness_priors_end_iteration
         )
         if roughness_prior_active and pred_material is not None:
-            material_roughness_gt = getattr(gpu_batch, "material_roughness_gt", None)
-            if material_roughness_gt is not None:
+            prior_roughness = getattr(prior, "roughness", None) if prior is not None else None
+            if prior_roughness is not None:
                 with torch.cuda.nvtx.range(f"loss-roughness-priors-regularization"):
                     pred_roughness = pred_material[..., 3:4]
                     loss_roughness_priors_regularization = masked_l2_loss(
                         pred_roughness,
-                        material_roughness_gt,
+                        prior_roughness,
                         material_mask,
                     )
                     lambda_roughness_priors_regularization = self.conf.loss.lambda_roughness_priors_regularization
