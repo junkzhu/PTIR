@@ -101,7 +101,7 @@ run_scene() {
 
     scene_path="$(resolve_scene_path "$scene")"
 
-    if [[ "$scene" == "hotdog" ]]; then
+    if [[ "$scene" == "jugs" || "$scene" == "hotdog" || "$scene" == "chair" || "$scene" == "airbaloons" ]]; then
         scene_args+=("loss.use_normal_prior_regularization=true")
     fi
 

@@ -124,19 +124,9 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
         # 2. Principal point is at canvas center
         # 3. Camera has no distortion params
         first_frame_path = meta["frames"][0]["file_path"]
-        img_path = os.path.join(self.root_dir, first_frame_path)
+        img_path = self._resolve_image_path(first_frame_path)
 
-        # Check if the image path has an extension
-        if os.path.exists(img_path):
-            self.suffix = ""
-        elif os.path.exists(img_path + ".png"):
-            self.suffix = ".png"
-        elif os.path.exists(img_path + ".jpg"):
-            self.suffix = ".jpg"
-        else:
-            raise FileNotFoundError(f"Image path {img_path} does not exist.")
-
-        frame = Image.open(img_path + self.suffix)
+        frame = Image.open(img_path)
 
         w = frame.width
         h = frame.height
@@ -170,7 +160,7 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
             cam_centers.append(c2w[:3, 3])
             self.poses.append(c2w)
 
-            img_path = os.path.join(self.root_dir, f"{frame['file_path']}") + self.suffix
+            img_path = self._resolve_image_path(frame["file_path"])
             self.image_paths.append(img_path)
             self.normal_paths.append(self._normal_path_from_image_path(img_path))
 
@@ -357,6 +347,22 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
     def _normal_path_from_image_path(image_path: str) -> str:
         normal_path = image_path.replace("rgba", "normal")
         return normal_path
+
+    def _resolve_image_path(self, frame_path: str) -> str:
+        image_path = os.path.join(self.root_dir, frame_path)
+        candidates = (
+            image_path,
+            image_path + ".png",
+            image_path + ".jpg",
+            image_path + "_rgba.png",
+            image_path + "_rgba.jpg",
+        )
+
+        for candidate in candidates:
+            if os.path.exists(candidate):
+                return candidate
+
+        raise FileNotFoundError(f"Image path {image_path} does not exist.")
 
     @property
     def image_h(self):
