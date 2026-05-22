@@ -139,7 +139,7 @@ public:
 
     virtual ~OptixTracer();
 
-    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor> virtual trace(
+    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor> virtual trace(
         uint32_t frameNumber,
         torch::Tensor rayToWorld,
         torch::Tensor rayOri,
@@ -180,6 +180,7 @@ public:
         torch::Tensor rayNrmGrd,
         torch::Tensor rayShadingNrmGrd,
         torch::Tensor rayMaterialGrd,
+        torch::Tensor rayPbrGrd,
         uint32_t renderOpts,
         int sphDegree,
         float minTransmittance,

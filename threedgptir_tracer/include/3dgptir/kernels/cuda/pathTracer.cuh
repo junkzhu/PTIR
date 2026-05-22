@@ -18,8 +18,12 @@
 #include <optix.h>
 
 #include <3dgptir/kernels/cuda/gaussianParticles.cuh>
+#include <3dgptir/kernels/cuda/material.cuh>
+#include <3dgptir/kernels/cuda/sampler.cuh>
 #include <3dgptir/payLoad.h>
 #include <3dgptir/pipelineParameters.h>
+
+static constexpr float kMaxSelfOcclusionOffset = 1e-1f;
 
 struct RayHit {
     unsigned int particleId;
@@ -99,7 +103,10 @@ static __device__ __inline__ void trace(
     rayPayload[15].distance   = __uint_as_float(r31);
 }
 
-static __device__ __inline__ void rayIntersect(const Ray& ray, rayPayload& payload) {
+static __device__ __inline__ void rayIntersect(
+    const Ray& ray,
+    rayPayload& payload,
+    Sampler& sampler) {
     constexpr float epsT = 1e-9;
     const float2 minMaxT = intersectAABB(params.aabb, ray);
     RayPayload hitPayload;
@@ -164,6 +171,7 @@ static __device__ __inline__ void rayIntersect(const Ray& ray, rayPayload& paylo
 
     const float rayOpacity = 1.0f - payload.transmittance;
     payload.hitDistance = integratedDepth;
+    payload.valid = false;
     if (payload.hit && rayOpacity > 0.5f) {
         payload.interaction = Interaction(
             payload.ray.origin,
@@ -172,6 +180,9 @@ static __device__ __inline__ void rayIntersect(const Ray& ray, rayPayload& paylo
             integratedShadingnormal,
             integratedMaterial,
             rayOpacity);
+    } else {
+        const float rand_u = sampler.next_1d();
+        payload.valid = (rand_u < payload.transmittance);
     }
 }
 
@@ -287,6 +298,42 @@ static __device__ __inline__ void rayIntersectBwd(
     }
 }
 
+// selfOcclusionRejection(Ray& ray, Sampler){
+//     if (dot(rayDirection, rayDirection) <=1e-6f)
+//     {
+//         return
+//     }
+
+//     float3 origin = ray.origin;
+//     float accumulatedOffset = 0.0f;
+//     for (int step = 0; step < 8; ++step) {
+//         const float remainingOffset = kMaxSelfOcclusionOffset - accumulatedOffset;
+//         if (remainingOffset <= 0.0f) {
+//             break;
+//         }
+
+//     }
+// }
+
+
+static __device__ __inline__ void sampleBrdfNextDirection(
+    pathPayload& path,
+    Sampler& sampler) {
+    const Ray currentRay = path.currentRayPayload.ray;
+    const Interaction currentInteraction = path.currentRayPayload.interaction;
+
+    float3 nextRayDirection = currentRay.direction;
+    const float3 brdf = sampled_fast_brdf(
+        currentRay.direction,
+        sampler,
+        currentInteraction,
+        nextRayDirection);
+
+    path.pathThroughput *= brdf;
+    path.currentRayPayload = rayPayload(Ray(currentInteraction.position, nextRayDirection), 0.0f);
+}
+
+
 static __device__ __inline__ void writePrimaryRayOutputs(
     const uint3& idx,
     const rayPayload& payload) {
@@ -314,4 +361,19 @@ static __device__ __inline__ void writePrimaryRayOutputs(
 #ifdef ENABLE_HIT_COUNTS
     params.rayHitsCount[idx.z][idx.y][idx.x][0] = payload.hitsCount;
 #endif
+}
+
+static __device__ __inline__ void writePbrOutputs(
+    const uint3& idx,
+    const pathPayload& payload) {
+    params.rayPbr[idx.z][idx.y][idx.x][0] = payload.accumulatedLighting.x;
+    params.rayPbr[idx.z][idx.y][idx.x][1] = payload.accumulatedLighting.y;
+    params.rayPbr[idx.z][idx.y][idx.x][2] = payload.accumulatedLighting.z;
+
+    params.rayPbrComponents[idx.z][idx.y][idx.x][0][0] = payload.accumulatedDirectLighting.x;
+    params.rayPbrComponents[idx.z][idx.y][idx.x][0][1] = payload.accumulatedDirectLighting.y;
+    params.rayPbrComponents[idx.z][idx.y][idx.x][0][2] = payload.accumulatedDirectLighting.z;
+    params.rayPbrComponents[idx.z][idx.y][idx.x][1][0] = payload.accumulatedIndirectLighting.x;
+    params.rayPbrComponents[idx.z][idx.y][idx.x][1][1] = payload.accumulatedIndirectLighting.y;
+    params.rayPbrComponents[idx.z][idx.y][idx.x][1][2] = payload.accumulatedIndirectLighting.z;
 }

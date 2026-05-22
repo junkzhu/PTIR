@@ -44,6 +44,8 @@ struct PipelineParameters {
     PackedTensorAccessor32<float, 4> rayShadingNormal; ///< output integrated ray shading normal
     PackedTensorAccessor32<float, 4> rayMaterial;    ///< output integrated ray material: albedo.xyz, roughness, metallic
     PackedTensorAccessor32<float, 4> rayHitsCount;   ///< output (only in AH pipeline) number of hits per ray
+    PackedTensorAccessor32<float, 4> rayPbr;         ///< output accumulated PBR radiance
+    PackedTensorAccessor32<float, 5> rayPbrComponents; ///< output direct/indirect PBR components
 
     Environment environment;
 
@@ -106,6 +108,7 @@ struct PipelineBackwardParameters : PipelineParameters {
     PackedTensorAccessor32<float, 4> rayNormalGrad;      ///< integrated ray hit distance gradient
     PackedTensorAccessor32<float, 4> rayShadingNormalGrad; ///< integrated ray shading normal gradient
     PackedTensorAccessor32<float, 4> rayMaterialGrad;    ///< integrated ray material gradient
+    PackedTensorAccessor32<float, 4> rayPbrGrad;         ///< accumulated PBR radiance gradient
     PackedTensorAccessor32<float, 3> environmentGrad;    ///< optional environment map gradient
 
     ParticleDensity* particleDensityGrad; ///< output position, scale, quaternions, density gradient

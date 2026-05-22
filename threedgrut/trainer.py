@@ -745,7 +745,7 @@ class Trainer3DGRUT:
             losses: dictionary of loss terms computed for current batch.
         """
         rgb_gt = gpu_batch.rgb_gt
-        rgb_pred = outputs["pred_rgb"]
+        rgb_pred = outputs["pred_pbr"]
         mask = gpu_batch.mask
         gradient_mask = gpu_batch.gradient_mask
 
@@ -767,7 +767,7 @@ class Trainer3DGRUT:
         lambda_l2 = 0.0
         if self.conf.loss.use_l2:
             with torch.cuda.nvtx.range(f"loss-l2"):
-                loss_l2 = torch.nn.functional.mse_loss(outputs["pred_rgb"], rgb_gt)
+                loss_l2 = torch.nn.functional.mse_loss(rgb_pred, rgb_gt)
                 lambda_l2 = self.conf.loss.lambda_l2
 
         # DSSIM loss
@@ -1419,7 +1419,12 @@ class Trainer3DGRUT:
 
         # Visualize Training Images
         with torch.cuda.nvtx.range(f"train_{global_step - 1}_visualize"):
-            self.visualizer.save(global_step, outputs, gpu_batch)
+            visualization_outputs = outputs
+            environment = getattr(self.model, "environment", None)
+            if environment is not None:
+                visualization_outputs = dict(outputs)
+                visualization_outputs["environment"] = environment
+            self.visualizer.save(global_step, visualization_outputs, gpu_batch)
 
     @torch.cuda.nvtx.range(f"run_train_pass")
     def run_train_pass(self, conf: DictConfig):

@@ -86,6 +86,8 @@ class Tracer:
                 ray_material,
                 hits_count,
                 mog_visibility,
+                ray_pbr,
+                pbr_components,
             ) = tracer_wrapper.trace(
                 frame_id,
                 ray_to_world,
@@ -136,6 +138,8 @@ class Tracer:
                 ray_material,
                 hits_count,
                 mog_visibility,
+                ray_pbr,
+                pbr_components,
             )
 
         @staticmethod
@@ -151,6 +155,8 @@ class Tracer:
             ray_material_grd,
             ray_hits_count_grd_UNUSED,
             mog_visibility_grd_UNUSED,
+            ray_pbr_grd,
+            pbr_components_grd_UNUSED,
         ):
             (
                 ray_to_world,
@@ -197,6 +203,7 @@ class Tracer:
                 ray_normals_grd,
                 ray_shadingnormal_grd,
                 ray_material_grd,
+                ray_pbr_grd,
                 ctx.render_opts,
                 ctx.sph_degree,
                 ctx.min_transmittance,
@@ -445,6 +452,8 @@ class Tracer:
                     chunk_pred_material,
                     chunk_hits_count,
                     chunk_mog_visibility,
+                    chunk_pred_pbr,
+                    chunk_pbr_components,
                 ) = Tracer._Autograd.apply(
                     self.tracer_wrapper,
                     frame_id + spp_start,
@@ -481,6 +490,8 @@ class Tracer:
                     self._average_spp_output(chunk_pred_shadingnormal, chunk_spp, base_batch),
                     self._average_spp_output(chunk_pred_material, chunk_spp, base_batch),
                     self._average_spp_output(chunk_hits_count, chunk_spp, base_batch),
+                    self._average_spp_output(chunk_pred_pbr, chunk_spp, base_batch),
+                    self._average_spp_output(chunk_pbr_components.detach(), chunk_spp, base_batch),
                 )
                 weighted_chunk_outputs = tuple(output * chunk_spp for output in chunk_outputs)
                 if accumulated_outputs is None:
@@ -511,9 +522,13 @@ class Tracer:
                 pred_shadingnormal,
                 pred_material,
                 hits_count,
+                pred_pbr,
+                pbr_components,
             ) = tuple(
                 accumulated / total_spp for accumulated in accumulated_outputs
             )
+            pred_direct = pbr_components[..., 0, :]
+            pred_indirect = pbr_components[..., 1, :]
 
             pred_dist = pred_dist / pred_opacity
             pred_dist = torch.nan_to_num(pred_dist, 0.0, 0.0)
@@ -530,6 +545,9 @@ class Tracer:
             "pred_normals": torch.nn.functional.normalize(pred_normals, dim=3),
             "pred_shadingnormal": pred_shadingnormal,
             "pred_material": pred_material,
+            "pred_pbr": pred_pbr,
+            "pred_direct": pred_direct,
+            "pred_indirect": pred_indirect,
             "hits_count": hits_count,
             "frame_time_ms": self.frame_timer.timing() if self.frame_timer is not None else 0.0,
             "mog_visibility": mog_visibility,

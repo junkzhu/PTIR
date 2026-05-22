@@ -7,6 +7,7 @@
 
 #include <3dgptir/environment.h>
 #include <3dgptir/mathUtils.h>
+#include <3dgptir/payLoad.h>
 #include <math_constants.h>
 
 static __device__ __forceinline__ int environmentClampInt(int value, int lo, int hi) {
@@ -200,6 +201,24 @@ static __device__ __forceinline__ float3 getBackgroundColor(const float3 rayDir)
         return getBackgroundColorCubemap(dir);
     }
     return getBackgroundColorEquirect(dir);
+}
+
+static __device__ __forceinline__ void accumulateLightContribution(pathPayload& path) {
+    path.currentRayPayload.contribution = make_float3(0.0f);
+    const bool hasEnvironment = params.environment.data != nullptr && params.environment.width > 0 && params.environment.height > 0;
+    if (path.currentRayPayload.valid && hasEnvironment) {
+        path.pathThroughput *= path.currentRayPayload.transmittance;
+
+        path.currentRayPayload.contribution = path.pathThroughput * getBackgroundColor(path.currentRayPayload.ray.direction);
+        path.currentRayPayload.radiance += path.currentRayPayload.contribution;
+        path.accumulatedLighting += path.currentRayPayload.contribution;
+
+        if (path.numBounces < 2u) {
+            path.accumulatedDirectLighting += path.currentRayPayload.contribution;
+        } else {
+            path.accumulatedIndirectLighting += path.currentRayPayload.contribution;
+        }
+    }
 }
 
 #endif // __CUDACC__

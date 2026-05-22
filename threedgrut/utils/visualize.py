@@ -92,6 +92,9 @@ class TrainingVisualizer:
             pbr_row = self._build_pbr_material_row(outputs)
             if pbr_row is not None:
                 rows.append(pbr_row)
+            pbr_component_row = self._build_pbr_component_row(outputs)
+            if pbr_component_row is not None:
+                rows.append(pbr_component_row)
 
         return rows
 
@@ -242,11 +245,12 @@ class TrainingVisualizer:
 
     def _build_pbr_material_row(self, outputs: dict) -> Optional[torch.Tensor]:
         material = self._to_material_batch(outputs.get("pred_material"))
-        if material is None:
-            return None
-
-        pbr_image = self._to_image_batch(outputs.get("pred_rgb"))
+        pbr_image = self._to_image_batch(outputs.get("pred_pbr"))
         if pbr_image is None:
+            pbr_image = self._to_image_batch(outputs.get("pred_rgb"))
+        if pbr_image is None:
+            if material is None:
+                return None
             pbr_image = torch.zeros(
                 material.shape[0],
                 3,
@@ -257,9 +261,14 @@ class TrainingVisualizer:
         else:
             pbr_image = pbr_image.clip(0.0, 1.0)
 
-        albedo_image = material[..., 0:3].permute(0, 3, 1, 2).clip(0.0, 1.0)
-        roughness_image = material[..., 3:4].permute(0, 3, 1, 2).repeat(1, 3, 1, 1).clip(0.0, 1.0)
-        metallic_image = material[..., 4:5].permute(0, 3, 1, 2).repeat(1, 3, 1, 1).clip(0.0, 1.0)
+        if material is None:
+            albedo_image = torch.zeros_like(pbr_image)
+            roughness_image = torch.zeros_like(pbr_image)
+            metallic_image = torch.zeros_like(pbr_image)
+        else:
+            albedo_image = material[..., 0:3].permute(0, 3, 1, 2).clip(0.0, 1.0)
+            roughness_image = material[..., 3:4].permute(0, 3, 1, 2).repeat(1, 3, 1, 1).clip(0.0, 1.0)
+            metallic_image = material[..., 4:5].permute(0, 3, 1, 2).repeat(1, 3, 1, 1).clip(0.0, 1.0)
 
         row_images = [
             pbr_image,
@@ -268,6 +277,65 @@ class TrainingVisualizer:
             metallic_image,
         ]
         return self._concat_images(row_images, dim=-1)
+
+    def _build_pbr_component_row(self, outputs: dict) -> Optional[torch.Tensor]:
+        direct_image = self._to_image_batch(outputs.get("pred_direct"))
+        indirect_image = self._to_image_batch(outputs.get("pred_indirect"))
+        if direct_image is None or indirect_image is None:
+            return None
+
+        direct_image = direct_image.clip(0.0, 1.0)
+        indirect_image = indirect_image.clip(0.0, 1.0)
+        environment_image = self._build_environment_image(
+            outputs.get("environment"),
+            reference=direct_image,
+            cell_span=2,
+        )
+
+        row_images = [
+            direct_image,
+            indirect_image,
+            environment_image,
+        ]
+        return self._concat_images_preserve_width(row_images)
+
+    def _build_environment_image(
+        self,
+        environment: Optional[torch.Tensor],
+        reference: torch.Tensor,
+        cell_span: int = 1,
+    ) -> torch.Tensor:
+        target_height = reference.shape[-2]
+        target_width = reference.shape[-1] * cell_span
+        image = self._environment_to_image(environment)
+        if image is None:
+            return torch.zeros(reference.shape[0], 3, target_height, target_width, dtype=reference.dtype)
+
+        image = image.clip(0.0, 1.0)
+        image = F.interpolate(image, size=(target_height, target_width), mode="bilinear", align_corners=False)
+        if image.shape[0] != reference.shape[0]:
+            image = image[:1].expand(reference.shape[0], -1, -1, -1)
+        return image
+
+    @staticmethod
+    def _environment_to_image(environment: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
+        if environment is None:
+            return None
+
+        image = environment.detach()
+        if image.ndim == 4:
+            image = image[0]
+        if image.ndim != 3:
+            return None
+
+        if image.shape[-1] in (3, 4):
+            image = image[..., :3].permute(2, 0, 1).unsqueeze(0)
+        elif image.shape[0] in (3, 4):
+            image = image[:3].unsqueeze(0)
+        else:
+            return None
+
+        return image.float().cpu()
 
     @staticmethod
     def _concat_rows(rows: list[torch.Tensor]) -> torch.Tensor:
@@ -292,6 +360,18 @@ class TrainingVisualizer:
             resized_images.append(image)
 
         return torch.cat(resized_images, dim=dim)
+
+    @staticmethod
+    def _concat_images_preserve_width(images: list[torch.Tensor]) -> torch.Tensor:
+        height = images[0].shape[-2]
+        resized_images = []
+
+        for image in images:
+            if image.shape[-2] != height:
+                image = F.interpolate(image, size=(height, image.shape[-1]), mode="bilinear", align_corners=False)
+            resized_images.append(image)
+
+        return torch.cat(resized_images, dim=-1)
 
     @staticmethod
     def _to_image_batch(tensor: Optional[torch.Tensor]) -> Optional[torch.Tensor]:

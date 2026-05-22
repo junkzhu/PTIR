@@ -21,6 +21,7 @@ extern "C" {
 __constant__ PipelineParameters params;
 }
 
+#include <3dgptir/kernels/cuda/environment.cuh>
 #include <3dgptir/kernels/cuda/pathTracer.cuh>
 
 extern "C" __global__ void __raygen__rg() {
@@ -34,10 +35,31 @@ extern "C" __global__ void __raygen__rg() {
     sampler.initFromLaunch(idx, params.frameNumber);
 
     pathPayload path(1u, 0u, params.maxBounces);
-    rayPayload payload;
 
-    rayIntersect(ray, payload);
-    writePrimaryRayOutputs(idx, payload);
+    rayIntersect(ray, path.currentRayPayload, sampler);
+    writePrimaryRayOutputs(idx, path.currentRayPayload);
+
+    for (unsigned int depth = 0; depth < params.maxBounces && path.active; ++depth) {
+        accumulateLightContribution(path);
+
+        const unsigned int nextDepth = depth + 1u;
+        path.active &= (nextDepth < path.maxBounces) && path.currentRayPayload.interaction.valid;
+        if (!path.active) {
+            break;
+        }
+        path.numBounces = nextDepth;
+
+        sampleBrdfNextDirection(path, sampler);
+        const float throughputMax = fmaxf(path.pathThroughput.x, fmaxf(path.pathThroughput.y, path.pathThroughput.z));
+        if (throughputMax < 1e-4f) {
+            break;
+        }
+        path.currentRayPayload.ray.origin = path.currentRayPayload.ray.origin + 0.1 * path.currentRayPayload.ray.direction;
+        rayIntersect(path.currentRayPayload.ray, path.currentRayPayload, sampler);
+    }
+
+    writePbrOutputs(idx, path);
+
 }
 
 extern "C" __global__ void __intersection__is() {

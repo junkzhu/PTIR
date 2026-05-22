@@ -14,12 +14,14 @@
 // limitations under the License.
 
 #include <3dgptir/pipelineParameters.h>
+#include <3dgptir/kernels/cuda/sampler.cuh>
 // clang-format on
 
 extern "C" {
 __constant__ PipelineBackwardParameters params;
 }
 
+#include <3dgptir/kernels/cuda/environment.cuh>
 #include <3dgptir/kernels/cuda/pathTracer.cuh>
 
 extern "C" __global__ void __raygen__rg() {
@@ -29,6 +31,11 @@ extern "C" __global__ void __raygen__rg() {
     }
 
     Ray ray(params.rayWorldOrigin(idx), params.rayWorldDirection(idx));
+    Sampler sampler;
+    sampler.initFromLaunch(idx, params.frameNumber);
+
+    pathPayload path(1u, 0u, params.maxBounces);
+    
     rayIntersectBwd(ray, idx, params);
 }
 
