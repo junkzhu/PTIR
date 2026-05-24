@@ -90,6 +90,9 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
             return self.material_metallic
         return self.material_metallic_activation(self.material_metallic)
 
+    def get_environment(self) -> torch.Tensor | None:
+        return self.environment
+
     def get_shading_normal(self, preactivation=False) -> torch.Tensor:
         if preactivation:
             return self.shading_normal
@@ -223,6 +226,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
 
         self.background = background.make(self.conf.model.background.name, self.conf.model.background)
         self.environment = None
+        self.optimize_environment = False
 
         # Check if we would like to do progressive training
         self.feature_type = self.conf.model.progressive_training.feature_type
@@ -847,16 +851,17 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         optimizable_tensors = self.replace_tensor_to_optimizer(updated_densities, "density")
         self.density = optimizable_tensors["density"]
 
-    def forward(self, batch: Batch, train=False, frame_id=0) -> dict[str, torch.Tensor]:
+    def forward(self, batch: Batch, train=False, frame_id=0, sh_indirect: bool = False) -> dict[str, torch.Tensor]:
         """
         Args:
             batch: a Batch structure containing the input data
             train: a boolean indicating whether the model is in training mode
             frame_id: an integer indicating the frame id (default is 0)
+            sh_indirect: if true, enables the indirect render option
         Returns:
             A dictionary containing the output of the model
         """
-        return self.renderer.render(self, batch, train, frame_id)
+        return self.renderer.render(self, batch, train, frame_id, sh_indirect=sh_indirect)
 
     def trace(self, rays_o, rays_d, T_to_world=None):
         """Traces the model with the given rays. This method is a convenience method for ray-traced inference mode.

@@ -33,7 +33,7 @@ from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 import threedgrut.datasets as datasets
 from threedgrut.datasets.protocols import BoundedMultiViewDataset
 from threedgrut.datasets.utils import DEFAULT_DEVICE, MultiEpochsDataLoader, PointCloud
-from threedgrut.model.environment import Environment
+from threedgrut.model.environment import Environment, save_environment_exr
 from threedgrut.model.losses import (
     depth_distortion_loss,
     edge_aware_smoothness_loss,
@@ -218,6 +218,7 @@ class Trainer3DGRUT:
             environment_type=env_type,
             optimize_environment=optimize_environment,
         )
+        self.model.optimize_environment = self.environment.optimize_environment
         self.model.environment = self.environment.get_environment()
 
     def restore_environment_from_checkpoint(self, checkpoint: dict, conf: DictConfig) -> None:
@@ -227,6 +228,7 @@ class Trainer3DGRUT:
 
         self.environment.load_state_dict(environment_state)
         self.environment.configure_optimization(bool(OmegaConf.select(conf, "model.optimize_environment", default=False)))
+        self.model.optimize_environment = self.environment.optimize_environment
         self.model.environment = self.environment.get_environment()
 
     def init_densification_and_pruning_strategy(self, conf: DictConfig) -> None:
@@ -1221,6 +1223,10 @@ class Trainer3DGRUT:
             ckpt_path = os.path.join(out_dir, "ckpt_last.pt")
         torch.save(parameters, ckpt_path)
         logger.info(f'💾 Saved checkpoint to: "{os.path.abspath(ckpt_path)}"')
+        if self.conf.render.method == "3dgptir" and self.environment is not None:
+            envmap_path = os.path.splitext(ckpt_path)[0] + "_environment.exr"
+            if save_environment_exr(self.environment.get_environment(), envmap_path) is not None:
+                logger.info(f'🌐 Saved environment map to: "{os.path.abspath(envmap_path)}"')
 
     def render_gui(self, scene_updated):
         """Render & refresh a single frame for the gui"""
@@ -1280,7 +1286,14 @@ class Trainer3DGRUT:
         # Compute the outputs of a single batch
         with torch.cuda.nvtx.range(f"train_{global_step}_fwd"):
             profilers["inference"].start()
-            outputs = self.model(gpu_batch, train=True, frame_id=global_step)
+            sh_indirect_iterations = int(conf.sh_indirect_iterations)
+            sh_indirect = sh_indirect_iterations > 0 and global_step < sh_indirect_iterations
+            outputs = self.model(
+                gpu_batch,
+                train=True,
+                frame_id=global_step,
+                sh_indirect=sh_indirect,
+            )
             profilers["inference"].end()
 
         # Apply post-processing to rendered output
@@ -1425,7 +1438,7 @@ class Trainer3DGRUT:
         # Visualize Training Images
         with torch.cuda.nvtx.range(f"train_{global_step - 1}_visualize"):
             visualization_outputs = outputs
-            environment = getattr(self.model, "environment", None)
+            environment = self.model.get_environment()
             if environment is not None:
                 visualization_outputs = dict(outputs)
                 visualization_outputs["environment"] = environment

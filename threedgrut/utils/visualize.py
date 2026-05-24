@@ -267,7 +267,7 @@ class TrainingVisualizer:
             roughness_image = torch.zeros_like(pbr_image)
             metallic_image = torch.zeros_like(pbr_image)
         else:
-            albedo_image = material[..., 0:3].permute(0, 3, 1, 2).clip(0.0, 1.0)
+            albedo_image = self._linear_to_srgb(material[..., 0:3].permute(0, 3, 1, 2))
             roughness_image = material[..., 3:4].permute(0, 3, 1, 2).repeat(1, 3, 1, 1).clip(0.0, 1.0)
             metallic_image = material[..., 4:5].permute(0, 3, 1, 2).repeat(1, 3, 1, 1).clip(0.0, 1.0)
 

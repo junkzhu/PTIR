@@ -36,7 +36,7 @@ extern "C" __global__ void __raygen__rg() {
 
     pathPayload path(1u, 0u, params.maxBounces);
 
-    rayIntersect(ray, path.currentRayPayload, sampler);
+    rayIntersect<false>(ray, path.currentRayPayload, sampler);
     writePrimaryRayOutputs(idx, path.currentRayPayload);
 
 #ifndef ENABLE_VISUALIZE_ENVIRONMENT
@@ -59,7 +59,7 @@ extern "C" __global__ void __raygen__rg() {
         if (throughputMax < 1e-4f) {
             break;
         }
-        rayIntersect(path.currentRayPayload.ray, path.currentRayPayload, sampler);
+        rayIntersect<true>(path.currentRayPayload.ray, path.currentRayPayload, sampler);
     }
 
     writePbrOutputs(idx, path);

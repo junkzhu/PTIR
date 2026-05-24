@@ -38,7 +38,7 @@ extern "C" __global__ void __raygen__rg() {
     path.accumulatedLighting = make_float3(params.rayPbr[idx.z][idx.y][idx.x][0], params.rayPbr[idx.z][idx.y][idx.x][1], params.rayPbr[idx.z][idx.y][idx.x][2]);
     path.accumulatedLightingGrad = make_float3(params.rayPbrGrad[idx.z][idx.y][idx.x][0], params.rayPbrGrad[idx.z][idx.y][idx.x][1], params.rayPbrGrad[idx.z][idx.y][idx.x][2]);
 
-    rayIntersect(ray, path.currentRayPayload, sampler);
+    rayIntersect<false>(ray, path.currentRayPayload, sampler);
 #ifndef ENABLE_VISUALIZE_ENVIRONMENT
     if (!path.currentRayPayload.interaction.valid) { return; }
 #endif
@@ -53,7 +53,7 @@ extern "C" __global__ void __raygen__rg() {
         sampleBrdfNextDirectionBwd(path, sampler, params);
         const float throughputMax = fmaxf(path.pathThroughput.x, fmaxf(path.pathThroughput.y, path.pathThroughput.z));
         if (throughputMax < 1e-4f) { break; }
-        rayIntersect(path.currentRayPayload.ray, path.currentRayPayload, sampler);
+        rayIntersect<true>(path.currentRayPayload.ray, path.currentRayPayload, sampler);
     }
 }
 

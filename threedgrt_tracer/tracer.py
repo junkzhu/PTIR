@@ -247,7 +247,7 @@ class Tracer:
             )
             self.num_update_bvh = 0 if rebuild_bvh else self.num_update_bvh + 1
 
-    def render(self, gaussians, gpu_batch: Batch, train=False, frame_id=0):
+    def render(self, gaussians, gpu_batch: Batch, train=False, frame_id=0, sh_indirect: bool = False):
         num_gaussians = gaussians.num_gaussians
         with torch.cuda.nvtx.range(f"model.forward({num_gaussians} gaussians)"):
 

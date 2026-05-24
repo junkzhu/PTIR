@@ -273,6 +273,20 @@ static __device__ __forceinline__ float3 getBackgroundColorBwd(
 static __device__ __forceinline__ void accumulateLightContribution(pathPayload& path) {
     path.currentRayPayload.contribution = make_float3(0.0f);
     const bool hasEnvironment = params.environment.data != nullptr && params.environment.width > 0 && params.environment.height > 0;
+    if (params.renderOpts) {
+        if (path.numBounces > 0u && path.currentRayPayload.interaction.valid) {
+            path.currentRayPayload.contribution = path.pathThroughput * path.currentRayPayload.radiance;
+            path.accumulatedLighting += path.currentRayPayload.contribution;
+            path.accumulatedIndirectLighting += path.currentRayPayload.contribution;
+        } else if (path.currentRayPayload.valid && hasEnvironment) {
+            path.pathThroughput *= path.currentRayPayload.transmittance;
+            path.currentRayPayload.contribution = path.pathThroughput * getBackgroundColor(path.currentRayPayload.ray.direction);
+            path.accumulatedLighting += path.currentRayPayload.contribution;
+            path.accumulatedDirectLighting += path.currentRayPayload.contribution;
+        }
+        return;
+    }
+
     if (path.currentRayPayload.valid && hasEnvironment) {
         path.pathThroughput *= path.currentRayPayload.transmittance;
 
@@ -294,6 +308,20 @@ static __device__ __forceinline__ void accumulateLightContributionBwd(
     PipelineParams& pipelineParams) {
     path.currentRayPayload.contribution = make_float3(0.0f);
     const bool hasEnvironment = params.environment.data != nullptr && params.environment.width > 0 && params.environment.height > 0;
+    if (params.renderOpts) {
+        if (path.numBounces > 0u && path.currentRayPayload.interaction.valid) {
+            path.currentRayPayload.contribution = path.pathThroughput * path.currentRayPayload.radiance;
+            path.accumulatedLighting -= path.currentRayPayload.contribution;
+        } else if (path.currentRayPayload.valid && hasEnvironment) {
+            path.pathThroughput *= path.currentRayPayload.transmittance;
+            const float3 environmentGrad = path.accumulatedLightingGrad * path.pathThroughput;
+            const float3 background = getBackgroundColorBwd(path.currentRayPayload.ray.direction, environmentGrad, pipelineParams);
+            path.currentRayPayload.contribution = path.pathThroughput * background;
+            path.accumulatedLighting -= path.currentRayPayload.contribution;
+        }
+        return;
+    }
+
     if (path.currentRayPayload.valid && hasEnvironment) {
         path.pathThroughput *= path.currentRayPayload.transmittance;
 

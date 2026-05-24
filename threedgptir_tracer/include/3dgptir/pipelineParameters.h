@@ -58,6 +58,7 @@ struct PipelineParameters {
     float alphaMinThreshold;
     unsigned int sphDegree;
     unsigned int maxBounces;
+    unsigned int renderOpts;
 
     uint2 frameBounds;
     unsigned int frameNumber;

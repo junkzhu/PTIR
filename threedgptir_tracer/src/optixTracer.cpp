@@ -887,7 +887,7 @@ OptixTracer::trace(uint32_t frameNumber,
                    torch::Tensor particleRadiance,
                    torch::Tensor particleShadingNormal,
                    torch::Tensor environment,
-                   uint32_t renderOpts,
+                   uint32_t shIndirect,
                    int sphDegree,
                    float minTransmittance,
                    uint32_t maxBounces) {
@@ -919,7 +919,8 @@ OptixTracer::trace(uint32_t frameNumber,
     paramsHost.hitMinGaussianResponse = _state->particleKernelMinResponse;
     paramsHost.alphaMinThreshold      = 1.0f / 255.0f;
     paramsHost.sphDegree              = sphDegree;
-    paramsHost.maxBounces             = maxBounces;
+    paramsHost.maxBounces             = shIndirect ? (maxBounces < 2u ? maxBounces : 2u) : maxBounces;
+    paramsHost.renderOpts             = shIndirect;
 
     std::memcpy(&paramsHost.rayToWorld[0].x, rayToWorld.cpu().data_ptr<float>(), 3 * sizeof(float4));
     paramsHost.rayOrigin    = packed_accessor32<float, 4>(rayOri);
@@ -990,7 +991,7 @@ OptixTracer::traceBwd(uint32_t frameNumber,
                       torch::Tensor rayShadingNrmGrd,
                       torch::Tensor rayMaterialGrd,
                       torch::Tensor rayPbrGrd,
-                      uint32_t renderOpts,
+                      uint32_t shIndirect,
                       int sphDegree,
                       float minTransmittance,
                       uint32_t maxBounces) {
@@ -1016,7 +1017,8 @@ OptixTracer::traceBwd(uint32_t frameNumber,
     paramsHost.hitMinGaussianResponse = _state->particleKernelMinResponse;
     paramsHost.alphaMinThreshold      = 1.0f / 255.0f;
     paramsHost.sphDegree              = sphDegree;
-    paramsHost.maxBounces             = maxBounces;
+    paramsHost.maxBounces             = shIndirect ? (maxBounces < 2u ? maxBounces : 2u) : maxBounces;
+    paramsHost.renderOpts             = shIndirect;
 
     std::memcpy(&paramsHost.rayToWorld[0].x, rayToWorld.cpu().data_ptr<float>(), 3 * sizeof(float4));
     paramsHost.rayOrigin    = packed_accessor32<float, 4>(rayOri);

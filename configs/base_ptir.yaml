@@ -5,8 +5,9 @@ defaults:
   - /base_gs
   - _self_
 
-# n_iterations: 600
+n_iterations: 1500
 visualize_frequency: 20
+sh_indirect_iterations: 100
 
 model:
   freeze_geometry: true
@@ -23,13 +24,13 @@ environment:
 optimizer:
   params:
     material_albedo:
-      lr: 0.0025
+      lr: 0.02
     material_roughness:
-      lr: 0.0025
+      lr: 0.02
     material_metallic:
       lr: 0.0
     environment:
-      lr: 0.0025
+      lr: 0.02
 
 strategy:
   densify:

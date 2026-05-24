@@ -26,6 +26,14 @@ from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 
 import threedgrut.datasets as datasets
 from threedgrut.model.model import MixtureOfGaussians
+from threedgrut.model.ptir_helper import (
+    append_ptir_metrics,
+    compute_albedo_rescale_ratio,
+    compute_ptir_full_image_metrics,
+    rescale_albedo,
+    save_scaled_albedo_checkpoint,
+    summarize_ptir_metrics,
+)
 from threedgrut.utils.color_correct import color_correct_affine
 from threedgrut.utils.logger import logger
 from threedgrut.utils.misc import create_summary_writer
@@ -45,6 +53,7 @@ class Renderer:
         writer=None,
         compute_extra_metrics=True,
         post_processing=None,
+        checkpoint_path=None,
     ) -> None:
 
         if path:  # Replace the path to the test data
@@ -60,6 +69,7 @@ class Renderer:
         self.writer = writer
         self.compute_extra_metrics = compute_extra_metrics
         self.post_processing = post_processing
+        self.checkpoint_path = checkpoint_path
 
         if conf.model.background.color == "black":
             self.bg_color = torch.zeros((3,), dtype=torch.float32, device="cuda")
@@ -67,6 +77,23 @@ class Renderer:
             self.bg_color = torch.ones((3,), dtype=torch.float32, device="cuda")
         else:
             assert False, f"{conf.model.background.color} is not a supported background color."
+
+    @staticmethod
+    def _linear_to_srgb(image: torch.Tensor) -> torch.Tensor:
+        image = image.clip(0.0, 1.0)
+        return torch.where(
+            image <= 0.0031308,
+            12.92 * image,
+            1.055 * image ** (1.0 / 2.4) - 0.055,
+        )
+
+    @staticmethod
+    def _save_nhwc_image(image: torch.Tensor, path: str, linear_to_srgb: bool = False) -> None:
+        if linear_to_srgb:
+            image = Renderer._linear_to_srgb(image)
+        else:
+            image = image.clip(0.0, 1.0)
+        torchvision.utils.save_image(image.squeeze(0).permute(2, 0, 1), path)
 
     def create_test_dataloader(self, conf):
         """Create the test dataloader for the given configuration."""
@@ -89,7 +116,14 @@ class Renderer:
 
     @classmethod
     def from_checkpoint(
-        cls, checkpoint_path, out_dir, path="", save_gt=True, writer=None, model=None, computes_extra_metrics=True
+        cls,
+        checkpoint_path,
+        out_dir,
+        path="",
+        save_gt=True,
+        writer=None,
+        model=None,
+        computes_extra_metrics=True,
     ):
         """Loads checkpoint for test path.
         If path is stated, it will override the test path in checkpoint.
@@ -159,6 +193,7 @@ class Renderer:
             writer=writer,
             compute_extra_metrics=computes_extra_metrics,
             post_processing=post_processing,
+            checkpoint_path=checkpoint_path,
         )
 
     @classmethod
@@ -172,6 +207,7 @@ class Renderer:
         global_step=None,
         compute_extra_metrics=False,
         post_processing=None,
+        checkpoint_path=None,
     ):
         """Loads checkpoint for test path."""
 
@@ -189,6 +225,7 @@ class Renderer:
             writer=writer,
             compute_extra_metrics=compute_extra_metrics,
             post_processing=post_processing,
+            checkpoint_path=checkpoint_path,
         )
 
     @torch.no_grad()
@@ -204,11 +241,30 @@ class Renderer:
                 "lpips": LearnedPerceptualImagePatchSimilarity(net_type="vgg", normalize=True).to("cuda"),
             }
 
-        output_path_renders = os.path.join(self.out_dir, f"ours_{int(self.global_step)}", "renders")
-        os.makedirs(output_path_renders, exist_ok=True)
+        is_ptir = self.conf.render.method == "3dgptir"
+        save_renders = not is_ptir
+        output_path_renders = None
+        if save_renders:
+            output_path_renders = os.path.join(self.out_dir, f"ours_{int(self.global_step)}", "renders")
+            os.makedirs(output_path_renders, exist_ok=True)
 
         output_path_normals = os.path.join(self.out_dir, f"ours_{int(self.global_step)}", "normals")
         os.makedirs(output_path_normals, exist_ok=True)
+
+        output_path_ptir_aovs = {}
+        if is_ptir:
+            for aov_name in ("direct", "indirect", "pbr", "albedo", "roughness"):
+                output_path_ptir_aovs[aov_name] = os.path.join(
+                    self.out_dir, f"ours_{int(self.global_step)}", aov_name
+                )
+                os.makedirs(output_path_ptir_aovs[aov_name], exist_ok=True)
+
+        albedo_frame_names = []
+        albedo_gt_list = []
+        albedo_list = []
+        albedo_rescale_single = None
+        albedo_rescale_rgb = None
+        ptir_metric_lists = {}
 
         if self.save_gt:
             output_path_gt = os.path.join(self.out_dir, f"ours_{int(self.global_step)}", "gt")
@@ -236,6 +292,7 @@ class Renderer:
         logger.start_progress(task_name="Rendering", total_steps=len(self.dataloader), color="orange1")
 
         for iteration, batch in enumerate(self.dataloader):
+            frame_name = "{0:05d}.png".format(iteration)
 
             # Get the GPU-cached batch
             gpu_batch = self.dataset.get_gpu_batch_with_intrinsics(batch)
@@ -249,43 +306,91 @@ class Renderer:
 
             pred_rgb_full = outputs["pred_rgb"]
             rgb_gt_full = gpu_batch.rgb_gt
+            normal_gt = getattr(gpu_batch, "normal_gt", None)
+            material_albedo_gt = getattr(gpu_batch, "material_albedo_gt", None)
+            material_roughness_gt = getattr(gpu_batch, "material_roughness_gt", None)
+            if is_ptir:
+                metric_rgb_full = self._linear_to_srgb(outputs["pred_pbr"])
+            else:
+                metric_rgb_full = pred_rgb_full
 
             # The values are already alpha composited with the background
-            torchvision.utils.save_image(
-                pred_rgb_full.squeeze(0).permute(2, 0, 1),
-                os.path.join(output_path_renders, "{0:05d}".format(iteration) + ".png"),
-            )
-            pred_normals_full = outputs.get("pred_shadingnormal", outputs.get("pred_normals"))
+            if output_path_renders is not None:
+                self._save_nhwc_image(pred_rgb_full, os.path.join(output_path_renders, frame_name))
+            pred_shadingnormal = outputs.get("pred_shadingnormal")
+            pred_normals_full = pred_shadingnormal if pred_shadingnormal is not None else outputs.get("pred_normals")
             if pred_normals_full is not None:
                 normals_to_write = (0.5 * (pred_normals_full + 1.0)).clip(0, 1.0)
-                torchvision.utils.save_image(
-                    normals_to_write.squeeze(0).permute(2, 0, 1),
-                    os.path.join(output_path_normals, "{0:05d}".format(iteration) + ".png"),
-                )
+                self._save_nhwc_image(normals_to_write, os.path.join(output_path_normals, frame_name))
 
-            pred_img_to_write = pred_rgb_full[-1].clip(0, 1.0)
+            pred_material = outputs.get("pred_material")
+            pred_roughness = None
+            if pred_material is not None:
+                pred_roughness = pred_material[..., 3:4]
+
+            if output_path_ptir_aovs:
+                ptir_aovs = {
+                    "direct": outputs.get("pred_direct"),
+                    "indirect": outputs.get("pred_indirect"),
+                    "pbr": outputs.get("pred_pbr"),
+                }
+                for aov_name, aov_image in ptir_aovs.items():
+                    if aov_image is not None:
+                        self._save_nhwc_image(
+                            aov_image,
+                            os.path.join(output_path_ptir_aovs[aov_name], frame_name),
+                            linear_to_srgb=True,
+                        )
+
+                if pred_material is not None:
+                    albedo = pred_material[..., 0:3]
+                    roughness = pred_roughness.repeat(1, 1, 1, 3)
+                    self._save_nhwc_image(albedo, os.path.join(output_path_ptir_aovs["albedo"], frame_name))
+                    self._save_nhwc_image(roughness, os.path.join(output_path_ptir_aovs["roughness"], frame_name))
+                    if material_albedo_gt is not None:
+                        albedo_frame_names.append(frame_name)
+                        albedo_gt_list.append(material_albedo_gt.detach().cpu())
+                        albedo_list.append(albedo.detach().cpu())
+
+            pred_img_to_write = metric_rgb_full[-1].clip(0, 1.0)
             gt_img_to_write = rgb_gt_full[-1].clip(0, 1.0)
 
             if self.save_gt:
-                torchvision.utils.save_image(
-                    rgb_gt_full.squeeze(0).permute(2, 0, 1),
-                    os.path.join(output_path_gt, "{0:05d}".format(iteration) + ".png"),
-                )
+                self._save_nhwc_image(rgb_gt_full, os.path.join(output_path_gt, frame_name))
 
             # Compute the loss
-            psnr_single_img = criterions["psnr"](outputs["pred_rgb"], gpu_batch.rgb_gt).item()
+            ptir_frame_metrics = {}
+            normal_mask = None
+            if normal_gt is not None:
+                normal_mask = getattr(gpu_batch, "mask", None)
+                if normal_mask is not None:
+                    normal_mask = normal_mask[..., 0] > 0.5
+                else:
+                    normal_mask = normal_gt.abs().sum(dim=-1) > 1e-6
+            if is_ptir:
+                ptir_frame_metrics = compute_ptir_full_image_metrics(
+                    criterions=criterions,
+                    pred_pbr=metric_rgb_full,
+                    rgb_gt=rgb_gt_full,
+                    roughness=pred_roughness if material_roughness_gt is not None else None,
+                    roughness_gt=material_roughness_gt,
+                    normal=pred_shadingnormal if normal_gt is not None else None,
+                    normal_gt=normal_gt,
+                    normal_valid_mask=normal_mask,
+                )
+                append_ptir_metrics(ptir_metric_lists, ptir_frame_metrics)
+                psnr_single_img = ptir_frame_metrics["psnr_pbr"]
+            else:
+                psnr_single_img = criterions["psnr"](metric_rgb_full, rgb_gt_full).item()
             psnr.append(psnr_single_img)  # evaluation on valid rays only
             normal_mae_single_img = None
 
-            if compute_normal_mae:
-                pred_shadingnormal = outputs.get("pred_shadingnormal")
-                normal_gt = getattr(gpu_batch, "normal_gt", None)
+            if is_ptir:
+                normal_mae_single_img = ptir_frame_metrics.get("mae_normal")
+                if normal_mae_single_img is not None:
+                    normal_maes.append(normal_mae_single_img)
+            elif compute_normal_mae:
                 if pred_shadingnormal is not None and normal_gt is not None:
-                    normal_mask = getattr(gpu_batch, "mask", None)
-                    if normal_mask is not None:
-                        normal_mask = normal_mask[..., 0] > 0.5
-                    else:
-                        normal_mask = normal_gt.abs().sum(dim=-1) > 1e-6
                     normal_mae_single_img = normal_mae(
                         pred_shadingnormal,
                         normal_gt,
@@ -310,21 +415,25 @@ class Renderer:
                 worst_psnr_img_gt = gt_img_to_write
 
             # evaluate on full image
-            ssim.append(
-                criterions["ssim"](
-                    pred_rgb_full.permute(0, 3, 1, 2),
-                    rgb_gt_full.permute(0, 3, 1, 2),
-                ).item()
-            )
-            lpips.append(
-                criterions["lpips"](
-                    pred_rgb_full.clip(0, 1).permute(0, 3, 1, 2),
-                    rgb_gt_full.permute(0, 3, 1, 2),
-                ).item()
-            )
+            if is_ptir:
+                ssim.append(ptir_frame_metrics["ssim_pbr"])
+                lpips.append(ptir_frame_metrics["lpips_pbr"])
+            else:
+                ssim.append(
+                    criterions["ssim"](
+                        metric_rgb_full.permute(0, 3, 1, 2),
+                        rgb_gt_full.permute(0, 3, 1, 2),
+                    ).item()
+                )
+                lpips.append(
+                    criterions["lpips"](
+                        metric_rgb_full.clip(0, 1).permute(0, 3, 1, 2),
+                        rgb_gt_full.permute(0, 3, 1, 2),
+                    ).item()
+                )
 
             # Color-corrected metrics
-            pred_rgb_cc = color_correct_affine(pred_rgb_full, rgb_gt_full)
+            pred_rgb_cc = color_correct_affine(metric_rgb_full, rgb_gt_full)
             cc_psnr.append(criterions["psnr"](pred_rgb_cc, rgb_gt_full).item())
             cc_ssim.append(
                 criterions["ssim"](
@@ -349,6 +458,44 @@ class Renderer:
 
         logger.end_progress(task_name="Rendering")
 
+        if output_path_ptir_aovs:
+            if albedo_list:
+                albedo_rescale_single, albedo_rescale_rgb = compute_albedo_rescale_ratio(
+                    albedo_gt_list,
+                    albedo_list,
+                )
+                output_path_albedo_scaled = os.path.join(
+                    self.out_dir, f"ours_{int(self.global_step)}", "albedo_scaled"
+                )
+                os.makedirs(output_path_albedo_scaled, exist_ok=True)
+                logger.info(
+                    "PTIR albedo rescale ratio: "
+                    f"single={albedo_rescale_single.item():.6f}, "
+                    f"rgb={[round(v, 6) for v in albedo_rescale_rgb.tolist()]}"
+                )
+                for frame_name, albedo, albedo_gt in zip(albedo_frame_names, albedo_list, albedo_gt_list):
+                    albedo_scaled = rescale_albedo(albedo, albedo_rescale_rgb)
+                    self._save_nhwc_image(albedo_scaled, os.path.join(output_path_albedo_scaled, frame_name))
+                    append_ptir_metrics(
+                        ptir_metric_lists,
+                        compute_ptir_full_image_metrics(
+                            criterions=criterions,
+                            albedo_scaled=albedo_scaled,
+                            albedo_gt=albedo_gt,
+                        ),
+                    )
+                logger.info(f"Scaled albedo saved to: {output_path_albedo_scaled}")
+                scaled_ckpt_path = save_scaled_albedo_checkpoint(
+                    self.model,
+                    self.out_dir,
+                    albedo_rescale_rgb,
+                    source_checkpoint_path=self.checkpoint_path,
+                )
+                logger.info(f'Scaled albedo checkpoint saved to: "{os.path.abspath(scaled_ckpt_path)}"')
+            else:
+                logger.info("PTIR albedo scaling skipped: no material_albedo_gt was found in the test batches.")
+
+        ptir_metrics = summarize_ptir_metrics(ptir_metric_lists, include_values=False)
         mean_psnr = np.mean(psnr)
         mean_ssim = np.mean(ssim)
         mean_lpips = np.mean(lpips)
@@ -359,32 +506,76 @@ class Renderer:
         std_psnr = np.std(psnr)
         mean_inference_time = np.mean(inference_time)
 
-        table = dict(
-            mean_psnr=mean_psnr,
-            mean_ssim=mean_ssim,
-            mean_lpips=mean_lpips,
-            mean_cc_psnr=mean_cc_psnr,
-            mean_cc_ssim=mean_cc_ssim,
-            mean_cc_lpips=mean_cc_lpips,
-            std_psnr=std_psnr,
-        )
-        if mean_normal_mae is not None:
-            table["normal_mae"] = mean_normal_mae
+        if is_ptir:
+            table = {}
+        else:
+            table = dict(
+                mean_psnr=mean_psnr,
+                mean_ssim=mean_ssim,
+                mean_lpips=mean_lpips,
+                mean_cc_psnr=mean_cc_psnr,
+                mean_cc_ssim=mean_cc_ssim,
+                mean_cc_lpips=mean_cc_lpips,
+                std_psnr=std_psnr,
+            )
+            if mean_normal_mae is not None:
+                table["normal_mae"] = mean_normal_mae
+        if not is_ptir and albedo_rescale_single is not None and albedo_rescale_rgb is not None:
+            table["albedo_rescale_single"] = float(albedo_rescale_single.item())
+            table["albedo_rescale_rgb"] = str([round(value, 6) for value in albedo_rescale_rgb.tolist()])
+        if is_ptir:
+            for key in (
+                "psnr_pbr_mean",
+                "ssim_pbr_mean",
+                "lpips_pbr_mean",
+                "psnr_albedo_scaled_mean",
+                "ssim_albedo_scaled_mean",
+                "lpips_albedo_scaled_mean",
+                "mse_roughness_mean",
+                "mae_normal_mean",
+            ):
+                if key in ptir_metrics:
+                    table[key] = ptir_metrics[key]
+        else:
+            for key, value in ptir_metrics.items():
+                if key.endswith("_mean"):
+                    table[key] = value
 
         if self.conf.render.enable_kernel_timings:
             table["mean_inference_time"] = f"{'{:.2f}'.format(mean_inference_time)}" + " ms/frame"
 
         # Save metrics to JSON file
-        metrics_json = dict(
-            mean_psnr=float(mean_psnr),
-            mean_ssim=float(mean_ssim),
-            mean_lpips=float(mean_lpips),
-            mean_cc_psnr=float(mean_cc_psnr),
-            mean_cc_ssim=float(mean_cc_ssim),
-            mean_cc_lpips=float(mean_cc_lpips),
-        )
-        if mean_normal_mae is not None:
-            metrics_json["normal_mae"] = float(mean_normal_mae)
+        if is_ptir:
+            metrics_json = {}
+        else:
+            metrics_json = dict(
+                mean_psnr=float(mean_psnr),
+                mean_ssim=float(mean_ssim),
+                mean_lpips=float(mean_lpips),
+                mean_cc_psnr=float(mean_cc_psnr),
+                mean_cc_ssim=float(mean_cc_ssim),
+                mean_cc_lpips=float(mean_cc_lpips),
+            )
+            if mean_normal_mae is not None:
+                metrics_json["normal_mae"] = float(mean_normal_mae)
+        if albedo_rescale_single is not None and albedo_rescale_rgb is not None:
+            metrics_json["albedo_rescale_single"] = float(albedo_rescale_single.item())
+            metrics_json["albedo_rescale_rgb"] = [float(value) for value in albedo_rescale_rgb.tolist()]
+        if is_ptir:
+            for key in (
+                "psnr_pbr_mean",
+                "ssim_pbr_mean",
+                "lpips_pbr_mean",
+                "psnr_albedo_scaled_mean",
+                "ssim_albedo_scaled_mean",
+                "lpips_albedo_scaled_mean",
+                "mse_roughness_mean",
+                "mae_normal_mean",
+            ):
+                if key in ptir_metrics:
+                    metrics_json[key] = ptir_metrics[key]
+        else:
+            metrics_json.update(ptir_metrics)
         metrics_path = os.path.join(self.out_dir, "metrics.json")
         with open(metrics_path, "w") as f:
             json.dump(metrics_json, f, indent=2)

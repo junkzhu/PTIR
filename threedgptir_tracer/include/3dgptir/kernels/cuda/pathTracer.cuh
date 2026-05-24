@@ -24,6 +24,7 @@
 #include <3dgptir/pipelineParameters.h>
 
 static constexpr float kMaxSelfOcclusionOffset = 1e-1f;
+static constexpr float kSelfOcclusionNormalDotThreshold = 1e-2f;
 
 struct RayHit {
     unsigned int particleId;
@@ -103,6 +104,22 @@ static __device__ __inline__ void trace(
     rayPayload[15].distance   = __uint_as_float(r31);
 }
 
+static __device__ __forceinline__ bool isSelfOcclusionHit(
+    const RayHit& rayHit,
+    const Ray& ray,
+    const float* particleShadingNormal) {
+    if ((rayHit.distance > kMaxSelfOcclusionOffset) || (particleShadingNormal == nullptr)) {
+        return false;
+    }
+
+    const float3 shadingNormal = make_float3(
+        particleShadingNormal[rayHit.particleId * 3 + 0],
+        particleShadingNormal[rayHit.particleId * 3 + 1],
+        particleShadingNormal[rayHit.particleId * 3 + 2]);
+    return dot(shadingNormal, ray.direction) > kSelfOcclusionNormalDotThreshold;
+}
+
+template <bool EnableSelfOcclusionRejection>
 static __device__ __inline__ void rayIntersect(
     const Ray& ray,
     rayPayload& payload,
@@ -127,6 +144,11 @@ static __device__ __inline__ void rayIntersect(
             const RayHit rayHit = hitPayload[i];
 
             if ((rayHit.particleId != RayHit::InvalidParticleId) && (payload.transmittance > params.minTransmittance)) {
+                if (EnableSelfOcclusionRejection && isSelfOcclusionHit(rayHit, payload.ray, params.particleShadingNormal)) {
+                    payload.lastHitDistance = fmaxf(payload.lastHitDistance, rayHit.distance);
+                    continue;
+                }
+
                 const bool acceptedHit = processHit<PipelineParameters::ParticleKernelDegree, PipelineParameters::SurfelPrimitive>(
                     payload.ray.origin,
                     payload.ray.direction,
@@ -186,7 +208,7 @@ static __device__ __inline__ void rayIntersect(
     }
 }
 
-template <typename PipelineParams>
+template <bool EnableSelfOcclusionRejection, typename PipelineParams>
 static __device__ __inline__ void rayIntersectBwd(
     const Ray& ray,
     const float rayOpacity,
@@ -218,6 +240,11 @@ static __device__ __inline__ void rayIntersectBwd(
             const RayHit rayHit = hitPayload[i];
 
             if ((rayHit.particleId != RayHit::InvalidParticleId) && (rayTransmittance > pipelineParams.minTransmittance)) {
+                if (EnableSelfOcclusionRejection && isSelfOcclusionHit(rayHit, ray, pipelineParams.particleShadingNormal)) {
+                    startT = fmaxf(startT, rayHit.distance);
+                    continue;
+                }
+
                 float3 particlePosition;
                 float3 particleScale;
                 float33 particleRotation;
@@ -260,10 +287,6 @@ static __device__ __inline__ void rayIntersectBwd(
     }
 }
 
-static __device__ __inline__ void selfOcclusionRejection(Ray& ray) {
-    ray.origin = ray.origin + kMaxSelfOcclusionOffset * ray.direction;
-}
-
 static __device__ __inline__ void sampleBrdfNextDirection(
     pathPayload& path,
     Sampler& sampler) {
@@ -279,7 +302,6 @@ static __device__ __inline__ void sampleBrdfNextDirection(
 
     path.pathThroughput *= brdf;
     Ray nextRay(currentInteraction.position, nextRayDirection);
-    selfOcclusionRejection(nextRay);
     path.currentRayPayload = rayPayload(nextRay, 0.0f);
 }
 
@@ -312,16 +334,24 @@ static __device__ __inline__ void sampleBrdfNextDirectionBwd(
     path.currentRayPayload.interaction.materialGrad.dMetallic = 0.0f;
 #endif
 
-    rayIntersectBwd(
-        currentRay,
-        1.0f - path.currentRayPayload.transmittance,
-        path.currentRayPayload.lastHitDistance,
-        path.currentRayPayload.interaction.materialGrad,
-        pipelineParams);
+    if (path.numBounces > 1u) {
+        rayIntersectBwd<true>(
+            currentRay,
+            1.0f - path.currentRayPayload.transmittance,
+            path.currentRayPayload.lastHitDistance,
+            path.currentRayPayload.interaction.materialGrad,
+            pipelineParams);
+    } else {
+        rayIntersectBwd<false>(
+            currentRay,
+            1.0f - path.currentRayPayload.transmittance,
+            path.currentRayPayload.lastHitDistance,
+            path.currentRayPayload.interaction.materialGrad,
+            pipelineParams);
+    }
 
     path.pathThroughput *= brdf.value;
     Ray nextRay(currentInteraction.position, nextRayDirection);
-    selfOcclusionRejection(nextRay);
     path.currentRayPayload = rayPayload(nextRay, 0.0f);
 }
 

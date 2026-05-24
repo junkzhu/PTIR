@@ -242,6 +242,7 @@ class Tracer:
 
     class RenderOpts(IntEnum):
         NONE = 0
+        INDIRECT = 1
         DEFAULT = NONE
 
     _MULTISPP_PATTERNS = {
@@ -285,7 +286,7 @@ class Tracer:
         self.conf = conf
         self.num_update_bvh = 0
         self._warned_spp_fallback = False
-        self._logged_spp_config = False
+        self._logged_spp_configs = set()
 
         logger.info(f'🔆 Creating threedgptir Optix tracing pipeline.. Using CUDA path: "{torch.utils.cpp_extension.CUDA_HOME}"')
         torch.zeros(1, device=self.device)  # Create a dummy tensor to force cuda context init
@@ -311,8 +312,11 @@ class Tracer:
         self.timings = {}
 
     def _get_spp(self, train: bool) -> int:
-        key = "backward_spp" if train else "forward_spp"
-        return max(1, int(self.conf.render.get(key, 1)))
+        if train:
+            spp = self.conf.render.backward_spp
+        else:
+            spp = self.conf.render.render_spp
+        return max(1, int(spp))
 
     def _get_spp_chunk(self, spp: int) -> int:
         return min(spp, max(1, int(self.conf.render.get("spp_chunk", spp))))
@@ -399,7 +403,7 @@ class Tracer:
             )
             self.num_update_bvh = 0 if rebuild_bvh else self.num_update_bvh + 1
 
-    def render(self, gaussians, gpu_batch: Batch, train=False, frame_id=0):
+    def render(self, gaussians, gpu_batch: Batch, train=False, frame_id=0, sh_indirect: bool = False):
         num_gaussians = gaussians.num_gaussians
         with torch.cuda.nvtx.range(f"model.forward({num_gaussians} gaussians)"):
 
@@ -423,14 +427,15 @@ class Tracer:
             spp_jitter = None
             if spp > 1:
                 spp_jitter = self._make_spp_jitter(spp, h, w, gpu_batch.rays_dir.device, gpu_batch.rays_dir.dtype, frame_id)
-            if not self._logged_spp_config:
+            spp_config = (bool(train), int(spp), int(spp_chunk), int(base_batch), int(h), int(w))
+            if spp_config not in self._logged_spp_configs:
                 num_chunks = (spp + spp_chunk - 1) // spp_chunk
                 rich_logger.warning(
                     f"PTIR effective SPP: train={train} spp={spp} spp_chunk={spp_chunk} "
                     f"chunks={num_chunks} base_batch={base_batch} chunk_ray_batch<={spp_chunk * base_batch} "
                     f"resolution={w}x{h}"
                 )
-                self._logged_spp_config = True
+                self._logged_spp_configs.add(spp_config)
 
             accumulated_outputs = None
             mog_visibility = None
@@ -444,7 +449,7 @@ class Tracer:
                     frame_id + spp_start,
                     jitter=chunk_jitter,
                 )
-                environment = gaussians.environment
+                environment = gaussians.get_environment()
 
                 (
                     chunk_pred_rgb,
@@ -475,7 +480,7 @@ class Tracer:
                     gaussians.get_material_roughness().contiguous(),
                     gaussians.get_material_metallic().contiguous(),
                     environment,
-                    Tracer.RenderOpts.DEFAULT,
+                    int(Tracer.RenderOpts.INDIRECT if sh_indirect else Tracer.RenderOpts.DEFAULT),
                     gaussians.n_active_features,
                     self.conf.render.min_transmittance,
                     self.conf.render.get("max_bounces", 3),

@@ -23,6 +23,25 @@ import numpy as np
 import torch
 
 
+def environment_tensor_to_rgb_numpy(environment: torch.Tensor) -> np.ndarray:
+    environment = environment.detach()
+    if environment.ndim != 3 or environment.shape[-1] < 3:
+        raise ValueError(f"Environment must have shape [H, W, C>=3], got {tuple(environment.shape)}")
+
+    rgb = environment[..., :3].detach().cpu().numpy()
+    rgb = np.maximum(np.nan_to_num(rgb, nan=0.0, neginf=0.0), 0.0)
+    return rgb.astype(np.float32, copy=False)
+
+
+def save_environment_exr(environment: Optional[torch.Tensor], output_path: str) -> Optional[str]:
+    if environment is None:
+        return None
+
+    rgb = environment_tensor_to_rgb_numpy(environment)
+    imageio.v2.imwrite(output_path, rgb)
+    return output_path
+
+
 class Environment:
     """Load environment maps and expose them as 4-channel torch tensors.
 
@@ -43,7 +62,7 @@ class Environment:
         ("+z", "posz", "pz", "front"),
         ("-z", "negz", "nz", "back"),
     )
-    DEFAULT_ENVIRONMENT_SIZE = (128, 256)
+    DEFAULT_ENVIRONMENT_SIZE = (12, 24)
     DEFAULT_CUBEMAP_FACE_SIZE = 64
 
     def __init__(
@@ -84,9 +103,10 @@ class Environment:
             self.environment = tensor.detach()
 
     def configure_optimization(self, enabled: bool) -> None:
+        environment = self.get_environment()
         self.optimize_environment = bool(enabled)
-        if self.environment is not None:
-            self._set_environment_tensor(self.environment)
+        if environment is not None:
+            self._set_environment_tensor(environment)
 
     @classmethod
     def _normalize_environment_type(cls, environment_type: str) -> str:

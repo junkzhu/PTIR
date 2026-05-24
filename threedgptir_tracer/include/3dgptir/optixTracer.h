@@ -153,7 +153,7 @@ public:
         torch::Tensor particleRadiance,
         torch::Tensor particleShadingNormal,
         torch::Tensor environment,
-        uint32_t renderOpts,
+        uint32_t shIndirect,
         int sphDegree,
         float minTransmittance,
         uint32_t maxBounces);
@@ -186,7 +186,7 @@ public:
         torch::Tensor rayShadingNrmGrd,
         torch::Tensor rayMaterialGrd,
         torch::Tensor rayPbrGrd,
-        uint32_t renderOpts,
+        uint32_t shIndirect,
         int sphDegree,
         float minTransmittance,
         uint32_t maxBounces);
