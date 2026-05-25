@@ -292,16 +292,15 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
         if self.load_materials:
             albedo_path = self.material_albedo_paths[idx]
             roughness_path = self.material_roughness_paths[idx]
-            if not os.path.exists(albedo_path):
-                raise FileNotFoundError(f"Material albedo path {albedo_path} does not exist.")
-            if not os.path.exists(roughness_path):
-                raise FileNotFoundError(f"Material roughness path {roughness_path} does not exist.")
+            if os.path.exists(albedo_path) and os.path.exists(roughness_path):
+                albedo = NeRFDataset.__read_linear_image(albedo_path, self.img_wh, num_channels=3)
+                roughness = NeRFDataset.__read_linear_image(roughness_path, self.img_wh, num_channels=1)
 
-            albedo = NeRFDataset.__read_linear_image(albedo_path, self.img_wh, num_channels=3)
-            roughness = NeRFDataset.__read_linear_image(roughness_path, self.img_wh, num_channels=1)
-
-            output_dict["material_albedo"] = torch.from_numpy(albedo).reshape(out_shape)
-            output_dict["material_roughness"] = torch.from_numpy(roughness).reshape(1, self.image_h, self.image_w, 1)
+                output_dict["material_albedo"] = torch.from_numpy(albedo).reshape(out_shape)
+                output_dict["material_roughness"] = torch.from_numpy(roughness).reshape(1, self.image_h, self.image_w, 1)
+            else:
+                missing_paths = [path for path in (albedo_path, roughness_path) if not os.path.exists(path)]
+                raise FileNotFoundError(f"Material path(s) do not exist: {missing_paths}")
 
         if hasattr(self, "prior_normal_paths"):
             prior_normal_path = self.prior_normal_paths[idx]
@@ -414,10 +413,31 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
     @staticmethod
     def _material_paths_from_image_path(image_path: str) -> dict[str, str]:
         image_dir = os.path.dirname(image_path)
-        return {
-            "albedo": os.path.join(image_dir, "albedo.png"),
-            "roughness": os.path.join(image_dir, "roughness.png"),
-        }
+        image_stem = os.path.splitext(os.path.basename(image_path))[0]
+        if image_stem.endswith("_rgba"):
+            image_stem = image_stem[: -len("_rgba")]
+
+        candidate_pairs = (
+            (
+                os.path.join(image_dir, "albedo.png"),
+                os.path.join(image_dir, "roughness.png"),
+            ),
+            (
+                os.path.join(image_dir, f"{image_stem}_albedo.png"),
+                os.path.join(image_dir, f"{image_stem}_rough.png"),
+            ),
+            (
+                os.path.join(image_dir, f"{image_stem}_albedo.png"),
+                os.path.join(image_dir, f"{image_stem}_roughness.png"),
+            ),
+        )
+
+        for albedo_path, roughness_path in candidate_pairs:
+            if os.path.exists(albedo_path) and os.path.exists(roughness_path):
+                return {"albedo": albedo_path, "roughness": roughness_path}
+
+        albedo_path, roughness_path = candidate_pairs[0]
+        return {"albedo": albedo_path, "roughness": roughness_path}
 
     def _resolve_image_path(self, frame_path: str) -> str:
         image_path = os.path.join(self.root_dir, frame_path)

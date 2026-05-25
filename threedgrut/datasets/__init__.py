@@ -131,6 +131,10 @@ def _maybe_generate_diffusion_priors(config, train_dataset) -> None:
         )
 
 
+def _dataset_split_enabled(dataset_config, key: str, split: str) -> bool:
+    return dataset_config.get(f"{key}_{split}", dataset_config.get(key, False))
+
+
 def make(name: str, config, ray_jitter):
     match name:
         case "nerf":
@@ -140,14 +144,14 @@ def make(name: str, config, ray_jitter):
                 bg_color=config.model.background.color,
                 ray_jitter=ray_jitter,
                 load_normals=config.dataset.get("normal", False),
-                load_materials=config.dataset.get("material", False),
+                load_materials=_dataset_split_enabled(config.dataset, "material", "train"),
             )
             val_dataset = NeRFDataset(
                 config.path,
                 split="val",
                 bg_color=config.model.background.color,
                 load_normals=config.dataset.get("normal", False),
-                load_materials=config.dataset.get("material", False),
+                load_materials=_dataset_split_enabled(config.dataset, "material", "val"),
             )
         case "colmap":
             # Load EXIF exposure data if enabled (shared between train and val)
@@ -268,7 +272,7 @@ def make_test(name: str, config):
                 split="test",
                 bg_color=config.model.background.color,
                 load_normals=config.dataset.get("normal", False),
-                load_materials=config.dataset.get("material", False),
+                load_materials=_dataset_split_enabled(config.dataset, "material", "test"),
             )
         case "colmap":
             # Load EXIF exposure data if enabled
