@@ -23,7 +23,8 @@
 #include <3dgptir/payLoad.h>
 #include <3dgptir/pipelineParameters.h>
 
-static constexpr float kMaxSelfOcclusionOffset = 1e-1f;
+static constexpr float kSelfOcclusionRayOriginOffset = 2e-2f;
+static constexpr float kMaxSelfOcclusionOffset = 1e-1f - kSelfOcclusionRayOriginOffset;
 static constexpr float kSelfOcclusionNormalDotThreshold = 1e-2f;
 
 struct RayHit {
@@ -301,7 +302,7 @@ static __device__ __inline__ void sampleBrdfNextDirection(
         nextRayDirection);
 
     path.pathThroughput *= brdf;
-    Ray nextRay(currentInteraction.position, nextRayDirection);
+    Ray nextRay(currentInteraction.position + safe_normalize(nextRayDirection) * kSelfOcclusionRayOriginOffset, nextRayDirection);
     path.currentRayPayload = rayPayload(nextRay, 0.0f);
 }
 
@@ -349,7 +350,7 @@ static __device__ __inline__ void sampleBrdfNextDirectionBwd(
     }
 
     path.pathThroughput *= brdf.value;
-    Ray nextRay(currentInteraction.position, nextRayDirection);
+    Ray nextRay(currentInteraction.position + safe_normalize(nextRayDirection) * kSelfOcclusionRayOriginOffset, nextRayDirection);
     path.currentRayPayload = rayPayload(nextRay, 0.0f);
 }
 
