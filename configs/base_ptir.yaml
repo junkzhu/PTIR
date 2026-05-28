@@ -58,11 +58,14 @@ loss:
 
   use_albedo_prior_regularization: false
   albedo_priors_end_iteration: -1
-  lambda_albedo_priors_regularization: 0.02
+  lambda_albedo_priors_regularization: 0.002
 
   use_roughness_prior_regularization: false
   roughness_priors_end_iteration: -1
-  lambda_roughness_priors_regularization: 0.02
+  lambda_roughness_priors_regularization: 0.002
+
+  use_roughness_high_regularization: false
+  lambda_roughness_high_regularization: 0.0001
 
   use_edge_aware_smoothness: true
   lambda_edge_aware_smoothness: 0.02

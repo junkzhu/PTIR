@@ -26,6 +26,168 @@ class VisualizationRowSpec:
     fixed_max_error: Optional[float] = None
 
 
+def _as_detached_float_tensor(
+    value: torch.Tensor | np.ndarray,
+    device: Optional[torch.device] = None,
+) -> torch.Tensor:
+    if isinstance(value, torch.Tensor):
+        tensor = value.detach()
+    elif isinstance(value, np.ndarray):
+        tensor = torch.from_numpy(value)
+    else:
+        raise TypeError(f"Expected torch.Tensor or numpy.ndarray, got {type(value)!r}")
+
+    if device is not None:
+        tensor = tensor.to(device=device)
+    return tensor.float()
+
+
+def _compute_psnr_tensor(
+    pred: torch.Tensor | np.ndarray,
+    gt: torch.Tensor | np.ndarray,
+    eps: float = 1e-8,
+) -> torch.Tensor:
+    with torch.no_grad():
+        device = pred.device if isinstance(pred, torch.Tensor) else None
+        if device is None and isinstance(gt, torch.Tensor):
+            device = gt.device
+
+        pred_tensor = _as_detached_float_tensor(pred, device=device).clamp(0.0, 1.0)
+        gt_tensor = _as_detached_float_tensor(gt, device=pred_tensor.device).clamp(0.0, 1.0)
+        if pred_tensor.shape != gt_tensor.shape:
+            raise ValueError(f"PSNR expects matching shapes, got {tuple(pred_tensor.shape)} and {tuple(gt_tensor.shape)}")
+
+        error = (pred_tensor - gt_tensor) ** 2
+        mse = error.mean()
+
+        return -10.0 * torch.log10(mse + eps)
+
+
+def compute_psnr(
+    pred: torch.Tensor | np.ndarray,
+    gt: torch.Tensor | np.ndarray,
+    eps: float = 1e-8,
+) -> float:
+    psnr = _compute_psnr_tensor(pred, gt, eps=eps)
+    return float(psnr.item())
+
+
+class PBRPSNRTracker:
+    def __init__(self, max_history: int = 10):
+        self.max_history = int(max_history)
+        self.pending_psnrs: list[torch.Tensor] = []
+        self.history: list[float] = []
+
+    def update(
+        self,
+        pred_pbr: Optional[torch.Tensor | np.ndarray],
+        gt: Optional[torch.Tensor | np.ndarray],
+    ) -> Optional[torch.Tensor]:
+        if pred_pbr is None or gt is None:
+            return None
+
+        psnr = _compute_psnr_tensor(pred_pbr, gt)
+        self.pending_psnrs.append(psnr.detach())
+        return psnr
+
+    def finalize_visualization_step(self) -> Optional[float]:
+        if not self.pending_psnrs:
+            return None
+
+        device = self.pending_psnrs[0].device
+        pending = torch.stack([psnr.to(device=device) for psnr in self.pending_psnrs])
+        finite = torch.isfinite(pending)
+        if not finite.any():
+            self.pending_psnrs.clear()
+            return None
+
+        mean_psnr = float(pending[finite].mean().item())
+        self.history.append(mean_psnr)
+        if len(self.history) > self.max_history:
+            self.history = self.history[-self.max_history :]
+        self.pending_psnrs.clear()
+        return mean_psnr
+
+
+def draw_psnr_sparkline_on_image(image: np.ndarray, psnr_history: list[float]) -> np.ndarray:
+    if not psnr_history:
+        return image
+
+    image_np = np.asarray(image)
+    if image_np.ndim != 3 or image_np.shape[-1] < 3:
+        return image
+
+    values = np.asarray(psnr_history[-10:], dtype=np.float32)
+    values = values[np.isfinite(values)]
+    if values.size == 0:
+        return image
+
+    output = image_np.copy()
+    dtype = output.dtype
+    rgb = output[..., :3].astype(np.float32, copy=False)
+    max_value = 255.0 if np.issubdtype(dtype, np.integer) or float(np.nanmax(rgb)) > 1.5 else 1.0
+    canvas = np.clip(rgb, 0.0, max_value)
+    if max_value <= 1.0:
+        canvas = canvas * 255.0
+
+    height, width = canvas.shape[:2]
+    pad = max(4, int(round(min(height, width) * 0.015)))
+    max_box_width = max(1, width - 2 * pad)
+    max_box_height = max(1, height - 2 * pad)
+    box_width = min(max_box_width, max(88, int(round(width * 0.34))))
+    box_height = min(max_box_height, max(42, int(round(height * 0.20))))
+    x0 = pad
+    y0 = height - pad - box_height
+    x1 = x0 + box_width
+    y1 = y0 + box_height
+
+    canvas[y0:y1, x0:x1] = canvas[y0:y1, x0:x1] * 0.35
+
+    text = f"PSNR {values[-1]:.2f}"
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = max(0.32, min(0.55, box_height / 90.0))
+    thickness = max(1, int(round(min(height, width) / 420.0)))
+    text_size, baseline = cv2.getTextSize(text, font, font_scale, thickness)
+    text_x = x0 + max(6, int(round(box_width * 0.06)))
+    text_y = y0 + max(text_size[1] + 5, int(round(box_height * 0.28)))
+    cv2.putText(canvas, text, (text_x, text_y), font, font_scale, (232, 242, 255), thickness, cv2.LINE_AA)
+
+    plot_x0 = x0 + max(7, int(round(box_width * 0.08)))
+    plot_x1 = x1 - max(7, int(round(box_width * 0.06)))
+    plot_y0 = y0 + max(text_y - y0 + baseline + 4, int(round(box_height * 0.42)))
+    plot_y1 = y1 - max(6, int(round(box_height * 0.12)))
+    if plot_x1 <= plot_x0 or plot_y1 <= plot_y0:
+        return output
+
+    vmin = float(values.min())
+    vmax = float(values.max())
+    if abs(vmax - vmin) < 1e-6:
+        vmin -= 1.0
+        vmax += 1.0
+
+    if values.size == 1:
+        x_coords = np.array([(plot_x0 + plot_x1) * 0.5], dtype=np.float32)
+    else:
+        x_coords = np.linspace(plot_x0, plot_x1, values.size, dtype=np.float32)
+    norm = (values - vmin) / (vmax - vmin)
+    y_coords = plot_y1 - norm * (plot_y1 - plot_y0)
+    points = np.stack([x_coords, y_coords], axis=1).round().astype(np.int32)
+
+    cv2.line(canvas, (plot_x0, plot_y1), (plot_x1, plot_y1), (105, 125, 145), 1, cv2.LINE_AA)
+    if points.shape[0] > 1:
+        cv2.polylines(canvas, [points.reshape(-1, 1, 2)], False, (176, 231, 255), thickness, cv2.LINE_AA)
+    cv2.circle(canvas, tuple(points[-1]), max(2, thickness + 1), (255, 246, 175), -1, cv2.LINE_AA)
+
+    if max_value <= 1.0:
+        output[..., :3] = np.clip(canvas / 255.0, 0.0, 1.0)
+    else:
+        output[..., :3] = np.clip(canvas, 0.0, 255.0)
+
+    if np.issubdtype(dtype, np.integer):
+        return np.rint(output).astype(dtype)
+    return output.astype(dtype, copy=False)
+
+
 class TrainingVisualizer:
     """Save periodic training visualizations to disk."""
 
@@ -41,6 +203,8 @@ class TrainingVisualizer:
         self.output_dir = Path(output_dir) / "visualizations"
         self.has_normal_gt = bool(has_normal_gt)
         self.show_pbr_material = bool(show_pbr_material)
+        self.pbr_psnr_tracker = PBRPSNRTracker()
+        self._draw_pbr_psnr_history = False
         self.row_specs = [
             VisualizationRowSpec(
                 name="rgb",
@@ -70,15 +234,32 @@ class TrainingVisualizer:
 
     @torch.no_grad()
     def save(self, step: int, outputs: dict, batch: Optional[object] = None) -> None:
+        if self.enabled:
+            self._update_pbr_psnr(outputs, batch)
         if not self.should_visualize(step):
             return
 
+        self._draw_pbr_psnr_history = self.pbr_psnr_tracker.finalize_visualization_step() is not None
         rows = self._collect_rows(outputs, batch)
         if not rows:
+            self._draw_pbr_psnr_history = False
             return
 
         image = self._concat_rows(rows)
         torchvision.utils.save_image(image, self.output_dir / f"{step:05d}.png")
+        self._draw_pbr_psnr_history = False
+
+    def _update_pbr_psnr(self, outputs: dict, batch: Optional[object]) -> None:
+        if batch is None:
+            return
+
+        pred_pbr = outputs.get("pred_pbr")
+        rgb_gt = getattr(batch, "rgb_gt", None)
+        if pred_pbr is None or rgb_gt is None:
+            return
+
+        pred_pbr_srgb = self._linear_to_srgb(pred_pbr.detach())
+        self.pbr_psnr_tracker.update(pred_pbr_srgb, rgb_gt)
 
     def _collect_rows(self, outputs: dict, batch: Optional[object]) -> list[torch.Tensor]:
         rows = []
@@ -89,7 +270,7 @@ class TrainingVisualizer:
             rows.append(row)
 
         if self.show_pbr_material:
-            pbr_row = self._build_pbr_material_row(outputs)
+            pbr_row = self._build_pbr_material_row(outputs, batch)
             if pbr_row is not None:
                 rows.append(pbr_row)
             pbr_component_row = self._build_pbr_component_row(outputs)
@@ -243,7 +424,7 @@ class TrainingVisualizer:
 
         return image
 
-    def _build_pbr_material_row(self, outputs: dict) -> Optional[torch.Tensor]:
+    def _build_pbr_material_row(self, outputs: dict, batch: Optional[object]) -> Optional[torch.Tensor]:
         material = self._to_material_batch(outputs.get("pred_material"))
         pbr_image = self._to_image_batch(outputs.get("pred_pbr"))
         pbr_image_is_linear = pbr_image is not None
@@ -261,23 +442,55 @@ class TrainingVisualizer:
             )
         else:
             pbr_image = self._linear_to_srgb(pbr_image) if pbr_image_is_linear else pbr_image.clip(0.0, 1.0)
+            if pbr_image_is_linear:
+                pbr_image = self._draw_psnr_history_on_batch(pbr_image)
+
+        err_image = self._build_pbr_error_image(outputs, batch, reference=pbr_image)
 
         if material is None:
             albedo_image = torch.zeros_like(pbr_image)
             roughness_image = torch.zeros_like(pbr_image)
-            metallic_image = torch.zeros_like(pbr_image)
         else:
             albedo_image = self._linear_to_srgb(material[..., 0:3].permute(0, 3, 1, 2))
             roughness_image = material[..., 3:4].permute(0, 3, 1, 2).repeat(1, 3, 1, 1).clip(0.0, 1.0)
-            metallic_image = material[..., 4:5].permute(0, 3, 1, 2).repeat(1, 3, 1, 1).clip(0.0, 1.0)
 
         row_images = [
             pbr_image,
             albedo_image,
             roughness_image,
-            metallic_image,
+            err_image,
         ]
         return self._concat_images(row_images, dim=-1)
+
+    def _build_pbr_error_image(
+        self,
+        outputs: dict,
+        batch: Optional[object],
+        reference: torch.Tensor,
+    ) -> torch.Tensor:
+        if batch is None:
+            return torch.zeros_like(reference)
+
+        rgb_gt = self._to_image_batch(getattr(batch, "rgb_gt", None))
+        pred_pbr = self._to_image_batch(outputs.get("pred_pbr"))
+        if rgb_gt is None or pred_pbr is None:
+            return torch.zeros_like(reference)
+
+        pred_pbr_srgb = self._linear_to_srgb(pred_pbr)
+        err_map = ((pred_pbr_srgb.permute(0, 2, 3, 1) - rgb_gt.permute(0, 2, 3, 1)) ** 2).mean(dim=-1)
+        err_image = self._error_batch_to_image(err_map)
+        return self._resize_like(err_image, reference)
+
+    def _draw_psnr_history_on_batch(self, image_batch: torch.Tensor) -> torch.Tensor:
+        if not self._draw_pbr_psnr_history or not self.pbr_psnr_tracker.history:
+            return image_batch
+
+        images = []
+        for image in image_batch:
+            image_np = image.permute(1, 2, 0).detach().cpu().numpy()
+            image_np = draw_psnr_sparkline_on_image(image_np, self.pbr_psnr_tracker.history)
+            images.append(torch.from_numpy(np.ascontiguousarray(image_np)).permute(2, 0, 1))
+        return torch.stack(images, dim=0).to(device=image_batch.device, dtype=image_batch.dtype)
 
     def _build_pbr_component_row(self, outputs: dict) -> Optional[torch.Tensor]:
         direct_image = self._to_image_batch(outputs.get("pred_direct"))
@@ -312,7 +525,7 @@ class TrainingVisualizer:
         if image is None:
             return torch.zeros(reference.shape[0], 3, target_height, target_width, dtype=reference.dtype)
 
-        image = image.clip(0.0, 1.0)
+        image = self._linear_to_srgb(image)
         image = F.interpolate(image, size=(target_height, target_width), mode="bilinear", align_corners=False)
         if image.shape[0] != reference.shape[0]:
             image = image[:1].expand(reference.shape[0], -1, -1, -1)
@@ -370,6 +583,14 @@ class TrainingVisualizer:
             resized_images.append(image)
 
         return torch.cat(resized_images, dim=dim)
+
+    @staticmethod
+    def _resize_like(image: torch.Tensor, reference: torch.Tensor) -> torch.Tensor:
+        if image.shape[-2:] != reference.shape[-2:]:
+            image = F.interpolate(image, size=reference.shape[-2:], mode="bilinear", align_corners=False)
+        if image.shape[0] != reference.shape[0]:
+            image = image[:1].expand(reference.shape[0], -1, -1, -1)
+        return image
 
     @staticmethod
     def _concat_images_preserve_width(images: list[torch.Tensor]) -> torch.Tensor:
