@@ -187,6 +187,24 @@ def _edge_aware_spatial_gradients(value_map, gt_image):
     return value_grad, gt_grad
 
 
+def _edge_aware_gradient_mask(mask, reference):
+    mask = _mask_to_bhw1(mask, reference).permute(0, 3, 1, 2)
+
+    left = torch.zeros_like(mask)
+    right = torch.zeros_like(mask)
+    up = torch.zeros_like(mask)
+    down = torch.zeros_like(mask)
+
+    left[:, :, :, 1:] = mask[:, :, :, :-1]
+    right[:, :, :, :-1] = mask[:, :, :, 1:]
+    up[:, :, 1:, :] = mask[:, :, :-1, :]
+    down[:, :, :-1, :] = mask[:, :, 1:, :]
+
+    mask_x = mask * left * right
+    mask_y = mask * up * down
+    return torch.stack((mask_x, mask_y), dim=2)
+
+
 @torch.cuda.nvtx.range("edge_aware_smoothness_loss")
 def edge_aware_smoothness_loss(value_map, gt_image, mask=None, eps=1e-3, scale=1.0):
     """
@@ -195,8 +213,9 @@ def edge_aware_smoothness_loss(value_map, gt_image, mask=None, eps=1e-3, scale=1
     Args:
         value_map: Rendered map to smooth, shaped [B, H, W, C].
         gt_image: RGB guidance image in [0, 1], shaped [B, H, W, 3].
-        mask: Kept for backward compatibility; unused in the kornia formulation.
-        eps: Kept for backward compatibility; unused in the kornia formulation.
+        mask: Optional valid-pixel mask. Smoothness is applied only where the
+            finite-difference stencil stays inside the mask.
+        eps: Minimum denominator for masked normalization.
         scale: Multiplier for the GT image gradient inside exp(-scale * gt_grad).
     """
     if value_map.ndim != 4:
@@ -211,4 +230,12 @@ def edge_aware_smoothness_loss(value_map, gt_image, mask=None, eps=1e-3, scale=1
 
     value_grad, gt_grad = _edge_aware_spatial_gradients(value_map, gt_image)
     edge_weight = torch.exp(-scale * gt_grad.mean(dim=1, keepdim=True))
-    return (value_grad * edge_weight).sum(dim=2).mean()
+    weighted_grad = value_grad * edge_weight
+    if mask is None:
+        return weighted_grad.sum(dim=2).mean()
+
+    gradient_mask = _edge_aware_gradient_mask(mask, value_map)
+    masked_grad = weighted_grad * gradient_mask
+    valid_pixels = (gradient_mask.sum(dim=2) > 0.0).to(dtype=value_map.dtype)
+    denom = torch.clamp(valid_pixels.sum() * value_map.shape[-1], min=eps)
+    return masked_grad.sum() / denom
