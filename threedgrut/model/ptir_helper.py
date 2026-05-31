@@ -50,18 +50,28 @@ def _flatten_albedo(albedo: Any, device: torch.device, dtype: torch.dtype) -> to
     return tensor.to(device=device, dtype=dtype).reshape(-1, 3)
 
 
+def _use_single_channel_albedo_rescale(selection_context: Any | None) -> bool:
+    if selection_context is None:
+        return False
+    context_text = str(selection_context).lower()
+    return "air_baloons" in context_text or "airbaloons" in context_text
+
+
 @torch.no_grad()
 def compute_albedo_rescale_ratio(
     gt_albedo_list: Sequence[Any],
     albedo_list: Sequence[Any],
     eps: float = 1.0e-6,
-) -> tuple[torch.Tensor, torch.Tensor]:
+    selection_context: Any | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Compute robust PTIR albedo rescale ratios from predicted and GT albedos.
 
     Only pixels with strictly positive GT albedo in all channels are used. The
-    returned tensors are `(single_channel_ratio, three_channel_ratio)`, where
-    the first follows the IRGS-style convention of taking the median ratio from
-    channel 0 and the second keeps an independent median per RGB channel.
+    returned tensors are `(single_channel_ratio, three_channel_ratio, selected_ratio)`.
+    The single-channel ratio follows the IRGS-style convention of taking the
+    median ratio from channel 0, while the RGB ratio keeps an independent median
+    per channel. `selected_ratio` uses the single-channel ratio for air_baloons
+    scenes and the RGB ratio otherwise.
     """
 
     if len(gt_albedo_list) != len(albedo_list):
@@ -104,7 +114,8 @@ def compute_albedo_rescale_ratio(
 
     single_channel_ratio = ratios[..., 0].median()
     three_channel_ratio = ratios.median(dim=0).values
-    return single_channel_ratio, three_channel_ratio
+    selected_ratio = single_channel_ratio if _use_single_channel_albedo_rescale(selection_context) else three_channel_ratio
+    return single_channel_ratio, three_channel_ratio, selected_ratio
 
 
 def rescale_albedo(

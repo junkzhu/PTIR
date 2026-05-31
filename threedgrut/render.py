@@ -460,21 +460,28 @@ class Renderer:
 
         if output_path_ptir_aovs:
             if albedo_list:
-                albedo_rescale_single, albedo_rescale_rgb = compute_albedo_rescale_ratio(
+                albedo_rescale_single, albedo_rescale_rgb, albedo_rescale_ratio = compute_albedo_rescale_ratio(
                     albedo_gt_list,
                     albedo_list,
+                    selection_context=(
+                        self.out_dir,
+                        self.conf.get("path", ""),
+                        self.conf.get("experiment_name", ""),
+                    ),
                 )
                 output_path_albedo_scaled = os.path.join(
                     self.out_dir, f"ours_{int(self.global_step)}", "albedo_scaled"
                 )
                 os.makedirs(output_path_albedo_scaled, exist_ok=True)
+                selected_values = torch.as_tensor(albedo_rescale_ratio).detach().cpu().reshape(-1).tolist()
                 logger.info(
                     "PTIR albedo rescale ratio: "
                     f"single={albedo_rescale_single.item():.6f}, "
-                    f"rgb={[round(v, 6) for v in albedo_rescale_rgb.tolist()]}"
+                    f"rgb={[round(v, 6) for v in albedo_rescale_rgb.tolist()]}, "
+                    f"selected={[round(v, 6) for v in selected_values]}"
                 )
                 for frame_name, albedo, albedo_gt in zip(albedo_frame_names, albedo_list, albedo_gt_list):
-                    albedo_scaled = rescale_albedo(albedo, albedo_rescale_rgb)
+                    albedo_scaled = rescale_albedo(albedo, albedo_rescale_ratio)
                     self._save_nhwc_image(albedo_scaled, os.path.join(output_path_albedo_scaled, frame_name))
                     append_ptir_metrics(
                         ptir_metric_lists,
@@ -488,7 +495,7 @@ class Renderer:
                 scaled_ckpt_path = save_scaled_albedo_checkpoint(
                     self.model,
                     self.out_dir,
-                    albedo_rescale_rgb,
+                    albedo_rescale_ratio,
                     source_checkpoint_path=self.checkpoint_path,
                 )
                 logger.info(f'Scaled albedo checkpoint saved to: "{os.path.abspath(scaled_ckpt_path)}"')
