@@ -441,7 +441,14 @@ static __device__ __inline__ void sampleBrdfNextDirection(
         nextRayDirection,
         scatterPdf);
 
-    path.pathThroughput *= brdfThroughput;
+    const float3 nextPathThroughput = path.pathThroughput * brdfThroughput;
+    if (nextPathThroughput.x == 0.0f && nextPathThroughput.y == 0.0f && nextPathThroughput.z == 0.0f) {
+        path.pathThroughput = make_float3(0.0f);
+        path.active = 0u;
+        return;
+    }
+
+    path.pathThroughput = nextPathThroughput;
     Ray nextRay(currentInteraction.position + safe_normalize(nextRayDirection) * kSelfOcclusionRayOriginOffset, nextRayDirection);
     path.currentRayPayload = rayPayload(nextRay, 0.0f);
 #ifdef ENABLE_MIS
@@ -458,6 +465,11 @@ static __device__ __inline__ void sampleNee(
     float lightPdf = 0.0f;
     float scatterPdf = 0.0f;
     const float3 lightDirection = sampleEnvironmentAliasDirection(sampler, lightPdf);
+    if (dot(currentInteraction.shadingnormal, lightDirection) <= 0.0f) {
+        path.emitterRayPayload = rayPayload();
+        return;
+    }
+
     const float3 brdfTimesCos = eval_material_fast_brdf_light_sample(
         path.currentRayPayload.ray.direction,
         currentInteraction,
@@ -481,6 +493,9 @@ static __device__ __inline__ void accumulateNeeGradBwd(
     const Interaction& currentInteraction,
     PipelineParams& pipelineParams) {
     if (path.numBounces != 1u) {
+        return;
+    }
+    if (path.emitterRayPayload.lightPdf <= 0.0f) {
         return;
     }
 
@@ -526,10 +541,15 @@ static __device__ __inline__ void sampleBrdfNextDirectionBwd(
         currentInteraction,
         nextRayDirection,
         scatterPdf);
+    const float3 nextPathThroughput = path.pathThroughput * brdfThroughput.value;
+    if (nextPathThroughput.x == 0.0f && nextPathThroughput.y == 0.0f && nextPathThroughput.z == 0.0f) {
+        path.pathThroughput = make_float3(0.0f);
+        path.active = 0u;
+        return;
+    }
 
 #ifdef ENABLE_MIS
     const float lightPdf = environmentAliasPdf(nextRayDirection);
-    const float3 nextPathThroughput = path.pathThroughput * brdfThroughput.value;
     const float nextThroughputMax = fmaxf(nextPathThroughput.x, fmaxf(nextPathThroughput.y, nextPathThroughput.z));
     const bool firstBounceNeeActive = path.numBounces == 1u && nextThroughputMax >= 1e-4f;
     if (firstBounceNeeActive) {
@@ -581,7 +601,7 @@ static __device__ __inline__ void sampleBrdfNextDirectionBwd(
             pipelineParams);
     }
 
-    path.pathThroughput *= brdfThroughput.value;
+    path.pathThroughput = nextPathThroughput;
     Ray nextRay(currentInteraction.position + safe_normalize(nextRayDirection) * kSelfOcclusionRayOriginOffset, nextRayDirection);
     path.currentRayPayload = rayPayload(nextRay, 0.0f);
 #ifdef ENABLE_MIS

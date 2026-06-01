@@ -240,7 +240,8 @@ static __device__ __forceinline__ float3 sample_fast_brdf_throughput(
 
     nextRayDirection = L;
     if (dot(normal, nextRayDirection) <= 0.0f) {
-        nextRayDirection = normal;
+        scatterPdf = 0.0f;
+        return make_float3(0.0f);
     }
 
     return fast_brdf_clamp_nonnegative(outFactor * 2.0f);
