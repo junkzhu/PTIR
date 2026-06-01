@@ -386,13 +386,11 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
 
         if "mask" in batch:
             mask = batch["mask"][0].to(self.device, non_blocking=True) / 255.0
-            mask = (mask > 0.5).to(torch.float32)
-            sample["mask"] = mask
+            sample["mask"] = mask.clamp(0.0, 1.0).to(torch.float32)
 
         if "gradient_mask" in batch:
             gradient_mask = batch["gradient_mask"][0].to(self.device, non_blocking=True) / 255.0
-            gradient_mask = (gradient_mask > 0.5).to(torch.float32)
-            sample["gradient_mask"] = gradient_mask
+            sample["gradient_mask"] = gradient_mask.clamp(0.0, 1.0).to(torch.float32)
 
         if "normal" in batch:
             normal = batch["normal"][0].to(self.device, non_blocking=True) / 255.0
