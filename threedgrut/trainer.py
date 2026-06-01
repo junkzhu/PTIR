@@ -143,7 +143,7 @@ class Trainer3DGRUT:
         self.init_scene_extents(self.train_dataset)
         logger.log_rule("Initialize Model")
         self.init_model(conf, self.scene_extent)
-        if OmegaConf.select(conf, "environment", default=None) is not None:
+        if OmegaConf.select(conf, "environment", default=None) is not None or conf.render.method == "3dgptir":
             self.init_environment(conf)
         self.init_densification_and_pruning_strategy(conf)
         logger.log_rule("Setup Model Weights & Training")
@@ -1333,7 +1333,7 @@ class Trainer3DGRUT:
         # Compute the outputs of a single batch
         with torch.cuda.nvtx.range(f"train_{global_step}_fwd"):
             profilers["inference"].start()
-            sh_indirect_iterations = int(conf.sh_indirect_iterations)
+            sh_indirect_iterations = int(conf.get("sh_indirect_iterations", 0))
             sh_indirect = sh_indirect_iterations > 0 and global_step < sh_indirect_iterations
             outputs = self.model(
                 gpu_batch,
@@ -1456,7 +1456,7 @@ class Trainer3DGRUT:
             self.environment is not None
             and self.conf.render.method == "3dgptir"
             and self.conf.render.enable_mis
-            and self.conf.model.optimize_environment
+            and OmegaConf.select(self.conf, "model.optimize_environment", default=False)
             and self.conf.model.alias_table_update_frequency > 0
             and global_step % self.conf.model.alias_table_update_frequency == 0
         ):
