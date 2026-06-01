@@ -478,6 +478,10 @@ static __device__ __inline__ void sampleNee(
     const Ray lightRay(
         currentInteraction.position + lightDirection * kSelfOcclusionRayOriginOffset,
         lightDirection);
+    if (traceShadowMonteCarloOccluded<true>(lightRay, sampler)) {
+        path.emitterRayPayload = rayPayload();
+        return;
+    }
     path.emitterRayPayload = rayPayload(lightRay, 0.0f);
 
     path.emitterRayPayload.lightPdf = lightPdf;
