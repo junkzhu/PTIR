@@ -25,7 +25,7 @@
 
 static constexpr float kSelfOcclusionRayOriginOffset = 2e-2f;
 static constexpr float kMaxSelfOcclusionOffset = 1e-1f - kSelfOcclusionRayOriginOffset;
-static constexpr float kSelfOcclusionNormalDotThreshold = 1e-2f;
+static constexpr float kSelfOcclusionNormalDotThreshold = 0.5f;
 
 struct RayHit {
     unsigned int particleId;
