@@ -521,10 +521,12 @@ static __device__ __inline__ void accumulateNeeGradBwd(
     const float3 dLoss_dBrdf = path.accumulatedLightingGrad * path.pathThroughput * background * neeScale;
 
     path.currentRayPayload.interaction.materialGrad.dAlbedo += dLoss_dBrdf * brdfTimesCos.dBrdf_dAlbedo;
-    path.currentRayPayload.interaction.materialGrad.dRoughness += dot(dLoss_dBrdf, brdfTimesCos.dBrdf_dRoughness);
-#ifdef ENABLE_METALLIC
-    path.currentRayPayload.interaction.materialGrad.dMetallic += dot(dLoss_dBrdf, brdfTimesCos.dBrdf_dMetallic);
-#endif
+    
+    // NEE samples bright environment directions directly; enabling this roughness gradient can easily overfit specular highlights.
+    //path.currentRayPayload.interaction.materialGrad.dRoughness += dot(dLoss_dBrdf, brdfTimesCos.dBrdf_dRoughness);
+// #ifdef ENABLE_METALLIC
+//     path.currentRayPayload.interaction.materialGrad.dMetallic += dot(dLoss_dBrdf, brdfTimesCos.dBrdf_dMetallic);
+// #endif
 }
 #endif
 
