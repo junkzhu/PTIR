@@ -280,7 +280,7 @@ class Renderer:
 
         output_path_ptir_aovs = {}
         if is_ptir:
-            for aov_name in ("direct", "indirect", "pbr", "albedo", "roughness"):
+            for aov_name in ("direct", "indirect", "pbr", "albedo", "albedo_gt", "roughness"):
                 output_path_ptir_aovs[aov_name] = os.path.join(
                     self.out_dir, f"ours_{int(self.global_step)}", aov_name
                 )
@@ -375,6 +375,7 @@ class Renderer:
                     self._save_nhwc_image(albedo, os.path.join(output_path_ptir_aovs["albedo"], frame_name))
                     self._save_nhwc_image(roughness, os.path.join(output_path_ptir_aovs["roughness"], frame_name))
                     if material_albedo_gt is not None:
+                        self._save_nhwc_image(material_albedo_gt, os.path.join(output_path_ptir_aovs["albedo_gt"], frame_name))
                         albedo_frame_names.append(frame_name)
                         albedo_gt_list.append(material_albedo_gt.detach().cpu())
                         albedo_list.append(albedo.detach().cpu())
