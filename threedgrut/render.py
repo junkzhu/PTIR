@@ -30,6 +30,7 @@ from threedgrut.model.environment import Environment
 from threedgrut.model.model import MixtureOfGaussians
 from threedgrut.model.ptir_helper import (
     append_ptir_metrics,
+    apply_gt_mask_to_tensor,
     compute_albedo_rescale_ratio,
     compute_ptir_full_image_metrics,
     rescale_albedo,
@@ -335,6 +336,7 @@ class Renderer:
             rgb_gt_full = gpu_batch.rgb_gt
             normal_gt = getattr(gpu_batch, "normal_gt", None)
             material_albedo_gt = getattr(gpu_batch, "material_albedo_gt", None)
+            material_albedo_gt = apply_gt_mask_to_tensor(material_albedo_gt, getattr(gpu_batch, "mask", None))
             material_roughness_gt = getattr(gpu_batch, "material_roughness_gt", None)
             if is_ptir:
                 metric_rgb_full = self._linear_to_srgb(outputs["pred_pbr"])
