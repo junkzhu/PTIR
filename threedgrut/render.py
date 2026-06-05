@@ -515,14 +515,12 @@ class Renderer:
                 for frame_name, albedo, albedo_gt in zip(albedo_frame_names, albedo_list, albedo_gt_list):
                     albedo_scaled = rescale_albedo(albedo, albedo_rescale_ratio)
                     self._save_nhwc_image(albedo_scaled, os.path.join(output_path_albedo_scaled, frame_name))
-                    append_ptir_metrics(
-                        ptir_metric_lists,
-                        compute_ptir_full_image_metrics(
-                            criterions=criterions,
-                            albedo_scaled=albedo_scaled,
-                            albedo_gt=albedo_gt,
-                        ),
+                    albedo_scaled_metrics = compute_ptir_full_image_metrics(
+                        criterions=criterions,
+                        albedo_scaled=albedo_scaled,
+                        albedo_gt=albedo_gt,
                     )
+                    append_ptir_metrics(ptir_metric_lists, albedo_scaled_metrics)
                 logger.info(f"Scaled albedo saved to: {output_path_albedo_scaled}")
                 scaled_ckpt_path = save_scaled_albedo_checkpoint(
                     self.model,
@@ -619,6 +617,21 @@ class Renderer:
         with open(metrics_path, "w") as f:
             json.dump(metrics_json, f, indent=2)
         logger.info(f"📄 Metrics saved to: {metrics_path}")
+
+        if is_ptir:
+            metrics_details_json = {}
+            for output_key, metric_key in (
+                ("pbr_psnr", "psnr_pbr"),
+                ("psnr_albedo_scaled", "psnr_albedo_scaled"),
+                ("mse_roughness", "mse_roughness"),
+            ):
+                if metric_key in ptir_metric_lists:
+                    metrics_details_json[output_key] = [float(value) for value in ptir_metric_lists[metric_key]]
+
+            metrics_details_path = os.path.join(self.out_dir, "metrics_details.json")
+            with open(metrics_details_path, "w") as f:
+                json.dump(metrics_details_json, f, indent=2)
+            logger.info(f"📄 Metrics details saved to: {metrics_details_path}")
 
         logger.log_table(f"⭐ Test Metrics - Step {self.global_step}", record=table)
 

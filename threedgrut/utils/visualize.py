@@ -75,8 +75,7 @@ def compute_psnr(
 
 
 class ScalarHistoryTracker:
-    def __init__(self, max_history: int = 10):
-        self.max_history = int(max_history)
+    def __init__(self):
         self.pending_values: list[torch.Tensor] = []
         self.history: list[float] = []
 
@@ -97,8 +96,6 @@ class ScalarHistoryTracker:
 
         mean_value = float(pending[finite].mean().item())
         self.history.append(mean_value)
-        if len(self.history) > self.max_history:
-            self.history = self.history[-self.max_history :]
         self.pending_values.clear()
         return mean_value
 
