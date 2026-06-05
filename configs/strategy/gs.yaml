@@ -48,3 +48,10 @@ prune_scale:
   start_iteration: -1
   end_iteration: -1
   threshold: 1.0
+
+albedo_decay:
+  frequency: 20
+  start_iteration: -1
+  end_iteration: -1
+  threshold: 0.15
+  desaturate_amount: 0.1

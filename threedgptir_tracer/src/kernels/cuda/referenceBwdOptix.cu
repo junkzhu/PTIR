@@ -37,6 +37,8 @@ extern "C" __global__ void __raygen__rg() {
     pathPayload path(1u, 0u, params.maxBounces);
     path.accumulatedLighting = make_float3(params.rayPbr[idx.z][idx.y][idx.x][0], params.rayPbr[idx.z][idx.y][idx.x][1], params.rayPbr[idx.z][idx.y][idx.x][2]);
     path.accumulatedLightingGrad = make_float3(params.rayPbrGrad[idx.z][idx.y][idx.x][0], params.rayPbrGrad[idx.z][idx.y][idx.x][1], params.rayPbrGrad[idx.z][idx.y][idx.x][2]);
+    path.accumulatedLightNoBrdf = make_float3(params.rayLight[idx.z][idx.y][idx.x][0], params.rayLight[idx.z][idx.y][idx.x][1], params.rayLight[idx.z][idx.y][idx.x][2]);
+    path.accumulatedLightNoBrdfGrad = make_float3(params.rayLightGrad[idx.z][idx.y][idx.x][0], params.rayLightGrad[idx.z][idx.y][idx.x][1], params.rayLightGrad[idx.z][idx.y][idx.x][2]);
 
     rayIntersect<false>(ray, path.currentRayPayload, sampler);
 

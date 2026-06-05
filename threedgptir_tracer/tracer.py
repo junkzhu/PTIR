@@ -89,6 +89,7 @@ class Tracer:
                 hits_count,
                 mog_visibility,
                 ray_pbr,
+                ray_light,
                 pbr_components,
             ) = tracer_wrapper.trace(
                 frame_id,
@@ -119,6 +120,7 @@ class Tracer:
                 ray_shadingnormal,
                 ray_material,
                 ray_pbr,
+                ray_light,
                 particle_density,
                 particle_material,
                 mog_sph,
@@ -144,6 +146,7 @@ class Tracer:
                 hits_count,
                 mog_visibility,
                 ray_pbr,
+                ray_light,
                 pbr_components,
             )
 
@@ -161,6 +164,7 @@ class Tracer:
             ray_hits_count_grd_UNUSED,
             mog_visibility_grd_UNUSED,
             ray_pbr_grd,
+            ray_light_grd,
             pbr_components_grd_UNUSED,
         ):
             (
@@ -176,6 +180,7 @@ class Tracer:
                 ray_shadingnormal,
                 ray_material,
                 ray_pbr,
+                ray_light,
                 particle_density,
                 particle_material,
                 mog_sph,
@@ -184,6 +189,8 @@ class Tracer:
                 environment_alias_table,
             ) = ctx.saved_variables
             frame_id = ctx.frame_id
+            if ray_light_grd is None:
+                ray_light_grd = torch.zeros_like(ray_light)
             particle_density_grd, particle_material_grd, mog_sph_grd, mog_sn_grd, environment_grd = ctx.tracer_wrapper.trace_bwd(
                 frame_id,
                 ray_to_world,
@@ -198,6 +205,7 @@ class Tracer:
                 ray_shadingnormal,
                 ray_material,
                 ray_pbr,
+                ray_light,
                 particle_density,
                 particle_material,
                 mog_sph,
@@ -213,6 +221,7 @@ class Tracer:
                 ray_shadingnormal_grd,
                 ray_material_grd,
                 ray_pbr_grd,
+                ray_light_grd,
                 ctx.render_opts,
                 ctx.sph_degree,
                 ctx.min_transmittance,
@@ -483,6 +492,7 @@ class Tracer:
                     chunk_hits_count,
                     chunk_mog_visibility,
                     chunk_pred_pbr,
+                    chunk_pred_light,
                     chunk_pbr_components,
                 ) = Tracer._Autograd.apply(
                     self.tracer_wrapper,
@@ -522,6 +532,7 @@ class Tracer:
                     self._average_spp_output(chunk_pred_material, chunk_spp, base_batch),
                     self._average_spp_output(chunk_hits_count, chunk_spp, base_batch),
                     self._average_spp_output(chunk_pred_pbr, chunk_spp, base_batch),
+                    self._average_spp_output(chunk_pred_light, chunk_spp, base_batch),
                     self._average_spp_output(chunk_pbr_components.detach(), chunk_spp, base_batch),
                 )
                 weighted_chunk_outputs = tuple(output * chunk_spp for output in chunk_outputs)
@@ -554,6 +565,7 @@ class Tracer:
                 pred_material,
                 hits_count,
                 pred_pbr,
+                pred_light,
                 pbr_components,
             ) = tuple(
                 accumulated / total_spp for accumulated in accumulated_outputs
@@ -577,6 +589,7 @@ class Tracer:
             "pred_shadingnormal": pred_shadingnormal,
             "pred_material": pred_material,
             "pred_pbr": pred_pbr,
+            "pred_light": pred_light,
             "pred_direct": pred_direct,
             "pred_indirect": pred_indirect,
             "hits_count": hits_count,

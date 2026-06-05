@@ -906,7 +906,7 @@ void OptixTracer::buildBVH(torch::Tensor mogPos,
     CUDA_CHECK_LAST();
 }
 
-std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
 OptixTracer::trace(uint32_t frameNumber,
                    torch::Tensor rayToWorld,
                    torch::Tensor rayOri,
@@ -933,6 +933,7 @@ OptixTracer::trace(uint32_t frameNumber,
     torch::Tensor rayMaterial        = torch::empty({rayOri.size(0), rayOri.size(1), rayOri.size(2), 5}, opts);
     torch::Tensor rayHitsCount       = torch::zeros({rayOri.size(0), rayOri.size(1), rayOri.size(2), 1}, opts);
     torch::Tensor rayPbr             = torch::zeros({rayOri.size(0), rayOri.size(1), rayOri.size(2), 3}, opts);
+    torch::Tensor rayLight           = torch::zeros({rayOri.size(0), rayOri.size(1), rayOri.size(2), 3}, opts);
     torch::Tensor rayPbrComponents   = torch::zeros({rayOri.size(0), rayOri.size(1), rayOri.size(2), 2, 3}, opts);
     torch::Tensor particleVisibility = torch::zeros({particleDensity.size(0), 1}, opts);
 
@@ -973,6 +974,7 @@ OptixTracer::trace(uint32_t frameNumber,
     paramsHost.rayMaterial    = packed_accessor32<float, 4>(rayMaterial);
     paramsHost.rayHitsCount   = packed_accessor32<float, 4>(rayHitsCount);
     paramsHost.rayPbr         = packed_accessor32<float, 4>(rayPbr);
+    paramsHost.rayLight       = packed_accessor32<float, 4>(rayLight);
     paramsHost.rayPbrComponents = packed_accessor32<float, 5>(rayPbrComponents);
 
     paramsHost.environment = Environment(environment, environmentAliasTable);
@@ -989,8 +991,8 @@ OptixTracer::trace(uint32_t frameNumber,
 
     CUDA_CHECK_LAST();
 
-    return std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>(
-        rayRad, rayDns, rayHit, rayHitSecondMoment, rayDepthDistortion, rayNrm, rayShadingNrm, rayMaterial, rayHitsCount, particleVisibility, rayPbr, rayPbrComponents);
+    return std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>(
+        rayRad, rayDns, rayHit, rayHitSecondMoment, rayDepthDistortion, rayNrm, rayShadingNrm, rayMaterial, rayHitsCount, particleVisibility, rayPbr, rayLight, rayPbrComponents);
 }
 
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
@@ -1007,6 +1009,7 @@ OptixTracer::traceBwd(uint32_t frameNumber,
                       torch::Tensor rayShadingNrm,
                       torch::Tensor rayMaterial,
                       torch::Tensor rayPbr,
+                      torch::Tensor rayLight,
                       torch::Tensor particleDensity,
                       torch::Tensor particleMaterial,
                       torch::Tensor particleRadiance,
@@ -1022,6 +1025,7 @@ OptixTracer::traceBwd(uint32_t frameNumber,
                       torch::Tensor rayShadingNrmGrd,
                       torch::Tensor rayMaterialGrd,
                       torch::Tensor rayPbrGrd,
+                      torch::Tensor rayLightGrd,
                       uint32_t shIndirect,
                       int sphDegree,
                       float minTransmittance,
@@ -1071,6 +1075,7 @@ OptixTracer::traceBwd(uint32_t frameNumber,
     paramsHost.rayShadingNormal = packed_accessor32<float, 4>(rayShadingNrm);
     paramsHost.rayMaterial    = packed_accessor32<float, 4>(rayMaterial);
     paramsHost.rayPbr         = packed_accessor32<float, 4>(rayPbr);
+    paramsHost.rayLight       = packed_accessor32<float, 4>(rayLight);
 
     paramsHost.particleDensityGrad  = getPtr<ParticleDensity>(particleDensityGrad);
     paramsHost.particleMaterialGrad = getPtr<Material>(particleMaterialGrad);
@@ -1086,6 +1091,7 @@ OptixTracer::traceBwd(uint32_t frameNumber,
     paramsHost.rayShadingNormalGrad = packed_accessor32<float, 4>(rayShadingNrmGrd);
     paramsHost.rayMaterialGrad    = packed_accessor32<float, 4>(rayMaterialGrd);
     paramsHost.rayPbrGrad         = packed_accessor32<float, 4>(rayPbrGrd);
+    paramsHost.rayLightGrad       = packed_accessor32<float, 4>(rayLightGrd);
     paramsHost.environmentGrad    = packed_accessor32<float, 3>(environmentGrad);
 
     paramsHost.environment = Environment(environment, environmentAliasTable);

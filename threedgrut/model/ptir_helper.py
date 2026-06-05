@@ -51,6 +51,7 @@ PBR_GT_MASK_OUTPUT_KEYS = (
     "pred_pbr",
     "pred_direct",
     "pred_indirect",
+    "pred_light",
     "pred_shadingnormal",
     "pred_material",
 )

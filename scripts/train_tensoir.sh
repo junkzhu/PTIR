@@ -154,6 +154,15 @@ run_inversion() {
     local gpu_id="$2"
     local initialization_path="$3"
     local log_file="$INVERSION_OUT_DIR/logs/inversion_${scene}.log"
+    local inversion_scene_args=()
+
+    if [[ "$scene" == "armadillo" ]]; then
+        inversion_scene_args+=("initialization.albedo=0.005")
+    elif [[ "$scene" == "ficus" ]]; then
+        inversion_scene_args+=("initialization.albedo=0.01")
+    elif [[ "$scene" == "hotdog" || "$scene" == "lego" ]]; then
+        inversion_scene_args+=("initialization.albedo=0.6")
+    fi
 
     echo "[$(date '+%F %T')] Starting PTIR inversion scene=$scene on CUDA_VISIBLE_DEVICES=$gpu_id"
     {
@@ -164,6 +173,8 @@ run_inversion() {
         echo "initialization.path=$initialization_path"
         echo "out_dir=$INVERSION_OUT_DIR"
         echo "experiment_name=${scene}_inversion"
+        printf 'inversion_scene_args=%q ' "${inversion_scene_args[@]}"
+        echo
         printf 'inversion_extra_args=%q ' "${INVERSION_EXTRA_ARGS[@]}"
         echo
         nvidia-smi || true
@@ -173,6 +184,7 @@ run_inversion() {
             "initialization.path=$initialization_path" \
             "out_dir=$INVERSION_OUT_DIR" \
             "experiment_name=${scene}_inversion" \
+            "${inversion_scene_args[@]}" \
             "${INVERSION_EXTRA_ARGS[@]}"
     } > "$log_file" 2>&1
     echo "[$(date '+%F %T')] Finished PTIR inversion scene=$scene on CUDA_VISIBLE_DEVICES=$gpu_id"

@@ -156,6 +156,19 @@ def depth_distortion_loss(pred_depth_distortion):
     return pred_depth_distortion.mean()
 
 
+@torch.cuda.nvtx.range("light_consistency_loss")
+def light_consistency_loss(light):
+    if light is None:
+        raise ValueError("light must be provided for light_consistency_loss")
+    if light.ndim != 4:
+        raise ValueError(f"light must be shaped [B, H, W, C], got {light.ndim}D")
+    if light.numel() == 0:
+        return light.sum() * 0.0
+
+    mean_light = light.mean(dim=-1, keepdim=True).expand_as(light)
+    return torch.nn.functional.l1_loss(light, mean_light)
+
+
 def _mask_to_bhw1(mask, reference):
     mask = mask.detach().to(device=reference.device, dtype=reference.dtype)
 

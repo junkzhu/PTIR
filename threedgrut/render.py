@@ -281,7 +281,7 @@ class Renderer:
 
         output_path_ptir_aovs = {}
         if is_ptir:
-            for aov_name in ("direct", "indirect", "pbr", "albedo", "albedo_gt", "roughness"):
+            for aov_name in ("direct", "indirect", "light", "pbr", "albedo", "albedo_gt", "roughness"):
                 output_path_ptir_aovs[aov_name] = os.path.join(
                     self.out_dir, f"ours_{int(self.global_step)}", aov_name
                 )
@@ -362,6 +362,7 @@ class Renderer:
                 ptir_aovs = {
                     "direct": outputs.get("pred_direct"),
                     "indirect": outputs.get("pred_indirect"),
+                    "light": outputs.get("pred_light"),
                     "pbr": outputs.get("pred_pbr"),
                 }
                 for aov_name, aov_image in ptir_aovs.items():

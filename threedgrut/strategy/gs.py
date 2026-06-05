@@ -134,6 +134,15 @@ class GSStrategy(BaseStrategy):
         ):
             self.decay_density()
 
+        # Desaturate low-saturation material albedo values
+        if check_step_condition(
+            step,
+            self.conf.strategy.albedo_decay.start_iteration,
+            self.conf.strategy.albedo_decay.end_iteration,
+            self.conf.strategy.albedo_decay.frequency,
+        ):
+            self.decay_albedo()
+
         # Reset the Gaussian density
         if check_step_condition(
             step,
@@ -395,6 +404,26 @@ class GSStrategy(BaseStrategy):
             return torch.nn.Parameter(decayed_densities, requires_grad=param.requires_grad)
 
         self._update_param_with_optimizer(update_param_fn, None, names=["density"])
+
+    def decay_albedo(self):
+        threshold = float(self.conf.strategy.albedo_decay.threshold)
+        strength = float(self.conf.strategy.albedo_decay.desaturate_amount)
+        if threshold <= 0.0 or strength <= 0.0:
+            return
+
+        def update_param_fn(name: str, param: torch.Tensor) -> torch.Tensor:
+            assert name == "material_albedo", "wrong paramaeter passed to update_param_fn"
+
+            albedo = self.model.material_albedo_activation(param)
+            sat = albedo.amax(dim=-1) - albedo.amin(dim=-1)
+            weight = (1.0 - (sat / threshold).clamp(0.0, 1.0)) * strength
+            gray = albedo.mean(dim=-1, keepdim=True).expand_as(albedo)
+            desaturated_albedo = albedo.lerp(gray, weight.unsqueeze(-1)).clamp(1.0e-6, 1.0 - 1.0e-6)
+            desaturated_albedo = self.model.material_albedo_activation_inv(desaturated_albedo)
+
+            return torch.nn.Parameter(desaturated_albedo, requires_grad=param.requires_grad)
+
+        self._update_param_with_optimizer(update_param_fn, None, names=["material_albedo"])
 
     def reset_density(self):
         def update_param_fn(name: str, param: torch.Tensor) -> torch.Tensor:

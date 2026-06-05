@@ -503,7 +503,10 @@ static __device__ __forceinline__ void accumulateLightContribution(pathPayload& 
             path.accumulatedIndirectLighting += path.currentRayPayload.contribution;
         } else if (path.currentRayPayload.valid && hasEnvironment) {
             path.pathThroughput *= path.currentRayPayload.transmittance;
-            path.currentRayPayload.contribution = path.pathThroughput * getBackgroundColor(path.currentRayPayload.ray.direction);
+            const float3 backgroundLight = getBackgroundColor(path.currentRayPayload.ray.direction);
+            path.currentRayPayload.light += backgroundLight;
+            path.accumulatedLightNoBrdf += backgroundLight;
+            path.currentRayPayload.contribution = path.pathThroughput * path.currentRayPayload.light;
 #ifdef ENABLE_MIS
             if (firstSecondaryBounce) {
                 path.currentRayPayload.contribution *= brdfSideMis;
@@ -524,8 +527,10 @@ static __device__ __forceinline__ void accumulateLightContribution(pathPayload& 
 
     if (path.currentRayPayload.valid && hasEnvironment) {
         path.pathThroughput *= path.currentRayPayload.transmittance;
-
-        path.currentRayPayload.contribution = path.pathThroughput * getBackgroundColor(path.currentRayPayload.ray.direction);
+        const float3 backgroundLight = getBackgroundColor(path.currentRayPayload.ray.direction);
+        path.currentRayPayload.light += backgroundLight;
+        path.accumulatedLightNoBrdf += backgroundLight;
+        path.currentRayPayload.contribution = path.pathThroughput * path.currentRayPayload.light;
 #ifdef ENABLE_MIS
         if (firstSecondaryBounce) {
             path.currentRayPayload.contribution *= brdfSideMis;
@@ -582,6 +587,7 @@ static __device__ __forceinline__ void accumulateLightContributionBwd(
                 environmentGrad *= brdfSideMis;
             }
 #endif
+            environmentGrad += path.accumulatedLightNoBrdfGrad;
             const float3 background = getBackgroundColorBwd(path.currentRayPayload.ray.direction, environmentGrad, pipelineParams, &path.currentRayPayload.rayDirGrad);
             path.currentRayPayload.contribution = path.pathThroughput * background;
 #ifdef ENABLE_MIS
@@ -610,6 +616,7 @@ static __device__ __forceinline__ void accumulateLightContributionBwd(
             environmentGrad *= brdfSideMis;
         }
 #endif
+        environmentGrad += path.accumulatedLightNoBrdfGrad;
         const float3 background = getBackgroundColorBwd(path.currentRayPayload.ray.direction, environmentGrad, pipelineParams, &path.currentRayPayload.rayDirGrad);
         path.currentRayPayload.contribution = path.pathThroughput * background;
 #ifdef ENABLE_MIS

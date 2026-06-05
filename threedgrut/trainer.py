@@ -37,6 +37,7 @@ from threedgrut.model.environment import EnvAliasTable, Environment, save_enviro
 from threedgrut.model.losses import (
     depth_distortion_loss,
     edge_aware_smoothness_loss,
+    light_consistency_loss,
     mask_entropy_loss,
     masked_l2_loss,
     prior_normal_alignment_loss,
@@ -866,6 +867,17 @@ class Trainer3DGRUT:
                 loss_roughness_high_regularization = 1.0 - pred_roughness.mean()
                 lambda_roughness_high_regularization = self.conf.loss.lambda_roughness_high_regularization
 
+        # Light consistency regularization
+        loss_light = torch.zeros(1, device=self.device)
+        lambda_light = float(self.conf.loss.get("lambda_light", 0.0))
+        use_light_consistency = bool(self.conf.loss.get("use_light_consistency", False)) or lambda_light > 0.0
+        if use_light_consistency:
+            pred_light = outputs.get("pred_light")
+            if pred_light is None:
+                raise KeyError("loss.use_light_consistency requires outputs['pred_light']")
+            with torch.cuda.nvtx.range(f"loss-light-consistency"):
+                loss_light = light_consistency_loss(pred_light)
+
         # Edge aware smoothness loss
         loss_edge_aware_smoothness = torch.zeros(1, device=self.device)
         lambda_edge_aware_smoothness = 0.0
@@ -903,6 +915,7 @@ class Trainer3DGRUT:
             + lambda_albedo_priors_regularization * loss_albedo_priors_regularization
             + lambda_roughness_priors_regularization * loss_roughness_priors_regularization
             + lambda_roughness_high_regularization * loss_roughness_high_regularization
+            + lambda_light * loss_light
             + lambda_edge_aware_smoothness * loss_edge_aware_smoothness
         )
         return dict(
@@ -913,6 +926,7 @@ class Trainer3DGRUT:
             albedo_priors_regularization_loss=lambda_albedo_priors_regularization * loss_albedo_priors_regularization,
             roughness_priors_regularization_loss=lambda_roughness_priors_regularization * loss_roughness_priors_regularization,
             roughness_high_regularization_loss=lambda_roughness_high_regularization * loss_roughness_high_regularization,
+            light_loss=lambda_light * loss_light,
             edge_aware_smoothness_loss=lambda_edge_aware_smoothness * loss_edge_aware_smoothness,
         )
 
@@ -1101,6 +1115,12 @@ class Trainer3DGRUT:
                     roughness_high_regularization_loss,
                     global_step,
                 )
+            if "light_loss" in batch_metrics["losses"] and (
+                self.conf.loss.get("use_light_consistency", False)
+                or float(self.conf.loss.get("lambda_light", 0.0)) > 0.0
+            ):
+                light_loss = np.mean(batch_metrics["losses"]["light_loss"])
+                writer.add_scalar("loss/light/train", light_loss, global_step)
             if self.conf.loss.use_edge_aware_smoothness:
                 edge_aware_smoothness_loss = np.mean(batch_metrics["losses"]["edge_aware_smoothness_loss"])
                 writer.add_scalar("loss/edge_aware_smoothness/train", edge_aware_smoothness_loss, global_step)

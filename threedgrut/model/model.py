@@ -755,11 +755,29 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         num_gaussians: int,
         dtype: torch.dtype,
     ) -> torch.nn.Parameter:
-        albedo = torch.full((num_gaussians, 3), 0.1, dtype=dtype, device=self.device)
+        initialization_conf = self.conf.get("initialization", {})
+        albedo_value = initialization_conf.get("albedo", 0.3)
+        if isinstance(albedo_value, torch.Tensor):
+            albedo = albedo_value.to(dtype=dtype, device=self.device)
+        elif np.isscalar(albedo_value):
+            albedo = torch.tensor(float(albedo_value), dtype=dtype, device=self.device)
+        else:
+            albedo = torch.as_tensor(list(albedo_value), dtype=dtype, device=self.device)
+        if albedo.numel() == 1:
+            albedo = albedo.expand(3)
+        if albedo.shape != (3,):
+            raise ValueError(f"initialization.albedo must be a scalar or RGB triplet, got shape {tuple(albedo.shape)}")
+        albedo = albedo.clamp(1.0e-6, 1.0 - 1.0e-6).expand(num_gaussians, 3)
         return torch.nn.Parameter(self.material_albedo_activation_inv(albedo))
 
     def _default_material_roughness(self, num_gaussians: int, dtype: torch.dtype) -> torch.nn.Parameter:
-        roughness = torch.full((num_gaussians, 1), 0.6, dtype=dtype, device=self.device)
+        initialization_conf = self.conf.get("initialization", {})
+        roughness_value = float(initialization_conf.get("roughness", 0.6))
+        roughness_value = min(
+            _MATERIAL_ROUGHNESS_MIN + _MATERIAL_ROUGHNESS_RANGE - 1.0e-6,
+            max(_MATERIAL_ROUGHNESS_MIN + 1.0e-6, roughness_value),
+        )
+        roughness = torch.full((num_gaussians, 1), roughness_value, dtype=dtype, device=self.device)
         return torch.nn.Parameter(self.material_roughness_activation_inv(roughness))
 
     def _default_material_metallic(self, num_gaussians: int, dtype: torch.dtype) -> torch.nn.Parameter:

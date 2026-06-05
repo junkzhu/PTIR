@@ -25,7 +25,7 @@
 
 static constexpr float kSelfOcclusionRayOriginOffset = 2e-2f;
 static constexpr float kMaxSelfOcclusionOffset = 1e-1f - kSelfOcclusionRayOriginOffset;
-static constexpr float kSelfOcclusionNormalDotThreshold = 0.5f;
+static constexpr float kSelfOcclusionNormalDotThreshold = 0.1f;
 
 struct RayHit {
     unsigned int particleId;
@@ -486,7 +486,8 @@ static __device__ __inline__ void sampleNee(
 
     path.emitterRayPayload.lightPdf = lightPdf;
     path.emitterRayPayload.scatterPdf = scatterPdf;
-    path.emitterRayPayload.contribution = path.pathThroughput * brdfTimesCos * getBackgroundColor(lightDirection) / fmaxf(lightPdf, 1e-6f);
+    path.emitterRayPayload.light = getBackgroundColor(lightDirection);
+    path.emitterRayPayload.contribution = path.pathThroughput * brdfTimesCos * path.emitterRayPayload.light / fmaxf(lightPdf, 1e-6f);
 }
 
 #ifdef ENABLE_MIS
@@ -651,6 +652,9 @@ static __device__ __inline__ void writePbrOutputs(
     params.rayPbr[idx.z][idx.y][idx.x][0] = payload.accumulatedLighting.x;
     params.rayPbr[idx.z][idx.y][idx.x][1] = payload.accumulatedLighting.y;
     params.rayPbr[idx.z][idx.y][idx.x][2] = payload.accumulatedLighting.z;
+    params.rayLight[idx.z][idx.y][idx.x][0] = payload.accumulatedLightNoBrdf.x;
+    params.rayLight[idx.z][idx.y][idx.x][1] = payload.accumulatedLightNoBrdf.y;
+    params.rayLight[idx.z][idx.y][idx.x][2] = payload.accumulatedLightNoBrdf.z;
 
     params.rayPbrComponents[idx.z][idx.y][idx.x][0][0] = payload.accumulatedDirectLighting.x;
     params.rayPbrComponents[idx.z][idx.y][idx.x][0][1] = payload.accumulatedDirectLighting.y;

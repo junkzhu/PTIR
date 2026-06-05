@@ -48,6 +48,7 @@ struct rayPayload {
         interaction             = Interaction();
 
         radiance                 = make_float3(0.f);
+        light                    = make_float3(0.f);
         contribution             = make_float3(0.f);
         normal                   = make_float3(0.f);
         transmittance            = 1.f;
@@ -67,6 +68,7 @@ struct rayPayload {
     Interaction interaction;
 
     float3 radiance;
+    float3 light;
     float3 contribution;
     float3 normal;
 
@@ -142,6 +144,8 @@ struct pathPayload {
         accumulatedLightingGrad     = make_float3(0.f);
         accumulatedDirectLighting   = make_float3(0.f);
         accumulatedIndirectLighting = make_float3(0.f);
+        accumulatedLightNoBrdf      = make_float3(0.f);
+        accumulatedLightNoBrdfGrad  = make_float3(0.f);
         pathThroughput              = make_float3(1.f);
     }
 
@@ -156,6 +160,8 @@ struct pathPayload {
     float3 accumulatedLightingGrad;
     float3 accumulatedDirectLighting;
     float3 accumulatedIndirectLighting;
+    float3 accumulatedLightNoBrdf;
+    float3 accumulatedLightNoBrdfGrad;
     float3 pathThroughput;
 
     PendingRayDirectionGrad pendingRayDirectionGrad;

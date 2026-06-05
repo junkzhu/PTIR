@@ -543,18 +543,22 @@ class TrainingVisualizer:
         if material is None:
             albedo_image = torch.zeros_like(pbr_image)
             roughness_image = torch.zeros_like(pbr_image)
-            metallic_image = torch.zeros_like(pbr_image)
         else:
             albedo = material[..., 0:3].clip(0.0, 1.0)
             albedo_image = self._linear_to_srgb(albedo.permute(0, 3, 1, 2))
             roughness_image = material[..., 3:4].permute(0, 3, 1, 2).repeat(1, 3, 1, 1).clip(0.0, 1.0)
-            metallic_image = material[..., 4:5].permute(0, 3, 1, 2).repeat(1, 3, 1, 1).clip(0.0, 1.0)
+
+        light_image = self._to_image_batch(outputs.get("pred_light"))
+        if light_image is None:
+            light_image = torch.zeros_like(pbr_image)
+        else:
+            light_image = self._linear_to_srgb(self._resize_like(light_image, pbr_image))
 
         row_images = [
             pbr_image,
             albedo_image,
             roughness_image,
-            metallic_image,
+            light_image,
         ]
         return self._concat_images(row_images, dim=-1)
 
