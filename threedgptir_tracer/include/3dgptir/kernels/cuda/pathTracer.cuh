@@ -517,8 +517,11 @@ static __device__ __inline__ void accumulateNeeGradBwd(
         path.emitterRayPayload.scatterPdf);
     const float neeScale = lightSideMis / fmaxf(path.emitterRayPayload.lightPdf, 1e-6f);
 
-    const float3 environmentGrad = path.accumulatedLightingGrad * path.pathThroughput * brdfTimesCos.value * neeScale;
-    const float3 background = getBackgroundColorBwd(lightDirection, environmentGrad, pipelineParams);
+    // Keep NEE envmap gradients disabled by default: differentiating the sampled
+    // environment texel here has high variance.
+    //const float3 environmentGrad = path.accumulatedLightingGrad * path.pathThroughput * brdfTimesCos.value * neeScale;
+    //const float3 background = getBackgroundColorBwd(lightDirection, environmentGrad, pipelineParams);
+    const float3 background = getBackgroundColor(lightDirection);
     const float3 dLoss_dBrdf = path.accumulatedLightingGrad * path.pathThroughput * background * neeScale;
 
     path.currentRayPayload.interaction.materialGrad.dAlbedo += dLoss_dBrdf * brdfTimesCos.dBrdf_dAlbedo;
