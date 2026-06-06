@@ -88,16 +88,35 @@ def quaternion_to_so3(r):
     return R
 
 
-def exponential_scheduler(lr_init, lr_final, max_steps=1000000, type=""):
+def exponential_scheduler(
+    lr_init=None,
+    lr_final=None,
+    max_steps=1000000,
+    type="",
+    value_init=None,
+    value_final=None,
+    lambda_init=None,
+    lambda_final=None,
+):
+    init = lambda_init if lambda_init is not None else value_init if value_init is not None else lr_init
+    final = lambda_final if lambda_final is not None else value_final if value_final is not None else lr_final
+    if init is None or final is None:
+        raise ValueError("Scheduler requires lr_init/lr_final, value_init/value_final, or lambda_init/lambda_final")
+    init = float(init)
+    final = float(final)
+    max_steps = float(max_steps)
+    if init <= 0.0 or final <= 0.0:
+        raise ValueError("Exponential scheduler requires positive init and final values")
+
     def helper(step):
-        t = np.clip(step / max_steps, 0, 1)
-        log_lerp = np.exp(np.log(lr_init) * (1 - t) + np.log(lr_final) * t)
+        t = 1.0 if max_steps <= 0.0 else np.clip(step / max_steps, 0, 1)
+        log_lerp = np.exp(np.log(init) * (1 - t) + np.log(final) * t)
         return log_lerp
 
     return helper
 
 
-def skip_scheduler(type=""):
+def skip_scheduler(type="", **kwargs):
     def helper(step):
         return None
 

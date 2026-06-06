@@ -30,35 +30,35 @@ initialization:
 optimizer:
   params:
     material_albedo:
-      lr: 0.005
+      lr: 0.02
     material_roughness:
-      lr: 0.005
+      lr: 0.02
     material_metallic:
       lr: 0.0
     environment:
-      lr: 0.01
+      lr: 0.02
 
-# scheduler:
-#   material_albedo:
-#     type: exp
-#     lr_init: ${optimizer.params.material_albedo.lr}
-#     lr_final: 0.00075
-#     max_steps: ${n_iterations}
-#   material_roughness:
-#     type: exp
-#     lr_init: ${optimizer.params.material_roughness.lr}
-#     lr_final: 0.0005
-#     max_steps: ${n_iterations}
-#   environment:
-#     type: exp
-#     lr_init: ${optimizer.params.environment.lr}
-#     lr_final: 0.0001
-#     max_steps: ${n_iterations}
+scheduler:
+  material_albedo:
+    type: exp
+    lr_init: ${optimizer.params.material_albedo.lr}
+    lr_final: 0.0002
+    max_steps: ${n_iterations}
+  material_roughness:
+    type: exp
+    lr_init: ${optimizer.params.material_roughness.lr}
+    lr_final: 0.0002
+    max_steps: ${n_iterations}
+  environment:
+    type: exp
+    lr_init: ${optimizer.params.environment.lr}
+    lr_final: 0.0002
+    max_steps: ${n_iterations}
 
 strategy:
   densify:
     start_iteration: -1
-    end_iteration: 0
+    end_iteration: -1
   prune:
     start_iteration: -1
   reset_density:
@@ -81,13 +81,17 @@ loss:
   use_ssim: true
   lambda_ssim: 0.2
 
-  use_albedo_prior_regularization: false
-  albedo_priors_end_iteration: -1
-  lambda_albedo_priors_regularization: 0.002
+  use_albedo_prior_regularization:
+    type: exp
+    lambda_init: 0.5
+    lambda_final: 0.005
+    max_steps: ${n_iterations}
 
-  use_roughness_prior_regularization: false
-  roughness_priors_end_iteration: -1
-  lambda_roughness_priors_regularization: 0.002
+  use_roughness_prior_regularization:
+    type: exp
+    lambda_init: 0.5
+    lambda_final: 0.005
+    max_steps: ${n_iterations}
 
   use_roughness_high_regularization: false
   lambda_roughness_high_regularization: 0.0001
