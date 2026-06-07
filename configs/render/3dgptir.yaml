@@ -22,3 +22,4 @@ max_bounces: 3
 spp_chunk: 32
 inversion_spp: 32
 render_spp: 128
+relight_spp: 512

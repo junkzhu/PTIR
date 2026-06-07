@@ -116,6 +116,31 @@ def exponential_scheduler(
     return helper
 
 
+def linear_scheduler(
+    lr_init=None,
+    lr_final=None,
+    max_steps=1000000,
+    type="",
+    value_init=None,
+    value_final=None,
+    lambda_init=None,
+    lambda_final=None,
+):
+    init = lambda_init if lambda_init is not None else value_init if value_init is not None else lr_init
+    final = lambda_final if lambda_final is not None else value_final if value_final is not None else lr_final
+    if init is None or final is None:
+        raise ValueError("Scheduler requires lr_init/lr_final, value_init/value_final, or lambda_init/lambda_final")
+    init = float(init)
+    final = float(final)
+    max_steps = float(max_steps)
+
+    def helper(step):
+        t = 1.0 if max_steps <= 0.0 else np.clip(step / max_steps, 0, 1)
+        return init * (1.0 - t) + final * t
+
+    return helper
+
+
 def skip_scheduler(type="", **kwargs):
     def helper(step):
         return None
@@ -123,7 +148,11 @@ def skip_scheduler(type="", **kwargs):
     return helper
 
 
-SCHEDULER_DICT: dict[str, Callable] = {"exp": exponential_scheduler, "skip": skip_scheduler}
+SCHEDULER_DICT: dict[str, Callable] = {
+    "exp": exponential_scheduler,
+    "linear": linear_scheduler,
+    "skip": skip_scheduler,
+}
 
 
 def get_scheduler(scheduler: str) -> Callable:

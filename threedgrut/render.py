@@ -26,6 +26,7 @@ from torchmetrics.image import StructuralSimilarityIndexMeasure
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 
 import threedgrut.datasets as datasets
+from threedgrut.metric import Metric, write_relight_summary_to_metrics
 from threedgrut.model.environment import Environment
 from threedgrut.model.model import MixtureOfGaussians
 from threedgrut.model.ptir_helper import (
@@ -73,6 +74,7 @@ class Renderer:
         self.compute_extra_metrics = compute_extra_metrics
         self.post_processing = post_processing
         self.checkpoint_path = checkpoint_path
+        self.last_scaled_checkpoint_path = None
 
         if conf.model.background.color == "black":
             self.bg_color = torch.zeros((3,), dtype=torch.float32, device="cuda")
@@ -117,10 +119,22 @@ class Renderer:
 
         model.optimize_environment = environment.optimize_environment
         model.environment_parameterization = environment.environment_parameterization
-        model.environment = environment.get_environment_parameter()
+        Renderer._set_model_environment(model, environment.get_environment_parameter())
         model.environment_alias_table = None
         if conf.render.method == "3dgptir" and conf.render.get("enable_mis", False):
             model.environment_alias_table = environment.build_alias_table()
+
+    @staticmethod
+    def _set_model_environment(model, environment_parameter: torch.Tensor | torch.nn.Parameter | None) -> None:
+        if (
+            isinstance(getattr(model, "environment", None), torch.nn.Parameter)
+            and not isinstance(environment_parameter, torch.nn.Parameter)
+        ):
+            delattr(model, "environment")
+
+        model.environment = environment_parameter
+        if isinstance(model.environment, torch.nn.Parameter) and not model.optimize_environment:
+            model.environment.requires_grad_(False)
 
     def create_test_dataloader(self, conf):
         """Create the test dataloader for the given configuration."""
@@ -151,6 +165,7 @@ class Renderer:
         writer=None,
         model=None,
         computes_extra_metrics=True,
+        create_run_dir=True,
     ):
         """Loads checkpoint for test path.
         If path is stated, it will override the test path in checkpoint.
@@ -169,7 +184,12 @@ class Renderer:
 
         object_name = Path(conf.path).stem
         experiment_name = conf["experiment_name"]
-        writer, out_dir, run_name = create_summary_writer(conf, object_name, out_dir, experiment_name, use_wandb=False)
+        if create_run_dir:
+            writer, out_dir, run_name = create_summary_writer(
+                conf, object_name, out_dir, experiment_name, use_wandb=False
+            )
+        else:
+            os.makedirs(out_dir, exist_ok=True)
 
         if model is None:
             # Initialize the model and the optix context
@@ -223,6 +243,202 @@ class Renderer:
             post_processing=post_processing,
             checkpoint_path=checkpoint_path,
         )
+
+    @staticmethod
+    def _environment_output_name(environment_path: Path) -> str:
+        name = environment_path.name if environment_path.is_dir() else environment_path.stem
+        safe_name = "".join(ch if ch.isalnum() or ch in ("-", "_", ".") else "_" for ch in name)
+        return safe_name or "environment"
+
+    @staticmethod
+    def list_environment_maps(environment_dir: str, environment_type: str = "2d") -> list[Path]:
+        environment_root = Path(environment_dir)
+        if not environment_root.is_dir():
+            raise NotADirectoryError(f"Environment directory not found: {environment_dir}")
+
+        environment_type = str(environment_type).lower()
+        environment_paths = []
+        for path in sorted(environment_root.iterdir(), key=lambda item: item.name.lower()):
+            if path.is_file() and path.suffix.lower() in Environment.ENVIRONMENT_EXTENSIONS:
+                environment_paths.append(path)
+            elif path.is_dir() and environment_type == "cube":
+                environment_paths.append(path)
+        return environment_paths
+
+    def _step_output_dir(self) -> Path:
+        return Path(self.out_dir) / f"ours_{int(self.global_step)}"
+
+    def _default_relight_output_root(self) -> Path:
+        return self._step_output_dir() / "relight"
+
+    def _load_relight_environment(self, environment_path: Path) -> None:
+        environment_type = OmegaConf.select(self.conf, "environment.type", default="2d")
+        environment = Environment(
+            path=str(environment_path),
+            device=getattr(self.model, "device", "cuda"),
+            environment_type=environment_type,
+            optimize_environment=False,
+            parameterization=Environment.LINEAR_ENVIRONMENT_PARAMETERIZATION,
+        )
+
+        self.model.optimize_environment = False
+        self.model.environment_parameterization = Environment.LINEAR_ENVIRONMENT_PARAMETERIZATION
+        self._set_model_environment(self.model, environment.get_environment_parameter())
+        self.model.environment_alias_table = None
+        if self.conf.render.method == "3dgptir" and self.conf.render.get("enable_mis", False):
+            self.model.environment_alias_table = environment.build_alias_table()
+
+        OmegaConf.update(self.conf, "environment.path", str(environment_path), force_add=True)
+        OmegaConf.update(self.conf, "environment.type", environment.environment_type, force_add=True)
+        OmegaConf.update(
+            self.conf,
+            "environment.parameterization",
+            Environment.LINEAR_ENVIRONMENT_PARAMETERIZATION,
+            force_add=True,
+        )
+        logger.info(f'Relight environment loaded: "{os.path.abspath(environment_path)}"')
+
+    @torch.no_grad()
+    def render_relight_environment(self, environment_path: str | Path, output_dir: str | Path) -> Path:
+        if self.conf.render.method != "3dgptir":
+            raise ValueError("Relighting requires the PTIR renderer (conf.render.method == '3dgptir').")
+
+        environment_path = Path(environment_path)
+        output_dir = Path(output_dir)
+        self._load_relight_environment(environment_path)
+        metric = Metric(device="cuda")
+
+        output_path_ptir_aovs = {}
+        for aov_name in ("gt", "pbr", "direct", "indirect", "light"):
+            output_path_ptir_aovs[aov_name] = output_dir / aov_name
+            output_path_ptir_aovs[aov_name].mkdir(parents=True, exist_ok=True)
+
+        logger.start_progress(
+            task_name=f"Relighting {self._environment_output_name(environment_path)}",
+            total_steps=len(self.dataloader),
+            color="orange1",
+        )
+
+        for iteration, batch in enumerate(self.dataloader):
+            frame_name = "{0:05d}.png".format(iteration)
+            gpu_batch = self.dataset.get_gpu_batch_with_intrinsics(batch)
+            outputs = self.model(gpu_batch)
+
+            if self.post_processing is not None:
+                outputs = apply_post_processing(self.post_processing, outputs, gpu_batch, training=False)
+
+            frame_metrics = metric.update_relight_pbr(
+                pred_pbr_linear=outputs["pred_pbr"],
+                dataset=self.dataset,
+                frame_index=iteration,
+                environment_path=environment_path,
+                bg_color=self.conf.model.background.color,
+            )
+            self._save_nhwc_image(
+                metric.last_gt_image,
+                str(output_path_ptir_aovs["gt"] / frame_name),
+            )
+
+            ptir_aovs = {
+                "pbr": outputs.get("pred_pbr"),
+                "direct": outputs.get("pred_direct"),
+                "indirect": outputs.get("pred_indirect"),
+                "light": outputs.get("pred_light"),
+            }
+            for aov_name, aov_image in ptir_aovs.items():
+                if aov_image is not None:
+                    self._save_nhwc_image(
+                        aov_image,
+                        str(output_path_ptir_aovs[aov_name] / frame_name),
+                        linear_to_srgb=True,
+                    )
+
+            logger.log_progress(
+                task_name=f"Relighting {self._environment_output_name(environment_path)}",
+                advance=1,
+                iteration=f"{iteration}",
+                psnr=frame_metrics["psnr_relight_pbr"],
+            )
+
+        logger.end_progress(task_name=f"Relighting {self._environment_output_name(environment_path)}")
+        _, metrics_path, metrics_details_path = metric.write_relight(output_dir)
+        logger.info(f"📄 Relight metrics saved to: {metrics_path}")
+        logger.info(f"📄 Relight metrics details saved to: {metrics_details_path}")
+
+        manifest_path = output_dir / "relight.json"
+        with open(manifest_path, "w") as f:
+            json.dump(
+                {
+                    "environment": str(environment_path.resolve()),
+                    "checkpoint": (
+                        None if self.checkpoint_path is None else str(Path(self.checkpoint_path).resolve())
+                    ),
+                    "renderer": "3dgptir",
+                },
+                f,
+                indent=2,
+            )
+        return output_dir
+
+    def render_relight_all(self, environment_dir: str, output_root: str | Path | None = None) -> list[Path]:
+        self.conf["render"]["render_spp"] = self.conf["render"]["relight_spp"]
+        logger.info(f"Relight render_spp set to render.relight_spp={self.conf['render']['relight_spp']}")
+
+        environment_type = OmegaConf.select(self.conf, "environment.type", default="2d")
+        environment_paths = self.list_environment_maps(environment_dir, environment_type=environment_type)
+        if not environment_paths:
+            raise FileNotFoundError(f"No environment maps found in: {environment_dir}")
+
+        if output_root is None:
+            output_root = self._default_relight_output_root()
+        output_root = Path(output_root)
+        output_root.mkdir(parents=True, exist_ok=True)
+
+        logger.info(f"Found {len(environment_paths)} environment map(s) for relighting in: {environment_dir}")
+        output_dirs = []
+        used_names = {}
+        for environment_path in environment_paths:
+            base_name = self._environment_output_name(environment_path)
+            used_names[base_name] = used_names.get(base_name, 0) + 1
+            output_name = base_name if used_names[base_name] == 1 else f"{base_name}_{used_names[base_name]}"
+            output_dirs.append(self.render_relight_environment(environment_path, output_root / output_name))
+
+        _, metrics_path = write_relight_summary_to_metrics(Path(self.out_dir) / "metrics.json", output_root)
+        logger.info(f"📄 Relight summary saved to: {metrics_path}")
+        return output_dirs
+
+    def relight_scaled_checkpoint(
+        self,
+        environment_dir: str,
+        scaled_checkpoint_path: str | Path | None = None,
+        output_root: str | Path | None = None,
+    ) -> list[Path]:
+        if scaled_checkpoint_path is None:
+            if self.last_scaled_checkpoint_path is not None:
+                scaled_checkpoint_path = self.last_scaled_checkpoint_path
+            else:
+                scaled_checkpoint_path = Path(self.out_dir) / "ckpt_last_scaled.pt"
+
+        scaled_checkpoint_path = Path(scaled_checkpoint_path)
+        if not scaled_checkpoint_path.is_file():
+            raise FileNotFoundError(
+                f"Scaled checkpoint not found: {scaled_checkpoint_path}. "
+                "Run PTIR rendering first so albedo scaling can create ckpt_last_scaled.pt."
+            )
+
+        if output_root is None:
+            output_root = self._default_relight_output_root()
+
+        relight_renderer = Renderer.from_checkpoint(
+            checkpoint_path=str(scaled_checkpoint_path),
+            out_dir=str(self.out_dir),
+            path=self.path,
+            save_gt=False,
+            writer=None,
+            computes_extra_metrics=False,
+            create_run_dir=False,
+        )
+        return relight_renderer.render_relight_all(environment_dir, output_root=output_root)
 
     @classmethod
     def from_preloaded_model(
@@ -528,6 +744,7 @@ class Renderer:
                     albedo_rescale_ratio,
                     source_checkpoint_path=self.checkpoint_path,
                 )
+                self.last_scaled_checkpoint_path = scaled_ckpt_path
                 logger.info(f'Scaled albedo checkpoint saved to: "{os.path.abspath(scaled_ckpt_path)}"')
             else:
                 logger.info("PTIR albedo scaling skipped: no material_albedo_gt was found in the test batches.")

@@ -38,22 +38,22 @@ optimizer:
     environment:
       lr: 0.02
 
-scheduler:
-  material_albedo:
-    type: exp
-    lr_init: ${optimizer.params.material_albedo.lr}
-    lr_final: 0.0002
-    max_steps: ${n_iterations}
-  material_roughness:
-    type: exp
-    lr_init: ${optimizer.params.material_roughness.lr}
-    lr_final: 0.0002
-    max_steps: ${n_iterations}
-  environment:
-    type: exp
-    lr_init: ${optimizer.params.environment.lr}
-    lr_final: 0.0002
-    max_steps: ${n_iterations}
+# scheduler:
+#   material_albedo:
+#     type: exp
+#     lr_init: ${optimizer.params.material_albedo.lr}
+#     lr_final: 0.0002
+#     max_steps: ${n_iterations}
+#   material_roughness:
+#     type: exp
+#     lr_init: ${optimizer.params.material_roughness.lr}
+#     lr_final: 0.0002
+#     max_steps: ${n_iterations}
+#   environment:
+#     type: exp
+#     lr_init: ${optimizer.params.environment.lr}
+#     lr_final: 0.0002
+#     max_steps: ${n_iterations}
 
 strategy:
   densify:
@@ -84,14 +84,14 @@ loss:
   use_albedo_prior_regularization:
     type: exp
     lambda_init: 0.5
-    lambda_final: 0.005
-    max_steps: ${n_iterations}
+    lambda_final: 0.05
+    max_steps: 500
 
   use_roughness_prior_regularization:
     type: exp
     lambda_init: 0.5
-    lambda_final: 0.005
-    max_steps: ${n_iterations}
+    lambda_final: 0.05
+    max_steps: 500
 
   use_roughness_high_regularization: false
   lambda_roughness_high_regularization: 0.0001

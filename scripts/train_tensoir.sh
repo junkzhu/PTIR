@@ -8,7 +8,10 @@ OUT_DIR="outputs/tensoir"
 CONFIG_NAME="apps/nerf_synthetic_3dgrt.yaml"
 INVERSION_CONFIG_NAME="inversions/nerf_synthetic_3dgptir.yaml"
 INVERSION_OUT_DIR=""
+RELIGHT_ENV_DIR="/mnt/sdb1/zjk/dataset/tensoIR/Environment_Maps/high_res_envmaps_2k"
+RELIGHT_OUT_DIR=""
 RUN_INVERSION=true
+RUN_RELIGHT=false
 FORCE_TRAIN=false
 SCENES=(lego armadillo hotdog ficus)
 EXTRA_ARGS=()
@@ -29,6 +32,9 @@ Options:
                           PTIR inversion output directory. Default: same as --out_dir.
   --inversion_args "ARGS" Extra Hydra args only for PTIR inversion.
   --no_inversion          Only run/skip stage1 training; do not run PTIR inversion.
+  --relight_env_dir PATH  Environment maps for relight. Default: $RELIGHT_ENV_DIR
+  --relight_out_dir PATH  Relight render output root. Default: checkpoint run directory.
+  --no_relight            Do not run relight after PTIR inversion.
   --force_train           Run stage1 training even if ckpt_last.pt already exists.
   --scenes "A B C"        Space-separated scene list. Default: ${SCENES[*]}
   -h, --help              Show this help.
@@ -74,6 +80,18 @@ while [[ $# -gt 0 ]]; do
             RUN_INVERSION=false
             shift
             ;;
+        --relight_env_dir)
+            RELIGHT_ENV_DIR="$2"
+            shift 2
+            ;;
+        --relight_out_dir)
+            RELIGHT_OUT_DIR="$2"
+            shift 2
+            ;;
+        --no_relight)
+            RUN_RELIGHT=false
+            shift
+            ;;
         --force_train)
             FORCE_TRAIN=true
             shift
@@ -100,6 +118,9 @@ done
 
 if [[ -z "$INVERSION_OUT_DIR" ]]; then
     INVERSION_OUT_DIR="$OUT_DIR"
+fi
+if [[ "$RUN_INVERSION" != true ]]; then
+    RUN_RELIGHT=false
 fi
 
 IFS=',' read -r -a GPU_IDS <<< "$CUDA_DEVICES"
@@ -149,6 +170,18 @@ find_latest_checkpoint() {
         | awk 'NR == 1 {print $2}'
 }
 
+find_latest_inversion_checkpoint() {
+    local scene="$1"
+    local scene_dir="$INVERSION_OUT_DIR/${scene}_inversion"
+    if [[ ! -d "$scene_dir" ]]; then
+        return 1
+    fi
+
+    find "$scene_dir" -mindepth 2 -maxdepth 2 -name ckpt_last.pt -printf '%T@ %p\n' \
+        | sort -nr \
+        | awk 'NR == 1 {print $2}'
+}
+
 run_inversion() {
     local scene="$1"
     local gpu_id="$2"
@@ -178,12 +211,45 @@ run_inversion() {
     echo "[$(date '+%F %T')] Finished PTIR inversion scene=$scene on CUDA_VISIBLE_DEVICES=$gpu_id"
 }
 
+run_relight() {
+    local scene="$1"
+    local gpu_id="$2"
+    local checkpoint_path="$3"
+    local log_file="$OUT_DIR/logs/relight_${scene}.log"
+    local relight_out_display="$RELIGHT_OUT_DIR"
+    local render_args=(
+        --checkpoint "$checkpoint_path"
+        --relight
+        --environment-dir "$RELIGHT_ENV_DIR"
+    )
+
+    if [[ -z "$relight_out_display" ]]; then
+        relight_out_display="$(dirname "$checkpoint_path")"
+    else
+        render_args+=(--out-dir "$RELIGHT_OUT_DIR")
+    fi
+
+    echo "[$(date '+%F %T')] Starting relight scene=$scene on CUDA_VISIBLE_DEVICES=$gpu_id"
+    {
+        echo "scene=$scene"
+        echo "cuda_device=$gpu_id"
+        echo "checkpoint=$checkpoint_path"
+        echo "out_dir=$relight_out_display"
+        echo "environment_dir=$RELIGHT_ENV_DIR"
+        echo
+        nvidia-smi || true
+        CUDA_VISIBLE_DEVICES="$gpu_id" python render.py "${render_args[@]}"
+    } > "$log_file" 2>&1
+    echo "[$(date '+%F %T')] Finished relight scene=$scene on CUDA_VISIBLE_DEVICES=$gpu_id"
+}
+
 run_scene() {
     local scene="$1"
     local gpu_id="$2"
     local log_file="$OUT_DIR/logs/train_${scene}.log"
     local scene_args=()
     local checkpoint_path=""
+    local inversion_checkpoint_path=""
 
     if [[ "$scene" == "hotdog" ]]; then
         scene_args+=("loss.use_normal_prior_regularization=true")
@@ -223,6 +289,14 @@ run_scene() {
             return 1
         fi
         run_inversion "$scene" "$gpu_id" "$checkpoint_path"
+        if [[ "$RUN_RELIGHT" == true ]]; then
+            inversion_checkpoint_path="$(find_latest_inversion_checkpoint "$scene" || true)"
+            if [[ -z "$inversion_checkpoint_path" ]]; then
+                echo "[$(date '+%F %T')] No PTIR inversion checkpoint found for scene=$scene; skipping relight."
+                return 1
+            fi
+            run_relight "$scene" "$gpu_id" "$inversion_checkpoint_path"
+        fi
     fi
 }
 
