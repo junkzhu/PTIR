@@ -26,13 +26,13 @@ import torch.nn as nn
 import torch.utils.data
 from addict import Dict
 from omegaconf import DictConfig, OmegaConf
-from torchmetrics import PeakSignalNoiseRatio
 from torchmetrics.image import StructuralSimilarityIndexMeasure
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 
 import threedgrut.datasets as datasets
 from threedgrut.datasets.protocols import BoundedMultiViewDataset
 from threedgrut.datasets.utils import DEFAULT_DEVICE, MultiEpochsDataLoader, PointCloud
+from threedgrut.metric import create_psnr_criterion
 from threedgrut.model.environment import EnvAliasTable, Environment, save_environment_exr
 from threedgrut.model.losses import (
     depth_distortion_loss,
@@ -471,7 +471,7 @@ class Trainer3DGRUT:
 
     def init_metrics(self):
         self.criterions = Dict(
-            psnr=PeakSignalNoiseRatio(data_range=1).to(self.device),
+            psnr=create_psnr_criterion().to(self.device),
             ssim=StructuralSimilarityIndexMeasure(data_range=1.0).to(self.device),
             lpips=LearnedPerceptualImagePatchSimilarity(net_type="vgg", normalize=True).to(self.device),
         )

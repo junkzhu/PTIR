@@ -13,8 +13,11 @@ import torch
 import torch.nn.functional as F
 import torchvision
 
+from threedgrut.metric import create_psnr_criterion
 from threedgrut.model.ptir_helper import compute_albedo_rescale_ratio, rescale_albedo
 from threedgrut.utils.logger import logger
+
+_PSNR_CRITERION_CACHE: dict[str, torch.nn.Module] = {}
 
 
 @dataclass(frozen=True)
@@ -44,6 +47,15 @@ def _as_detached_float_tensor(
     return tensor.float()
 
 
+def _get_psnr_criterion(device: torch.device) -> torch.nn.Module:
+    key = str(device)
+    criterion = _PSNR_CRITERION_CACHE.get(key)
+    if criterion is None:
+        criterion = create_psnr_criterion().to(device)
+        _PSNR_CRITERION_CACHE[key] = criterion
+    return criterion
+
+
 def _compute_psnr_tensor(
     pred: torch.Tensor | np.ndarray,
     gt: torch.Tensor | np.ndarray,
@@ -59,10 +71,7 @@ def _compute_psnr_tensor(
         if pred_tensor.shape != gt_tensor.shape:
             raise ValueError(f"PSNR expects matching shapes, got {tuple(pred_tensor.shape)} and {tuple(gt_tensor.shape)}")
 
-        error = (pred_tensor - gt_tensor) ** 2
-        mse = error.mean()
-
-        return -10.0 * torch.log10(mse + eps)
+        return _get_psnr_criterion(pred_tensor.device)(pred_tensor, gt_tensor)
 
 
 def compute_psnr(

@@ -23,9 +23,60 @@ from threedgrut.model.ptir_helper import (
 )
 
 
-def create_image_quality_criterions(device: str | torch.device = "cuda") -> dict[str, torch.nn.Module]:
+# Existing inverse rendering methods such as R3DG and IRGS use this PSNR convention:
+# compute PSNR separately for each RGB channel, then average the channel results.
+IRGS_PSNR = True
+
+def mse(img1: torch.Tensor, img2: torch.Tensor) -> torch.Tensor:
+    return (((img1 - img2)) ** 2).view(img1.shape[0], -1).mean(1, keepdim=True)
+
+def psnr(
+    img1: torch.Tensor,
+    img2: torch.Tensor,
+) -> torch.Tensor:
+    mse = (((img1 - img2)) ** 2).view(img1.shape[0], -1).mean(1, keepdim=True)
+    return 20 * torch.log10(1.0 / torch.sqrt(mse))
+
+
+def _to_chw_image(image: torch.Tensor) -> torch.Tensor:
+    if image.ndim == 4:
+        if image.shape[0] != 1:
+            raise ValueError(f"IRGS PSNR expects a single image batch, got shape {tuple(image.shape)}")
+        image = image.squeeze(0)
+
+    if image.ndim != 3:
+        raise ValueError(f"IRGS PSNR expects CHW or HWC image shape, got {tuple(image.shape)}")
+
+    if image.shape[0] == 3:
+        return image
+    if image.shape[-1] == 3:
+        return image.permute(2, 0, 1)
+
+    raise ValueError(f"IRGS PSNR expects 3 RGB channels, got shape {tuple(image.shape)}")
+
+
+class IRGSPeakSignalNoiseRatio(torch.nn.Module):
+    def __init__(self, data_range: float = 1.0) -> None:
+        super().__init__()
+        self.data_range = data_range
+
+    def forward(self, img1: torch.Tensor, img2: torch.Tensor) -> torch.Tensor:
+        img1 = _to_chw_image(img1)
+        img2 = _to_chw_image(img2)
+        return psnr(img1, img2).mean()
+
+
+def create_psnr_criterion() -> torch.nn.Module:
+    if IRGS_PSNR:
+        return IRGSPeakSignalNoiseRatio(data_range=1.0)
+    return PeakSignalNoiseRatio(data_range=1)
+
+
+def create_image_quality_criterions(
+    device: str | torch.device = "cuda",
+) -> dict[str, torch.nn.Module]:
     return {
-        "psnr": PeakSignalNoiseRatio(data_range=1).to(device),
+        "psnr": create_psnr_criterion().to(device),
         "ssim": StructuralSimilarityIndexMeasure(data_range=1.0).to(device),
         "lpips": LearnedPerceptualImagePatchSimilarity(net_type="vgg", normalize=True).to(device),
     }

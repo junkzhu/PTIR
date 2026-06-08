@@ -21,12 +21,11 @@ import numpy as np
 import torch
 import torchvision
 from omegaconf import OmegaConf
-from torchmetrics import PeakSignalNoiseRatio
 from torchmetrics.image import StructuralSimilarityIndexMeasure
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 
 import threedgrut.datasets as datasets
-from threedgrut.metric import Metric, write_relight_summary_to_metrics
+from threedgrut.metric import Metric, create_psnr_criterion, write_relight_summary_to_metrics
 from threedgrut.model.environment import Environment
 from threedgrut.model.model import MixtureOfGaussians
 from threedgrut.model.ptir_helper import (
@@ -477,7 +476,7 @@ class Renderer:
         """Render all the images in the test dataset and log the metrics."""
 
         # Criterions that we log during training
-        criterions = {"psnr": PeakSignalNoiseRatio(data_range=1).to("cuda")}
+        criterions = {"psnr": create_psnr_criterion().to("cuda")}
 
         if self.compute_extra_metrics:
             criterions |= {

@@ -201,7 +201,8 @@ def compute_albedo_rescale_ratio(
 
     single_channel_ratio = ratios[..., 0].median()
     three_channel_ratio = ratios.median(dim=0).values
-    selected_ratio = single_channel_ratio if _use_single_channel_albedo_rescale(selection_context) else three_channel_ratio
+    selected_ratio = three_channel_ratio
+    #selected_ratio = single_channel_ratio if _use_single_channel_albedo_rescale(selection_context) else three_channel_ratio
     return single_channel_ratio, three_channel_ratio, selected_ratio
 
 
