@@ -80,26 +80,39 @@ class RichLogger:
         table = Table(title=title)
         for key in record.keys():
             table.add_column(key, justify="left", style="yellow3", no_wrap=True)
-        table.add_row(*[f"{'{:.3f}'.format(v)}" if isinstance(v, float) else v for v in record.values()])
+        table.add_row(
+            *[
+                f"{'{:.3f}'.format(v)}" if isinstance(v, float) else v
+                for v in record.values()
+            ]
+        )
         self.console.print(table)
 
     def get_task(self, task_id):
         if task_id in self.progress._tasks:
             return self.progress._tasks[task_id]
         else:
-            raise ValueError(f"TaskID '{task_id}' not found, perhaps the task has already finished.")
+            raise ValueError(
+                f"TaskID '{task_id}' not found, perhaps the task has already finished."
+            )
 
     def _concat_additional_progress_info(self, **metrics):
         additional_info = []
         for k, v in metrics.items():
             formatted_k = f"[bold cyan]{k}"
-            formatted_v = f"[default]{'{:.3f}'.format(v)}" if isinstance(v, float) else f"[default]{v}"
+            formatted_v = (
+                f"[default]{'{:.3f}'.format(v)}"
+                if isinstance(v, float)
+                else f"[default]{v}"
+            )
             additional_info.append(f"{formatted_k}: {formatted_v}")
         return " ".join(additional_info)
 
     def start_progress(self, task_name, total_steps, color=None, **metrics):
         additional_info = self._concat_additional_progress_info(**metrics)
-        task_id = self.progress.add_task(f"[{color}]{task_name}", total=total_steps, additional_info=additional_info)
+        task_id = self.progress.add_task(
+            f"[{color}]{task_name}", total=total_steps, additional_info=additional_info
+        )
         # start progress if it's the first task
         if len(self.progress_tasks) == 0:
             self.progress.start()
@@ -109,13 +122,17 @@ class RichLogger:
     def log_progress(self, task_name, advance, **metrics):
         additional_info = self._concat_additional_progress_info(**metrics)
         self.progress.update(
-            self.progress_tasks[task_name]["task_id"], advance=advance, additional_info=additional_info
+            self.progress_tasks[task_name]["task_id"],
+            advance=advance,
+            additional_info=additional_info,
         )
 
     def end_progress(self, task_name):
         task_id = self.progress_tasks[task_name]["task_id"]
         # log task time
-        self.finished_tasks[task_name] = dict(name=task_name, elapsed=self.get_task(task_id).elapsed)
+        self.finished_tasks[task_name] = dict(
+            name=task_name, elapsed=self.get_task(task_id).elapsed
+        )
         # remove task from progress
         self.progress.remove_task(task_id)
         # clean up
@@ -135,7 +152,9 @@ class RichLogger:
         transient: bool = False,
     ):
         if color is not None:
-            desc_column = TextColumn(f"[{color}][progress.description]" + "{task.description}[default]")
+            desc_column = TextColumn(
+                f"[{color}][progress.description]" + "{task.description}[default]"
+            )
         else:
             desc_column = TextColumn("[progress.description]{task.description}")
         _progress = Progress(
@@ -152,7 +171,12 @@ class RichLogger:
             self.progress.stop()
 
         with _progress:
-            yield from _progress.track(sequence, total=total, description=description, update_period=update_period)
+            yield from _progress.track(
+                sequence,
+                total=total,
+                description=description,
+                update_period=update_period,
+            )
 
         if self.progress_alive:
             self.progress.start()

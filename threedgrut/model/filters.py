@@ -50,11 +50,15 @@ class Filter(nn.Module):
             return x
 
         y = x.permute(0, 3, 1, 2).contiguous()
-        kernel = self.kernel.to(device=y.device, dtype=y.dtype).repeat(y.shape[1], 1, 1, 1)
+        kernel = self.kernel.to(device=y.device, dtype=y.dtype).repeat(
+            y.shape[1], 1, 1, 1
+        )
 
         for i in range(self.iterations):
-            dilation = 2 ** i
-            y = F.pad(y, (dilation, dilation, dilation, dilation), mode=self.padding_mode)
+            dilation = 2**i
+            y = F.pad(
+                y, (dilation, dilation, dilation, dilation), mode=self.padding_mode
+            )
             y = F.conv2d(
                 y,
                 kernel,

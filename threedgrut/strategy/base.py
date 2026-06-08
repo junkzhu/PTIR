@@ -38,31 +38,45 @@ class BaseStrategy:
         """Callback function to initialize the densification buffers."""
         pass
 
-    def pre_backward(self, step: int, scene_extent: float, train_dataset, batch=None, writer=None) -> bool:
+    def pre_backward(
+        self, step: int, scene_extent: float, train_dataset, batch=None, writer=None
+    ) -> bool:
         """Callback function to be executed before the `loss.backward()` call."""
         if self._suspended:
             return False
         return self._pre_backward(step, scene_extent, train_dataset, batch, writer)
 
-    def _pre_backward(self, step: int, scene_extent: float, train_dataset, batch=None, writer=None) -> bool:
+    def _pre_backward(
+        self, step: int, scene_extent: float, train_dataset, batch=None, writer=None
+    ) -> bool:
         return False
 
-    def post_backward(self, step: int, scene_extent: float, train_dataset, batch=None, writer=None) -> bool:
+    def post_backward(
+        self, step: int, scene_extent: float, train_dataset, batch=None, writer=None
+    ) -> bool:
         """Callback function to be executed after the `loss.backward()` call."""
         if self._suspended:
             return False
         return self._post_backward(step, scene_extent, train_dataset, batch, writer)
 
-    def _post_backward(self, step: int, scene_extent: float, train_dataset, batch=None, writer=None) -> bool:
+    def _post_backward(
+        self, step: int, scene_extent: float, train_dataset, batch=None, writer=None
+    ) -> bool:
         return False
 
-    def post_optimizer_step(self, step: int, scene_extent: float, train_dataset, batch=None, writer=None) -> bool:
+    def post_optimizer_step(
+        self, step: int, scene_extent: float, train_dataset, batch=None, writer=None
+    ) -> bool:
         """Callback function to be executed after the optimizer step."""
         if self._suspended:
             return False
-        return self._post_optimizer_step(step, scene_extent, train_dataset, batch, writer)
+        return self._post_optimizer_step(
+            step, scene_extent, train_dataset, batch, writer
+        )
 
-    def _post_optimizer_step(self, step: int, scene_extent: float, train_dataset, batch=None, writer=None) -> bool:
+    def _post_optimizer_step(
+        self, step: int, scene_extent: float, train_dataset, batch=None, writer=None
+    ) -> bool:
         return False
 
     def update_gradient_buffer(self, sensor_position: torch.Tensor) -> None:

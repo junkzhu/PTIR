@@ -51,7 +51,9 @@ def color_correct_quadratic(
         - The function works with any number of channels, but typically used with 3 (RGB).
     """
     if img.shape[-1] != ref.shape[-1]:
-        raise ValueError(f"img's {img.shape[-1]} and ref's {ref.shape[-1]} channels must match")
+        raise ValueError(
+            f"img's {img.shape[-1]} and ref's {ref.shape[-1]} channels must match"
+        )
     num_channels = img.shape[-1]
     img_mat = img.reshape([-1, num_channels])
     ref_mat = ref.reshape([-1, num_channels])
@@ -116,7 +118,9 @@ def color_correct_affine(img: torch.Tensor, ref: torch.Tensor) -> torch.Tensor:
         - The function works with any number of channels, but typically used with 3 (RGB).
     """
     if img.shape[-1] != ref.shape[-1]:
-        raise ValueError(f"img's {img.shape[-1]} and ref's {ref.shape[-1]} channels must match")
+        raise ValueError(
+            f"img's {img.shape[-1]} and ref's {ref.shape[-1]} channels must match"
+        )
     num_channels = img.shape[-1]
     img_mat = img.reshape([-1, num_channels])  # [N, C]
     ref_mat = ref.reshape([-1, num_channels])  # [N, C]

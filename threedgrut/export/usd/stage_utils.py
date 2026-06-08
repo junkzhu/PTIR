@@ -54,7 +54,9 @@ class NamedUSDStage:
 
     def save_to_zip(self, zip_file: zipfile.ZipFile):
         """Save the stage to a zip file."""
-        with tempfile.NamedTemporaryFile(mode="wb", suffix=self.filename, delete=False) as temp_file:
+        with tempfile.NamedTemporaryFile(
+            mode="wb", suffix=self.filename, delete=False
+        ) as temp_file:
             temp_file_path = temp_file.name
         self.stage.GetRootLayer().Export(temp_file_path)
         with open(temp_file_path, "rb") as file:

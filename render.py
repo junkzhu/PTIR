@@ -19,9 +19,17 @@ from pathlib import Path
 if __name__ == "__main__":
     # Set up command line argument parser
     parser = argparse.ArgumentParser()
-    parser.add_argument("--checkpoint", required=True, type=str, help="path to the pretrained checkpoint")
     parser.add_argument(
-        "--path", type=str, default="", help="Path to the training data, if not provided taken from ckpt"
+        "--checkpoint",
+        required=True,
+        type=str,
+        help="path to the pretrained checkpoint",
+    )
+    parser.add_argument(
+        "--path",
+        type=str,
+        default="",
+        help="Path to the training data, if not provided taken from ckpt",
     )
     parser.add_argument(
         "--out-dir",
@@ -30,7 +38,9 @@ if __name__ == "__main__":
         help="Output path. Required unless --relight is set; --relight defaults to the checkpoint run directory.",
     )
     parser.add_argument(
-        "--save-gt", action="store_false", help="If set, the GT images will not be saved [True by default]"
+        "--save-gt",
+        action="store_false",
+        help="If set, the GT images will not be saved [True by default]",
     )
     parser.add_argument(
         "--compute-extra-metrics",

@@ -28,12 +28,16 @@ def setup_playground(conf):
     include_paths = []
 
     PLAYGROUND_ROOT = os.path.dirname(__file__)
-    THREEDGRT_ROOT = os.path.join(str(Path(os.path.dirname(__file__)).parent), "threedgrt_tracer")
+    THREEDGRT_ROOT = os.path.join(
+        str(Path(os.path.dirname(__file__)).parent), "threedgrt_tracer"
+    )
 
     # Make sure we can find the necessary compiler and libary binaries.
     include_paths.append(os.path.join(PLAYGROUND_ROOT, "include"))
     include_paths.append(os.path.join(THREEDGRT_ROOT, "include"))
-    include_paths.append(os.path.join(THREEDGRT_ROOT, "dependencies", "optix-dev", "include"))
+    include_paths.append(
+        os.path.join(THREEDGRT_ROOT, "dependencies", "optix-dev", "include")
+    )
 
     # List of sources.
     source_files = [
@@ -68,7 +72,10 @@ def setup_playground(conf):
     )
 
     # Compile and load.
-    source_paths = [os.path.abspath(os.path.join(os.path.dirname(__file__), fn)) for fn in source_files]
+    source_paths = [
+        os.path.abspath(os.path.join(os.path.dirname(__file__), fn))
+        for fn in source_files
+    ]
     return jit.load(
         name="libplayground_cc",
         sources=source_paths,

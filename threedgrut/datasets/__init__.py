@@ -90,7 +90,11 @@ def _maybe_generate_diffusion_priors(config, train_dataset) -> None:
     prior_config = config.get("diffusion_prior", {})
     output_root = prior_config.get("output_dir", DEFAULT_RGB2X_OUTPUT_DIR)
     configured_aovs = tuple(prior_config.get("aovs", needed_aovs))
-    aovs = tuple(dict.fromkeys([aov for aov in configured_aovs if aov in needed_aovs] + needed_aovs))
+    aovs = tuple(
+        dict.fromkeys(
+            [aov for aov in configured_aovs if aov in needed_aovs] + needed_aovs
+        )
+    )
     if not aovs:
         return
 
@@ -102,7 +106,9 @@ def _maybe_generate_diffusion_priors(config, train_dataset) -> None:
             dataset_root=config.path,
             camera_to_worlds=getattr(train_dataset, "poses", None),
             output_root=output_root,
-            model_name_or_path=prior_config.get("model_name_or_path", DEFAULT_RGB2X_MODEL),
+            model_name_or_path=prior_config.get(
+                "model_name_or_path", DEFAULT_RGB2X_MODEL
+            ),
             cache_dir=prior_config.get("cache_dir", DEFAULT_RGB2X_CACHE_DIR),
             aovs=aovs,
             input_size=prior_config.get("input_size", 512),
@@ -115,7 +121,9 @@ def _maybe_generate_diffusion_priors(config, train_dataset) -> None:
     else:
         from threedgrut.utils.logger import logger
 
-        logger.warning("prior regularization is enabled but CUDA is unavailable; skipping rgb2x prior generation.")
+        logger.warning(
+            "prior regularization is enabled but CUDA is unavailable; skipping rgb2x prior generation."
+        )
 
     for aov in aovs:
         setattr(
@@ -144,14 +152,18 @@ def make(name: str, config, ray_jitter):
                 bg_color=config.model.background.color,
                 ray_jitter=ray_jitter,
                 load_normals=config.dataset.get("normal", False),
-                load_materials=_dataset_split_enabled(config.dataset, "material", "train"),
+                load_materials=_dataset_split_enabled(
+                    config.dataset, "material", "train"
+                ),
             )
             val_dataset = NeRFDataset(
                 config.path,
                 split="val",
                 bg_color=config.model.background.color,
                 load_normals=config.dataset.get("normal", False),
-                load_materials=_dataset_split_enabled(config.dataset, "material", "val"),
+                load_materials=_dataset_split_enabled(
+                    config.dataset, "material", "val"
+                ),
             )
         case "colmap":
             # Load EXIF exposure data if enabled (shared between train and val)
@@ -199,25 +211,49 @@ def make(name: str, config, ray_jitter):
                 datapath=config.path,
                 device="cuda",
                 split="train",
-                camera_ids=config.dataset.get("camera_ids", None),  # Null = auto-select single camera sensor
-                lidar_ids=config.dataset.get("lidar_ids", None),  # Null = auto-select single lidar sensor
-                downsample=config.dataset.get("downsample", 1.0),  # Training downsample factor
+                camera_ids=config.dataset.get(
+                    "camera_ids", None
+                ),  # Null = auto-select single camera sensor
+                lidar_ids=config.dataset.get(
+                    "lidar_ids", None
+                ),  # Null = auto-select single lidar sensor
+                downsample=config.dataset.get(
+                    "downsample", 1.0
+                ),  # Training downsample factor
                 sample_full_image=config.dataset.train.get("sample_full_image", True),
                 window_size=config.dataset.train.get("window_size", 256),
-                n_samples_per_epoch=config.dataset.train.get("n_samples_per_epoch", 1000),
-                n_train_sample_timepoints=config.dataset.train.get("n_train_sample_timepoints", 1),
-                n_train_sample_camera_rays=config.dataset.train.get("n_train_sample_camera_rays", 4096),
+                n_samples_per_epoch=config.dataset.train.get(
+                    "n_samples_per_epoch", 1000
+                ),
+                n_train_sample_timepoints=config.dataset.train.get(
+                    "n_train_sample_timepoints", 1
+                ),
+                n_train_sample_camera_rays=config.dataset.train.get(
+                    "n_train_sample_camera_rays", 4096
+                ),
                 n_val_image_subsample=config.dataset.get("n_val_image_subsample", 1),
-                val_frame_interval=config.dataset.get("val_frame_interval", 8),  # Frame-level split
+                val_frame_interval=config.dataset.get(
+                    "val_frame_interval", 8
+                ),  # Frame-level split
                 seek_offset_sec=config.dataset.train.get("seek_offset_sec", 0.0),
                 duration_sec=config.dataset.train.get("duration_sec", None),
-                poses_component_group=config.dataset.get("poses_component_group", "default"),
-                intrinsics_component_group=config.dataset.get("intrinsics_component_group", "default"),
-                masks_component_group=config.dataset.get("masks_component_group", "default"),
+                poses_component_group=config.dataset.get(
+                    "poses_component_group", "default"
+                ),
+                intrinsics_component_group=config.dataset.get(
+                    "intrinsics_component_group", "default"
+                ),
+                masks_component_group=config.dataset.get(
+                    "masks_component_group", "default"
+                ),
                 jpeg_backend_cpu=config.dataset.get("jpeg_backend_cpu", "simplejpeg"),
                 simplejpeg_fastdct=config.dataset.get("simplejpeg_fastdct", False),
-                simplejpeg_fastupsample=config.dataset.get("simplejpeg_fastupsample", False),
-                lidar_color_generic_data_name=config.dataset.get("lidar_color_generic_data_name", "rgb"),
+                simplejpeg_fastupsample=config.dataset.get(
+                    "simplejpeg_fastupsample", False
+                ),
+                lidar_color_generic_data_name=config.dataset.get(
+                    "lidar_color_generic_data_name", "rgb"
+                ),
             )
             # Validation uses same temporal window as training by default
             train_seek_offset = config.dataset.train.get("seek_offset_sec", 0.0)
@@ -229,30 +265,52 @@ def make(name: str, config, ray_jitter):
 
             # Use training values if validation config is None, -1, or not set
             val_seek_offset = (
-                train_seek_offset if (val_seek_offset_cfg is None or val_seek_offset_cfg < 0) else val_seek_offset_cfg
+                train_seek_offset
+                if (val_seek_offset_cfg is None or val_seek_offset_cfg < 0)
+                else val_seek_offset_cfg
             )
-            val_duration = train_duration if (val_duration_cfg is None or val_duration_cfg < 0) else val_duration_cfg
+            val_duration = (
+                train_duration
+                if (val_duration_cfg is None or val_duration_cfg < 0)
+                else val_duration_cfg
+            )
 
             val_dataset = NCoreDataset(
                 datapath=config.path,
                 device="cuda",
                 split="val",
-                camera_ids=config.dataset.get("camera_ids", None),  # Null = auto-select single camera sensor
-                lidar_ids=config.dataset.get("lidar_ids", None),  # Null = auto-select single lidar sensor
+                camera_ids=config.dataset.get(
+                    "camera_ids", None
+                ),  # Null = auto-select single camera sensor
+                lidar_ids=config.dataset.get(
+                    "lidar_ids", None
+                ),  # Null = auto-select single lidar sensor
                 downsample=config.dataset.get("downsample", 1.0),
                 sample_full_image=True,
                 window_size=config.dataset.get("window_size", 256),
                 n_val_image_subsample=config.dataset.get("n_val_image_subsample", 1),
-                val_frame_interval=config.dataset.get("val_frame_interval", 8),  # Frame-level split
+                val_frame_interval=config.dataset.get(
+                    "val_frame_interval", 8
+                ),  # Frame-level split
                 seek_offset_sec=val_seek_offset,
                 duration_sec=val_duration,
-                poses_component_group=config.dataset.get("poses_component_group", "default"),
-                intrinsics_component_group=config.dataset.get("intrinsics_component_group", "default"),
-                masks_component_group=config.dataset.get("masks_component_group", "default"),
+                poses_component_group=config.dataset.get(
+                    "poses_component_group", "default"
+                ),
+                intrinsics_component_group=config.dataset.get(
+                    "intrinsics_component_group", "default"
+                ),
+                masks_component_group=config.dataset.get(
+                    "masks_component_group", "default"
+                ),
                 jpeg_backend_cpu=config.dataset.get("jpeg_backend_cpu", "simplejpeg"),
                 simplejpeg_fastdct=config.dataset.get("simplejpeg_fastdct", False),
-                simplejpeg_fastupsample=config.dataset.get("simplejpeg_fastupsample", False),
-                lidar_color_generic_data_name=config.dataset.get("lidar_color_generic_data_name", "rgb"),
+                simplejpeg_fastupsample=config.dataset.get(
+                    "simplejpeg_fastupsample", False
+                ),
+                lidar_color_generic_data_name=config.dataset.get(
+                    "lidar_color_generic_data_name", "rgb"
+                ),
             )
         case _:
             raise ValueError(
@@ -272,7 +330,9 @@ def make_test(name: str, config):
                 split="test",
                 bg_color=config.model.background.color,
                 load_normals=config.dataset.get("normal", False),
-                load_materials=_dataset_split_enabled(config.dataset, "material", "test"),
+                load_materials=_dataset_split_enabled(
+                    config.dataset, "material", "test"
+                ),
             )
         case "colmap":
             # Load EXIF exposure data if enabled
@@ -309,30 +369,52 @@ def make_test(name: str, config):
 
             # Use training values if validation config is None, -1, or not set
             test_seek_offset = (
-                train_seek_offset if (val_seek_offset_cfg is None or val_seek_offset_cfg < 0) else val_seek_offset_cfg
+                train_seek_offset
+                if (val_seek_offset_cfg is None or val_seek_offset_cfg < 0)
+                else val_seek_offset_cfg
             )
-            test_duration = train_duration if (val_duration_cfg is None or val_duration_cfg < 0) else val_duration_cfg
+            test_duration = (
+                train_duration
+                if (val_duration_cfg is None or val_duration_cfg < 0)
+                else val_duration_cfg
+            )
 
             dataset = NCoreDataset(
                 datapath=config.path,
                 device="cuda",
                 split="val",
-                camera_ids=config.dataset.get("camera_ids", None),  # Null = auto-select single camera sensor
-                lidar_ids=config.dataset.get("lidar_ids", None),  # Null = auto-select single lidar sensor
+                camera_ids=config.dataset.get(
+                    "camera_ids", None
+                ),  # Null = auto-select single camera sensor
+                lidar_ids=config.dataset.get(
+                    "lidar_ids", None
+                ),  # Null = auto-select single lidar sensor
                 downsample=config.dataset.get("downsample", 1.0),
                 sample_full_image=True,
                 window_size=config.dataset.get("window_size", 256),
                 n_val_image_subsample=config.dataset.get("n_val_image_subsample", 1),
-                val_frame_interval=config.dataset.get("val_frame_interval", 8),  # Frame-level split
+                val_frame_interval=config.dataset.get(
+                    "val_frame_interval", 8
+                ),  # Frame-level split
                 seek_offset_sec=test_seek_offset,
                 duration_sec=test_duration,
-                poses_component_group=config.dataset.get("poses_component_group", "default"),
-                intrinsics_component_group=config.dataset.get("intrinsics_component_group", "default"),
-                masks_component_group=config.dataset.get("masks_component_group", "default"),
+                poses_component_group=config.dataset.get(
+                    "poses_component_group", "default"
+                ),
+                intrinsics_component_group=config.dataset.get(
+                    "intrinsics_component_group", "default"
+                ),
+                masks_component_group=config.dataset.get(
+                    "masks_component_group", "default"
+                ),
                 jpeg_backend_cpu=config.dataset.get("jpeg_backend_cpu", "simplejpeg"),
                 simplejpeg_fastdct=config.dataset.get("simplejpeg_fastdct", False),
-                simplejpeg_fastupsample=config.dataset.get("simplejpeg_fastupsample", False),
-                lidar_color_generic_data_name=config.dataset.get("lidar_color_generic_data_name", "rgb"),
+                simplejpeg_fastupsample=config.dataset.get(
+                    "simplejpeg_fastupsample", False
+                ),
+                lidar_color_generic_data_name=config.dataset.get(
+                    "lidar_color_generic_data_name", "rgb"
+                ),
             )
         case _:
             raise ValueError(

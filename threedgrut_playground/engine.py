@@ -88,10 +88,14 @@ class RayPack:
         """Splits a batch of rays into smaller batches for processing."""
         if size is None:
             return [self]
-        assert self.rays_ori.ndim == 2 and self.rays_dir.ndim == 2, "Only 1D ray packs can be split"
+        assert self.rays_ori.ndim == 2 and self.rays_dir.ndim == 2, (
+            "Only 1D ray packs can be split"
+        )
         rays_orig = torch.split(self.rays_ori, size, dim=0)
         rays_dir = torch.split(self.rays_dir, size, dim=0)
-        return [RayPack(ray_ori, ray_dir) for ray_ori, ray_dir in zip(rays_orig, rays_dir)]
+        return [
+            RayPack(ray_ori, ray_dir) for ray_ori, ray_dir in zip(rays_orig, rays_dir)
+        ]
 
 
 @dataclass
@@ -178,21 +182,39 @@ class OptixPrimitive:
         """
         device = primitives[0].vertices.device
         vertices = torch.cat([p.vertices for p in primitives], dim=0)
-        v_offset = torch.tensor([0] + [p.vertices.shape[0] for p in primitives[:-1]], device=device)
+        v_offset = torch.tensor(
+            [0] + [p.vertices.shape[0] for p in primitives[:-1]], device=device
+        )
         v_offset = torch.cumsum(v_offset, dim=0)
-        triangles = torch.cat([p.triangles + offset for p, offset in zip(primitives, v_offset)], dim=0)
+        triangles = torch.cat(
+            [p.triangles + offset for p, offset in zip(primitives, v_offset)], dim=0
+        )
 
         return OptixPrimitive(
             vertices=vertices.float(),
             triangles=triangles.int(),
-            vertex_normals=torch.cat([p.vertex_normals for p in primitives], dim=0).float(),
+            vertex_normals=torch.cat(
+                [p.vertex_normals for p in primitives], dim=0
+            ).float(),
             has_tangents=torch.cat([p.has_tangents for p in primitives], dim=0).bool(),
-            vertex_tangents=torch.cat([p.vertex_tangents for p in primitives], dim=0).float(),
-            material_uv=torch.cat([p.material_uv for p in primitives if p.material_uv is not None], dim=0).float(),
-            material_id=torch.cat([p.material_id for p in primitives if p.material_id is not None], dim=0).int(),
-            primitive_type_tensor=torch.cat([p.primitive_type_tensor for p in primitives], dim=0).int(),
-            reflectance_scatter=torch.cat([p.reflectance_scatter for p in primitives], dim=0).float(),
-            refractive_index_tensor=torch.cat([p.refractive_index_tensor for p in primitives], dim=0).float(),
+            vertex_tangents=torch.cat(
+                [p.vertex_tangents for p in primitives], dim=0
+            ).float(),
+            material_uv=torch.cat(
+                [p.material_uv for p in primitives if p.material_uv is not None], dim=0
+            ).float(),
+            material_id=torch.cat(
+                [p.material_id for p in primitives if p.material_id is not None], dim=0
+            ).int(),
+            primitive_type_tensor=torch.cat(
+                [p.primitive_type_tensor for p in primitives], dim=0
+            ).int(),
+            reflectance_scatter=torch.cat(
+                [p.reflectance_scatter for p in primitives], dim=0
+            ).float(),
+            refractive_index_tensor=torch.cat(
+                [p.refractive_index_tensor for p in primitives], dim=0
+            ).float(),
         )
 
     def apply_transform(self):
@@ -203,10 +225,14 @@ class OptixPrimitive:
         transformed_verts = (rs_comp @ self.vertices[:, :, None] + t_comp).squeeze(2)
 
         normal_matrix = self.transform.rotation_matrix()[None, :3, :3]
-        transformed_normals = (normal_matrix @ self.vertex_normals[:, :, None]).squeeze(2)
+        transformed_normals = (normal_matrix @ self.vertex_normals[:, :, None]).squeeze(
+            2
+        )
         transformed_normals = torch.nn.functional.normalize(transformed_normals)
 
-        transformed_tangents = (normal_matrix @ self.vertex_tangents[:, :, None]).squeeze(2)
+        transformed_tangents = (
+            normal_matrix @ self.vertex_tangents[:, :, None]
+        ).squeeze(2)
         transformed_tangents = torch.nn.functional.normalize(transformed_tangents)
 
         return OptixPrimitive(
@@ -252,7 +278,9 @@ def set_mesh_scale_to_scene(
         - All scaling is uniform (preserves mesh proportions)
         - Scaling is applied through the transform object
     """
-    mesh_scale = ((mesh.vertices.max(dim=0)[0] - mesh.vertices.min(dim=0)[0]).cpu()).to(transform.device)
+    mesh_scale = ((mesh.vertices.max(dim=0)[0] - mesh.vertices.min(dim=0)[0]).cpu()).to(
+        transform.device
+    )
     transform.scale(1.0 / mesh_scale.max())
     if scene_scale.max() > 5.0:  # Don't scale for large scenes
         return
@@ -280,8 +308,8 @@ class Primitives:
 
     SUPPORTED_MESH_EXTENSIONS = [".obj", ".glb", ".gltf"]  # Supported mesh file formats
     DEFAULT_REFRACTIVE_INDEX = 1.33  # Default IOR for transparent materials
-    PROCEDURAL_SHAPES: Dict[str, Callable[[torch.device], kaolin.rep.SurfaceMesh]] = dict(
-        Quad=create_quad_mesh
+    PROCEDURAL_SHAPES: Dict[str, Callable[[torch.device], kaolin.rep.SurfaceMesh]] = (
+        dict(Quad=create_quad_mesh)
     )  # Supported procedural shapes -> constructor function
 
     def __init__(
@@ -309,7 +337,9 @@ class Primitives:
         """
 
         """ Mapping of mesh names to file paths: str -> str ; shape name to filename + extension """
-        self.assets: Dict[str, str] = self.register_available_assets(assets_folder=mesh_assets_folder)
+        self.assets: Dict[str, str] = self.register_available_assets(
+            assets_folder=mesh_assets_folder
+        )
         """ Reference to the OptixTracer instance """
         self.tracer = tracer
         """ Whether mesh primitive rendering is enabled """
@@ -331,7 +361,9 @@ class Primitives:
         """ Counts number of primitives of each geometry type """
         self.instance_counter: Dict[str, int] = dict()
         """ Holds all available materials loaded so far with any of the meshes, or pre-registered procedurally with the scene. """
-        self.registered_materials: Dict[str, PBRMaterial] = self.register_default_materials(device)
+        self.registered_materials: Dict[str, PBRMaterial] = (
+            self.register_default_materials(device)
+        )
         """ Mesh autoscale function to use when placing a new mesh in the scene"""
         self.mesh_autoscale_func = mesh_autoscale_func
 
@@ -361,9 +393,9 @@ class Primitives:
         """Registers default procedural materials which always load with the engine."""
         checkboard_res = 512
         checkboard_square = 20
-        checkboard_texture = torch.tensor([0.25, 0.25, 0.25, 1.0], device=device, dtype=torch.float32).repeat(
-            checkboard_res, checkboard_res, 1
-        )
+        checkboard_texture = torch.tensor(
+            [0.25, 0.25, 0.25, 1.0], device=device, dtype=torch.float32
+        ).repeat(checkboard_res, checkboard_res, 1)
         for i in range(checkboard_res // checkboard_square):
             for j in range(checkboard_res // checkboard_square):
                 start_x = (2 * i + j % 2) * checkboard_square
@@ -375,7 +407,9 @@ class Primitives:
             solid=PBRMaterial(
                 material_id=0,
                 diffuse_map=torch.tensor(
-                    [130 / 255.0, 193 / 255.0, 255 / 255.0, 1.0], device=device, dtype=torch.float32
+                    [130 / 255.0, 193 / 255.0, 255 / 255.0, 1.0],
+                    device=device,
+                    dtype=torch.float32,
                 ).expand(2, 2, 4),
                 diffuse_factor=torch.ones(4, device=device, dtype=torch.float32),
                 emissive_factor=torch.zeros(3, device=device, dtype=torch.float32),
@@ -396,7 +430,9 @@ class Primitives:
             ),
             brushed_copper=PBRMaterial(
                 material_id=2,
-                diffuse_factor=torch.tensor([0.95, 0.64, 0.54, 1.0], device=device, dtype=torch.float32),
+                diffuse_factor=torch.tensor(
+                    [0.95, 0.64, 0.54, 1.0], device=device, dtype=torch.float32
+                ),
                 emissive_factor=torch.zeros(3, device=device, dtype=torch.float32),
                 metallic_factor=1.0,
                 roughness_factor=0.5,
@@ -405,7 +441,9 @@ class Primitives:
             ),
             blue_glass=PBRMaterial(
                 material_id=3,
-                diffuse_factor=torch.tensor([0.1, 0.2, 0.8, 0.8], device=device, dtype=torch.float32),
+                diffuse_factor=torch.tensor(
+                    [0.1, 0.2, 0.8, 0.8], device=device, dtype=torch.float32
+                ),
                 emissive_factor=torch.zeros(3, device=device, dtype=torch.float32),
                 metallic_factor=0.0,
                 roughness_factor=0.1,
@@ -414,7 +452,9 @@ class Primitives:
             ),
             jade=PBRMaterial(
                 material_id=4,
-                diffuse_factor=torch.tensor([0.2, 0.8, 0.5, 0.9], device=device, dtype=torch.float32),
+                diffuse_factor=torch.tensor(
+                    [0.2, 0.8, 0.5, 0.9], device=device, dtype=torch.float32
+                ),
                 emissive_factor=torch.zeros(3, device=device, dtype=torch.float32),
                 metallic_factor=0.0,
                 roughness_factor=0.3,
@@ -423,7 +463,9 @@ class Primitives:
             ),
             polished_marble=PBRMaterial(
                 material_id=5,
-                diffuse_factor=torch.tensor([0.9, 0.9, 0.95, 1.0], device=device, dtype=torch.float32),
+                diffuse_factor=torch.tensor(
+                    [0.9, 0.9, 0.95, 1.0], device=device, dtype=torch.float32
+                ),
                 emissive_factor=torch.zeros(3, device=device, dtype=torch.float32),
                 metallic_factor=0.0,
                 roughness_factor=0.1,
@@ -432,7 +474,9 @@ class Primitives:
             ),
             diamond=PBRMaterial(
                 material_id=6,
-                diffuse_factor=torch.tensor([0.98, 0.98, 0.98, 0.2], device=device, dtype=torch.float32),
+                diffuse_factor=torch.tensor(
+                    [0.98, 0.98, 0.98, 0.2], device=device, dtype=torch.float32
+                ),
                 emissive_factor=torch.zeros(3, device=device, dtype=torch.float32),
                 metallic_factor=0.0,
                 roughness_factor=0.02,
@@ -441,7 +485,9 @@ class Primitives:
             ),
             rose_gold=PBRMaterial(
                 material_id=7,
-                diffuse_factor=torch.tensor([0.92, 0.72, 0.75, 1.0], device=device, dtype=torch.float32),
+                diffuse_factor=torch.tensor(
+                    [0.92, 0.72, 0.75, 1.0], device=device, dtype=torch.float32
+                ),
                 emissive_factor=torch.zeros(3, device=device, dtype=torch.float32),
                 metallic_factor=1.0,
                 roughness_factor=0.15,
@@ -450,8 +496,12 @@ class Primitives:
             ),
             luminous_yellow=PBRMaterial(
                 material_id=8,
-                diffuse_factor=torch.tensor([0.2, 0.9, 0.3, 1.0], device=device, dtype=torch.float32),
-                emissive_factor=torch.tensor([0.8, 0.8, 0.4], device=device, dtype=torch.float32),
+                diffuse_factor=torch.tensor(
+                    [0.2, 0.9, 0.3, 1.0], device=device, dtype=torch.float32
+                ),
+                emissive_factor=torch.tensor(
+                    [0.8, 0.8, 0.4], device=device, dtype=torch.float32
+                ),
                 metallic_factor=0.0,
                 roughness_factor=0.7,
                 transmission_factor=0.0,
@@ -459,7 +509,9 @@ class Primitives:
             ),
             ruby_red=PBRMaterial(
                 material_id=9,
-                diffuse_factor=torch.tensor([0.9, 0.1, 0.2, 0.9], device=device, dtype=torch.float32),
+                diffuse_factor=torch.tensor(
+                    [0.9, 0.1, 0.2, 0.9], device=device, dtype=torch.float32
+                ),
                 emissive_factor=torch.zeros(3, device=device, dtype=torch.float32),
                 metallic_factor=0.0,
                 roughness_factor=0.1,
@@ -468,7 +520,9 @@ class Primitives:
             ),
             blue_plastic=PBRMaterial(
                 material_id=10,
-                diffuse_factor=torch.tensor([0.1, 0.2, 0.8, 1.0], device=device, dtype=torch.float32),
+                diffuse_factor=torch.tensor(
+                    [0.1, 0.2, 0.8, 1.0], device=device, dtype=torch.float32
+                ),
                 emissive_factor=torch.zeros(3, device=device, dtype=torch.float32),
                 metallic_factor=0.0,
                 roughness_factor=0.4,
@@ -477,7 +531,9 @@ class Primitives:
             ),
             oak_wood=PBRMaterial(
                 material_id=11,
-                diffuse_factor=torch.tensor([0.65, 0.5, 0.35, 1.0], device=device, dtype=torch.float32),
+                diffuse_factor=torch.tensor(
+                    [0.65, 0.5, 0.35, 1.0], device=device, dtype=torch.float32
+                ),
                 emissive_factor=torch.zeros(3, device=device, dtype=torch.float32),
                 metallic_factor=0.0,
                 roughness_factor=0.75,
@@ -486,7 +542,9 @@ class Primitives:
             ),
             black_rubber=PBRMaterial(
                 material_id=12,
-                diffuse_factor=torch.tensor([0.1, 0.1, 0.1, 1.0], device=device, dtype=torch.float32),
+                diffuse_factor=torch.tensor(
+                    [0.1, 0.1, 0.1, 1.0], device=device, dtype=torch.float32
+                ),
                 emissive_factor=torch.zeros(3, device=device, dtype=torch.float32),
                 metallic_factor=0.0,
                 roughness_factor=0.9,
@@ -496,7 +554,9 @@ class Primitives:
         )
         return default_materials
 
-    def add_primitive(self, geometry_type: str, primitive_type: OptixPrimitiveTypes, device) -> None:
+    def add_primitive(
+        self, geometry_type: str, primitive_type: OptixPrimitiveTypes, device
+    ) -> None:
         """Creates a mesh from geometry type, sets up its materials and transforms,
         and adds it to the scene with automatic scaling.
 
@@ -523,7 +583,9 @@ class Primitives:
         # Generate tangents mas, if available
         num_verts = len(mesh.vertices)
         num_faces = len(mesh.faces)
-        is_precomputed_tangents = mesh.has_attribute("vertex_tangents") and mesh.vertex_tangents is not None
+        is_precomputed_tangents = (
+            mesh.has_attribute("vertex_tangents") and mesh.vertex_tangents is not None
+        )
         has_tangents = (
             torch.ones([num_verts, 1], device=device, dtype=torch.bool)
             if is_precomputed_tangents
@@ -538,12 +600,18 @@ class Primitives:
         # Create identity transform and set scale to scene size
         transform = ObjectTransform(device=device)
         if self.mesh_autoscale_func is not None:
-            self.mesh_autoscale_func(self.scene_scale, mesh, transform)  # i.e. set_mesh_scale_to_scene()
+            self.mesh_autoscale_func(
+                self.scene_scale, mesh, transform
+            )  # i.e. set_mesh_scale_to_scene()
         # Face attributes
-        prim_type_tensor = mesh.faces.new_full(size=(num_faces,), fill_value=primitive_type.value)
+        prim_type_tensor = mesh.faces.new_full(
+            size=(num_faces,), fill_value=primitive_type.value
+        )
         reflectance_scatter = mesh.faces.new_zeros(size=(num_faces,))
         refractive_index = Primitives.DEFAULT_REFRACTIVE_INDEX
-        refractive_index_tensor = mesh.faces.new_full(size=(num_faces,), fill_value=refractive_index)
+        refractive_index_tensor = mesh.faces.new_full(
+            size=(num_faces,), fill_value=refractive_index
+        )
 
         self.objects[name] = OptixPrimitive(
             geometry_type=geometry_type,
@@ -585,7 +653,9 @@ class Primitives:
         self.objects[name] = copy.deepcopy(prim)
         self.rebuild_bvh_if_needed(True, True)
 
-    def register_materials(self, materials: List[Dict], model_name: str) -> torch.Tensor:
+    def register_materials(
+        self, materials: List[Dict], model_name: str
+    ) -> torch.Tensor:
         """Registers new PBR materials and creates index mapping for material assignments in current scene registry.
         e.g: the returned tensor will map the material indices of the given materials to the material IDs in the current scene registry.
 
@@ -602,7 +672,7 @@ class Primitives:
         """
         mat_idx_to_mat_id = torch.full([len(materials)], -1)
         for mat_idx, mat in enumerate(materials):
-            material_name = f'{model_name}${mat["material_name"]}'
+            material_name = f"{model_name}${mat['material_name']}"
             if material_name not in self.registered_materials:
                 self.registered_materials[material_name] = PBRMaterial(
                     material_id=len(self.registered_materials),
@@ -619,7 +689,9 @@ class Primitives:
                     transmission_factor=mat["transmission_factor"],
                     ior=mat["ior"],
                 )
-            mat_idx_to_mat_id[mat_idx] = self.registered_materials[material_name].material_id
+            mat_idx_to_mat_id[mat_idx] = self.registered_materials[
+                material_name
+            ].material_id
         return mat_idx_to_mat_id
 
     def create_geometry(self, geometry_type: str, device) -> kaolin.rep.SurfaceMesh:
@@ -652,13 +724,19 @@ class Primitives:
             materials = load_materials(mesh, device)
             if len(materials) > 0:
                 load_missing_material_info(mesh_path, materials, device)
-                material_index_mapping = self.register_materials(materials=materials, model_name=geometry_type)
+                material_index_mapping = self.register_materials(
+                    materials=materials, model_name=geometry_type
+                )
                 # Update material assignments to match playground material registry
                 material_index_mapping = material_index_mapping.to(device=device)
-                material_id = mesh.material_assignments.to(device=device, dtype=torch.long)
+                material_id = mesh.material_assignments.to(
+                    device=device, dtype=torch.long
+                )
                 mesh.material_assignments = material_index_mapping[material_id].int()
         # Always use default material, if no materials were specified
-        mesh.material_assignments = torch.max(mesh.material_assignments, torch.zeros_like(mesh.material_assignments))
+        mesh.material_assignments = torch.max(
+            mesh.material_assignments, torch.zeros_like(mesh.material_assignments)
+        )
         return mesh
 
     def recompute_stacked_buffers(self) -> None:
@@ -671,7 +749,9 @@ class Primitives:
         for obj in objects:
             f = obj.triangles
             num_faces = f.shape[0]
-            obj.primitive_type_tensor = f.new_full(size=(num_faces,), fill_value=obj.primitive_type.value)
+            obj.primitive_type_tensor = f.new_full(
+                size=(num_faces,), fill_value=obj.primitive_type.value
+            )
             obj.refractive_index_tensor = f.new_full(
                 size=(num_faces,), fill_value=obj.refractive_index, dtype=torch.float
             )
@@ -689,7 +769,16 @@ class Primitives:
         Returns:
             bool: True if any primitives have non-NONE type
         """
-        return len([p for p in self.objects.values() if p.primitive_type != OptixPrimitiveTypes.NONE]) > 0
+        return (
+            len(
+                [
+                    p
+                    for p in self.objects.values()
+                    if p.primitive_type != OptixPrimitiveTypes.NONE
+                ]
+            )
+            > 0
+        )
 
     @torch.cuda.nvtx.range("rebuild_bvh (prim)")
     def rebuild_bvh_if_needed(self, force: bool = False, rebuild: bool = True) -> None:
@@ -811,9 +900,15 @@ class Engine3DGRUT:
     ANTIALIASING_MODES = ["4x MSAA", "8x MSAA", "16x MSAA", "Quasi-Random (Sobol)"]
 
     def __init__(
-        self, gs_object: str, mesh_assets_folder: str, default_config: str, envmap_assets_folder: Optional[str] = None
+        self,
+        gs_object: str,
+        mesh_assets_folder: str,
+        default_config: str,
+        envmap_assets_folder: Optional[str] = None,
     ):
-        self.scene_mog, self.scene_name = self.load_3dgrt_object(gs_object, config_name=default_config)
+        self.scene_mog, self.scene_name = self.load_3dgrt_object(
+            gs_object, config_name=default_config
+        )
         self.tracer = Tracer(self.scene_mog.conf)
         self.device = self.scene_mog.device
 
@@ -845,12 +940,20 @@ class Engine3DGRUT:
         """ Enables / disables gaussian rendering """
         self.disable_gaussian_tracing = False
 
-        scene_scale = self.scene_mog.positions.max(dim=0)[0] - self.scene_mog.positions.min(dim=0)[0]
+        scene_scale = (
+            self.scene_mog.positions.max(dim=0)[0]
+            - self.scene_mog.positions.min(dim=0)[0]
+        )
         self.primitives = Primitives(
-            tracer=self.tracer, mesh_assets_folder=mesh_assets_folder, scene_scale=scene_scale, device=self.device
+            tracer=self.tracer,
+            mesh_assets_folder=mesh_assets_folder,
+            scene_scale=scene_scale,
+            device=self.device,
         )
         self.primitives.add_primitive(
-            geometry_type="Sphere", primitive_type=OptixPrimitiveTypes.GLASS, device=self.device
+            geometry_type="Sphere",
+            primitive_type=OptixPrimitiveTypes.GLASS,
+            device=self.device,
         )
         self.rebuild_bvh(self.scene_mog)
 
@@ -862,11 +965,15 @@ class Engine3DGRUT:
         """
         self.is_materials_dirty = False
 
-    def _accumulate_to_buffer(self, prev_frames, new_frame, num_frames_accumulated, gamma, batch_size=1):
+    def _accumulate_to_buffer(
+        self, prev_frames, new_frame, num_frames_accumulated, gamma, batch_size=1
+    ):
         """Accumulate a new frame to the buffer, using the previous frames and the current frame."""
         prev_frames = torch.pow(prev_frames, gamma)
         new_frame = self.environment.tonemap(new_frame)
-        buffer = ((prev_frames * num_frames_accumulated) + new_frame) / (num_frames_accumulated + batch_size)
+        buffer = ((prev_frames * num_frames_accumulated) + new_frame) / (
+            num_frames_accumulated + batch_size
+        )
         buffer = torch.pow(buffer, 1.0 / gamma)
         return buffer
 
@@ -886,11 +993,15 @@ class Engine3DGRUT:
                         pred_opacity=torch.zeros_like(rays.rays_ori[:, :, 0:1]),
                     )
                 else:
-                    dof_rb = self.scene_mog.trace(rays_o=dof_rays_ori, rays_d=dof_rays_dir)
+                    dof_rb = self.scene_mog.trace(
+                        rays_o=dof_rays_ori, rays_d=dof_rays_dir
+                    )
             else:
                 dof_rb = self._render_playground_hybrid(dof_rays_ori, dof_rays_dir)
 
-            rb["rgb"] = self._accumulate_to_buffer(rb["rgb"], dof_rb["pred_rgb"], i, self.gamma_correction)
+            rb["rgb"] = self._accumulate_to_buffer(
+                rb["rgb"], dof_rb["pred_rgb"], i, self.gamma_correction
+            )
             rb["opacity"] = (rb["opacity"] * i + dof_rb["pred_opacity"]) / (i + 1)
 
     def _render_spp_buffer(self, rb, rays):
@@ -906,17 +1017,27 @@ class Engine3DGRUT:
                         pred_opacity=torch.zeros_like(rays.rays_ori[:, :, 0:1]),
                     )
                 else:
-                    spp_rb = self.scene_mog.trace(rays_o=rays.rays_ori, rays_d=rays.rays_dir)
+                    spp_rb = self.scene_mog.trace(
+                        rays_o=rays.rays_ori, rays_d=rays.rays_dir
+                    )
             else:
                 spp_rb = self._render_playground_hybrid(rays.rays_ori, rays.rays_dir)
             batch_rgb = spp_rb["pred_rgb"].sum(dim=0).unsqueeze(0)
             rb["rgb"] = self._accumulate_to_buffer(
-                rb["rgb"], batch_rgb, i, self.gamma_correction, batch_size=self.spp.batch_size
+                rb["rgb"],
+                batch_rgb,
+                i,
+                self.gamma_correction,
+                batch_size=self.spp.batch_size,
             )
-            rb["opacity"] = (rb["opacity"] * i + spp_rb["pred_opacity"]) / (i + self.spp.batch_size)
+            rb["opacity"] = (rb["opacity"] * i + spp_rb["pred_opacity"]) / (
+                i + self.spp.batch_size
+            )
 
     @torch.cuda.nvtx.range(f"playground._render_playground_hybrid")
-    def _render_playground_hybrid(self, rays_o: torch.Tensor, rays_d: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def _render_playground_hybrid(
+        self, rays_o: torch.Tensor, rays_d: torch.Tensor
+    ) -> Dict[str, torch.Tensor]:
         """Internal method for hybrid rendering of Gaussians and mesh primitives.
         Performs ray tracing through the scene, handling both 3D Gaussians and mesh
         primitives with PBR materials. Supports environment mapping and background
@@ -944,7 +1065,9 @@ class Engine3DGRUT:
         if self.primitives.use_smooth_normals:
             playground_render_opts |= OptixPlaygroundRenderOptions.SMOOTH_NORMALS
         if self.disable_gaussian_tracing:
-            playground_render_opts |= OptixPlaygroundRenderOptions.DISABLE_GAUSSIAN_TRACING
+            playground_render_opts |= (
+                OptixPlaygroundRenderOptions.DISABLE_GAUSSIAN_TRACING
+            )
         if self.primitives.disable_pbr_textures:
             playground_render_opts |= OptixPlaygroundRenderOptions.DISABLE_PBR_TEXTURES
 
@@ -966,14 +1089,21 @@ class Engine3DGRUT:
             vertex_normals=self.primitives.stacked_fields.vertex_normals,
             vertex_tangents=self.primitives.stacked_fields.vertex_tangents,
             vertex_tangents_mask=self.primitives.stacked_fields.has_tangents,
-            primitive_type=self.primitives.stacked_fields.primitive_type_tensor[:, None],
+            primitive_type=self.primitives.stacked_fields.primitive_type_tensor[
+                :, None
+            ],
             frame_id=self.frame_id,
             ray_max_t=None,
             material_uv=self.primitives.stacked_fields.material_uv,
             material_id=self.primitives.stacked_fields.material_id,
-            materials=sorted(self.primitives.registered_materials.values(), key=lambda mat: mat.material_id),
+            materials=sorted(
+                self.primitives.registered_materials.values(),
+                key=lambda mat: mat.material_id,
+            ),
             is_sync_materials=self.is_materials_dirty,
-            refractive_index=self.primitives.stacked_fields.refractive_index_tensor[:, None],
+            refractive_index=self.primitives.stacked_fields.refractive_index_tensor[
+                :, None
+            ],
             envmap=envmap,
             envmap_offset=envmap_offset,
             max_pbr_bounces=self.max_pbr_bounces,
@@ -984,25 +1114,37 @@ class Engine3DGRUT:
 
         # If no envmap is used for background, saturate the color channels by blending the mog background
         if envmap is None or not self.environment.is_ignore_envmap():
-            poses = torch.tensor([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]], dtype=torch.float32)
+            poses = torch.tensor(
+                [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]], dtype=torch.float32
+            )
             pred_rgb, pred_opacity = mog.background(
-                poses.contiguous(), rendered_results["last_ray_d"].contiguous(), pred_rgb, pred_opacity, False
+                poses.contiguous(),
+                rendered_results["last_ray_d"].contiguous(),
+                pred_rgb,
+                pred_opacity,
+                False,
             )
 
         # Mark materials as uploaded
         self.is_materials_dirty = False
 
         # Advance frame id (for i.e., random number generator) and avoid int32 overflow
-        self.frame_id = self.frame_id + self.spp.batch_size if self.frame_id <= (2**31 - 1) else 0
+        self.frame_id = (
+            self.frame_id + self.spp.batch_size if self.frame_id <= (2**31 - 1) else 0
+        )
 
-        pred_rgb = torch.clamp(pred_rgb, 0.0, 1.0)  # Make sure image pixels are in valid range
+        pred_rgb = torch.clamp(
+            pred_rgb, 0.0, 1.0
+        )  # Make sure image pixels are in valid range
 
         rendered_results["pred_rgb"] = pred_rgb
         return rendered_results
 
     @torch.cuda.nvtx.range("render_pass")
     @torch.no_grad()
-    def render_pass(self, camera: Camera, is_first_pass: bool) -> Dict[str, torch.Tensor]:
+    def render_pass(
+        self, camera: Camera, is_first_pass: bool
+    ) -> Dict[str, torch.Tensor]:
         """Renders a single frame pass from the provided camera view, with optional progressive effects.
         This method is designed for interactive/real-time rendering scenarios where frame rate is prioritized
         over immediate full quality. It manages an internal state for progressive rendering effects.
@@ -1069,7 +1211,9 @@ class Engine3DGRUT:
                         pred_opacity=torch.zeros_like(rays.rays_ori[:, :, 0:1]),
                     )
                 else:
-                    rb = self.scene_mog.trace(rays_o=rays.rays_ori, rays_d=rays.rays_dir)
+                    rb = self.scene_mog.trace(
+                        rays_o=rays.rays_ori, rays_d=rays.rays_dir
+                    )
             else:
                 rb = self._render_playground_hybrid(rays.rays_ori, rays.rays_dir)
 
@@ -1082,7 +1226,9 @@ class Engine3DGRUT:
             self.depth_of_field.reset_accumulation()
         else:
             # Render accumulated effects, i.e. depth of field
-            rb = dict(rgb=self.last_state["rgb_buffer"], opacity=self.last_state["opacity"])
+            rb = dict(
+                rgb=self.last_state["rgb_buffer"], opacity=self.last_state["opacity"]
+            )
             if self.use_depth_of_field:
                 self._render_depth_of_field_buffer(rb, camera, rays)
             elif self.use_spp:
@@ -1093,13 +1239,17 @@ class Engine3DGRUT:
         if self.use_optix_denoiser:
             rb["rgb"] = self.tracer.denoise(rb["rgb"])
 
-        if rays.mask is not None:  # mask is for masking away pixels out of view for, i.e. fisheye
+        if (
+            rays.mask is not None
+        ):  # mask is for masking away pixels out of view for, i.e. fisheye
             mask = rays.mask[None, :, :, 0]
             rb["rgb"][mask] = 0.0
             rb["rgb_buffer"][mask] = 0.0
             rb["opacity"][mask] = 0.0
 
-        self._cache_last_state(camera=camera, renderbuffers=rb, canvas_size=[camera.height, camera.width])
+        self._cache_last_state(
+            camera=camera, renderbuffers=rb, canvas_size=[camera.height, camera.width]
+        )
         return rb
 
     @torch.cuda.nvtx.range("render")
@@ -1202,7 +1352,9 @@ class Engine3DGRUT:
             raise ValueError(f"Unknown object type: {object_path}")
 
         if object_name is None or len(object_name) == 0:
-            object_name = Path(object_path).stem  # Fallback to pick object name from path, if none specified
+            object_name = Path(
+                object_path
+            ).stem  # Fallback to pick object name from path, if none specified
 
         model.build_acc(rebuild=True)
 
@@ -1246,7 +1398,10 @@ class Engine3DGRUT:
         """
         current_view_matrix = camera.view_matrix()
         cached_camera_matrix = self.last_state.get("camera")
-        is_camera_changed = cached_camera_matrix is not None and (cached_camera_matrix != current_view_matrix).any()
+        is_camera_changed = (
+            cached_camera_matrix is not None
+            and (cached_camera_matrix != current_view_matrix).any()
+        )
         return is_camera_changed
 
     def has_cached_buffers(self) -> bool:
@@ -1256,7 +1411,10 @@ class Engine3DGRUT:
         Returns:
             bool: True if cached buffers exist, False otherwise
         """
-        return self.last_state.get("rgb") is not None and self.last_state.get("opacity") is not None
+        return (
+            self.last_state.get("rgb") is not None
+            and self.last_state.get("opacity") is not None
+        )
 
     def has_progressive_effects_to_render(self) -> bool:
         """Checks if additional progressive rendering passes are needed.
@@ -1271,10 +1429,13 @@ class Engine3DGRUT:
                   False if all enabled effects are fully sampled
         """
         has_dof_buffers_to_render = (
-            self.use_depth_of_field and self.depth_of_field.spp_accumulated_for_frame <= self.depth_of_field.spp
+            self.use_depth_of_field
+            and self.depth_of_field.spp_accumulated_for_frame <= self.depth_of_field.spp
         )
         has_spp_buffers_to_render = (
-            not self.use_depth_of_field and self.use_spp and self.spp.spp_accumulated_for_frame <= self.spp.spp
+            not self.use_depth_of_field
+            and self.use_spp
+            and self.spp.spp_accumulated_for_frame <= self.spp.spp
         )
         return has_dof_buffers_to_render or has_spp_buffers_to_render
 
@@ -1312,7 +1473,12 @@ class Engine3DGRUT:
             return True
         return False
 
-    def _cache_last_state(self, camera: Camera, renderbuffers: Dict[str, torch.Tensor], canvas_size: Tuple[int, int]):
+    def _cache_last_state(
+        self,
+        camera: Camera,
+        renderbuffers: Dict[str, torch.Tensor],
+        canvas_size: Tuple[int, int],
+    ):
         """Caches the last rendered state for comparison during future renders.
 
         Args:
@@ -1326,7 +1492,9 @@ class Engine3DGRUT:
         self.last_state["rgb_buffer"] = renderbuffers["rgb_buffer"]
         self.last_state["opacity"] = renderbuffers["opacity"]
 
-    def _raygen_pinhole(self, camera: Camera, jitter: Optional[torch.Tensor] = None) -> RayPack:
+    def _raygen_pinhole(
+        self, camera: Camera, jitter: Optional[torch.Tensor] = None
+    ) -> RayPack:
         """Generates ray origins and directions for pinhole camera model.
 
         Creates rays for each pixel in the image plane using the pinhole camera model.
@@ -1343,7 +1511,9 @@ class Engine3DGRUT:
                 - rays_dir: Ray directions of shape (1, H, W, 3)
                 - pixel_x/y: Integer pixel coordinates
         """
-        pixel_y, pixel_x = generate_centered_pixel_coords(camera.width, camera.height, device=camera.device)
+        pixel_y, pixel_x = generate_centered_pixel_coords(
+            camera.width, camera.height, device=camera.device
+        )
         if jitter is not None:
             jitter = jitter.to(device=pixel_x.device)
             pixel_x += jitter[:, :, 0]
@@ -1359,7 +1529,9 @@ class Engine3DGRUT:
         )
 
     @torch.cuda.nvtx.range("_raygen_fisheye")
-    def _raygen_fisheye(self, camera: Camera, jitter: Optional[torch.Tensor] = None) -> RayPack:
+    def _raygen_fisheye(
+        self, camera: Camera, jitter: Optional[torch.Tensor] = None
+    ) -> RayPack:
         """Generates ray origins and directions for a perfect fisheye camera model.
 
         Creates rays for each pixel using the fisheye camera model. Includes
@@ -1378,7 +1550,9 @@ class Engine3DGRUT:
                 - pixel_x/y: Integer pixel coordinates
                 - mask: Boolean mask of valid rays (H, W, 1)
         """
-        pixel_y, pixel_x = generate_centered_pixel_coords(camera.width, camera.height, device=camera.device)
+        pixel_y, pixel_x = generate_centered_pixel_coords(
+            camera.width, camera.height, device=camera.device
+        )
         if jitter is not None:
             jitter = jitter.to(device=pixel_x.device)
             pixel_x += jitter[:, :, 0]
@@ -1413,7 +1587,11 @@ class Engine3DGRUT:
         ray_batch_size = 1 if not use_spp else self.spp.batch_size
         rays = []
         for _ in range(ray_batch_size):
-            jitter = self.spp(camera.height, camera.width) if use_spp and self.spp is not None else None
+            jitter = (
+                self.spp(camera.height, camera.width)
+                if use_spp and self.spp is not None
+                else None
+            )
             if self.camera_type == "Pinhole":
                 next_rays = self._raygen_pinhole(camera, jitter)
             elif self.camera_type == "Fisheye":

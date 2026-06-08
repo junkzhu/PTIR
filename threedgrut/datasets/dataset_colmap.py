@@ -65,7 +65,9 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
         self.downsample_factor = downsample_factor
         self.ray_jitter = ray_jitter
         self.test_split_interval = test_split_interval
-        self._all_exif_exposures = exif_exposures  # Exposure values for all frames (pre-split)
+        self._all_exif_exposures = (
+            exif_exposures  # Exposure values for all frames (pre-split)
+        )
         self.bg_color = bg_color
 
         # Worker-based GPU cache for multiprocessing compatibility
@@ -84,7 +86,9 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
         # Build mapping from COLMAP camera_id to 0-based contiguous index
         # This is needed for post-processing which expects 0-based camera indices
         sorted_camera_ids = sorted(self.cam_intrinsics.keys())
-        self._camera_id_to_idx = {cam_id: idx for idx, cam_id in enumerate(sorted_camera_ids)}
+        self._camera_id_to_idx = {
+            cam_id: idx for idx, cam_id in enumerate(sorted_camera_ids)
+        }
 
         self.n_frames = len(self.cam_extrinsics)
         self.load_camera_data()
@@ -136,7 +140,9 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
             self.cam_intrinsics = read_colmap_intrinsics_text(cameras_intrinsic_file)
 
     def get_images_folder(self):
-        downsample_suffix = "" if self.downsample_factor == 1 else f"_{self.downsample_factor}"
+        downsample_suffix = (
+            "" if self.downsample_factor == 1 else f"_{self.downsample_factor}"
+        )
         return f"images{downsample_suffix}"
 
     def load_camera_data(self):
@@ -167,7 +173,9 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
                 tangential_coeffs=np.zeros((2,), dtype=np.float32),
                 thin_prism_coeffs=np.zeros((4,), dtype=np.float32),
             )
-            rays_o_cam, rays_d_cam = pinhole_camera_rays(u, v, focalx, focaly, w, h, self.ray_jitter, cx=cx, cy=cy)
+            rays_o_cam, rays_d_cam = pinhole_camera_rays(
+                u, v, focalx, focaly, w, h, self.ray_jitter, cx=cx, cy=cy
+            )
             pixel_coords = create_pixel_coords(w, h)
             return (
                 params.to_dict(),
@@ -177,7 +185,9 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
                 pixel_coords,
             )
 
-        def create_opencv_pinhole_camera(focalx, focaly, w, h, cx=None, cy=None, radial_coeffs=None):
+        def create_opencv_pinhole_camera(
+            focalx, focaly, w, h, cx=None, cy=None, radial_coeffs=None
+        ):
             cx = cx if cx is not None else w / 2.0
             cy = cy if cy is not None else h / 2.0
             # Generate UV coordinates
@@ -197,7 +207,9 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
                 tangential_coeffs=np.zeros((2,), dtype=np.float32),
                 thin_prism_coeffs=np.zeros((4,), dtype=np.float32),
             )
-            camera_model = ncore.sensors.CameraModel.from_parameters(params, device="cpu", dtype=torch.float32)
+            camera_model = ncore.sensors.CameraModel.from_parameters(
+                params, device="cpu", dtype=torch.float32
+            )
             int_pixel_coords = torch.tensor(np.stack([u, v], axis=1), dtype=torch.int32)
             image_points = camera_model.pixels_to_image_points(int_pixel_coords)
             rays_d_cam = camera_model.image_points_to_camera_rays(image_points)
@@ -221,7 +233,9 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
             focal_length = params[0:2].astype(np.float32)
             radial_coeffs = params[4:].astype(np.float32)
             # Estimate max angle for fisheye
-            max_radius_pixels = compute_max_radius(resolution.astype(np.float64), principal_point)
+            max_radius_pixels = compute_max_radius(
+                resolution.astype(np.float64), principal_point
+            )
             fov_angle_x = 2.0 * max_radius_pixels / focal_length[0]
             fov_angle_y = 2.0 * max_radius_pixels / focal_length[1]
             max_angle = np.max([fov_angle_x, fov_angle_y]) / 2.0
@@ -234,7 +248,9 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
                 max_angle=max_angle,
                 shutter_type=ShutterType.GLOBAL,
             )
-            camera_model = ncore.sensors.CameraModel.from_parameters(params, device="cpu", dtype=torch.float32)
+            camera_model = ncore.sensors.CameraModel.from_parameters(
+                params, device="cpu", dtype=torch.float32
+            )
             int_pixel_coords = torch.tensor(np.stack([u, v], axis=1), dtype=torch.int32)
             image_points = camera_model.pixels_to_image_points(int_pixel_coords)
             rays_d_cam = camera_model.image_points_to_camera_rays(image_points)
@@ -248,7 +264,9 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
                 pixel_coords,
             )
 
-        cam_id_to_image_name = {extr.camera_id: extr.name for extr in self.cam_extrinsics}
+        cam_id_to_image_name = {
+            extr.camera_id: extr.name for extr in self.cam_extrinsics
+        }
 
         for intr in self.cam_intrinsics.values():
             full_width = intr.width
@@ -256,7 +274,9 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
 
             image_name = cam_id_to_image_name[intr.id]
             image_name = (
-                os.path.join(os.path.split(image_name)[1], "") if self.get_images_folder() in image_name else image_name
+                os.path.join(os.path.split(image_name)[1], "")
+                if self.get_images_folder() in image_name
+                else image_name
             )
             image_path = os.path.join(self.path, self.get_images_folder(), image_name)
 
@@ -265,18 +285,22 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
                 with Image.open(image_path) as img:
                     width, height = img.size
             except FileNotFoundError:
-                logger.error(f"Image {image_path} not found. Cannot determine dimensions for intrinsic ID {intr.id}.")
+                logger.error(
+                    f"Image {image_path} not found. Cannot determine dimensions for intrinsic ID {intr.id}."
+                )
                 continue
 
             # Calculate scaling factor to match the image dimensions to the intrinsic dimensions
             scaling_factor = int(round(intr.height / height))
-            expected_size = f"{full_width / scaling_factor}x{full_height / scaling_factor}"
-            assert (
-                abs(full_width / scaling_factor - width) <= 1
-            ), f"Scaled image dimension {expected_size} (factor {scaling_factor}x) does not match the actual image dimensions {width}x{height}"
-            assert (
-                abs(full_height / scaling_factor - height) <= 1
-            ), f"Scaled image dimension {expected_size} (factor {scaling_factor}x) does not match the actual image dimensions {width}x{height}"
+            expected_size = (
+                f"{full_width / scaling_factor}x{full_height / scaling_factor}"
+            )
+            assert abs(full_width / scaling_factor - width) <= 1, (
+                f"Scaled image dimension {expected_size} (factor {scaling_factor}x) does not match the actual image dimensions {width}x{height}"
+            )
+            assert abs(full_height / scaling_factor - height) <= 1, (
+                f"Scaled image dimension {expected_size} (factor {scaling_factor}x) does not match the actual image dimensions {width}x{height}"
+            )
 
             if intr.model == "SIMPLE_PINHOLE":
                 focal_length = intr.params[0] / scaling_factor
@@ -302,7 +326,13 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
                 radial_coeffs = np.zeros((6,), dtype=np.float32)
                 radial_coeffs[0] = intr.params[3]
                 self.intrinsics[intr.id] = create_opencv_pinhole_camera(
-                    focal_length, focal_length, width, height, cx=cx, cy=cy, radial_coeffs=radial_coeffs
+                    focal_length,
+                    focal_length,
+                    width,
+                    height,
+                    cx=cx,
+                    cy=cy,
+                    radial_coeffs=radial_coeffs,
                 )
 
             elif intr.model == "OPENCV_FISHEYE":
@@ -341,7 +371,9 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
             image_path = os.path.join(self.path, self.get_images_folder(), extr.name)
             self.image_paths.append(image_path)
             self.mask_paths.append(os.path.splitext(image_path)[0] + "_mask.png")
-            self.gradient_mask_paths.append(os.path.splitext(image_path)[0] + "_gradient_mask.png")
+            self.gradient_mask_paths.append(
+                os.path.splitext(image_path)[0] + "_gradient_mask.png"
+            )
 
         self.camera_centers = np.array(cam_centers)
         _, diagonal = get_center_and_diag(self.camera_centers)
@@ -502,33 +534,43 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
 
         # Only add mask to dictionary if it exists
         if os.path.exists(mask_path := self.mask_paths[idx]):
-            mask = torch.from_numpy(np.array(Image.open(mask_path).convert("L"))).reshape(1, actual_h, actual_w, 1)
+            mask = torch.from_numpy(
+                np.array(Image.open(mask_path).convert("L"))
+            ).reshape(1, actual_h, actual_w, 1)
             output_dict["mask"] = mask
 
         if os.path.exists(gradient_mask_path := self.gradient_mask_paths[idx]):
-            gradient_mask = torch.from_numpy(np.array(Image.open(gradient_mask_path).convert("L"))).reshape(
-                1, actual_h, actual_w, 1
-            )
+            gradient_mask = torch.from_numpy(
+                np.array(Image.open(gradient_mask_path).convert("L"))
+            ).reshape(1, actual_h, actual_w, 1)
             output_dict["gradient_mask"] = gradient_mask
 
         if hasattr(self, "prior_normal_paths"):
             prior_normal_path = self.prior_normal_paths[idx]
             if not os.path.exists(prior_normal_path):
-                raise FileNotFoundError(f"Diffusion prior normal path {prior_normal_path} does not exist.")
+                raise FileNotFoundError(
+                    f"Diffusion prior normal path {prior_normal_path} does not exist."
+                )
             prior_normal = np.asarray(Image.open(prior_normal_path))
             if prior_normal.shape[:2] != (actual_h, actual_w):
                 prior_normal = np.asarray(
-                    Image.fromarray(prior_normal).resize((actual_w, actual_h), Image.Resampling.BILINEAR)
+                    Image.fromarray(prior_normal).resize(
+                        (actual_w, actual_h), Image.Resampling.BILINEAR
+                    )
                 )
             if prior_normal.ndim == 3 and prior_normal.shape[2] == 4:
                 prior_normal = prior_normal[..., :3]
-            prior_normal = torch.from_numpy(prior_normal.astype(np.uint8)).reshape(1, actual_h, actual_w, 3)
+            prior_normal = torch.from_numpy(prior_normal.astype(np.uint8)).reshape(
+                1, actual_h, actual_w, 3
+            )
             output_dict["prior_normal"] = prior_normal
 
         if hasattr(self, "prior_albedo_paths"):
             prior_albedo_path = self.prior_albedo_paths[idx]
             if not os.path.exists(prior_albedo_path):
-                raise FileNotFoundError(f"Diffusion prior albedo path {prior_albedo_path} does not exist.")
+                raise FileNotFoundError(
+                    f"Diffusion prior albedo path {prior_albedo_path} does not exist."
+                )
             output_dict["prior_albedo"] = self._read_prior_image(
                 prior_albedo_path,
                 actual_w,
@@ -539,7 +581,9 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
         if hasattr(self, "prior_roughness_paths"):
             prior_roughness_path = self.prior_roughness_paths[idx]
             if not os.path.exists(prior_roughness_path):
-                raise FileNotFoundError(f"Diffusion prior roughness path {prior_roughness_path} does not exist.")
+                raise FileNotFoundError(
+                    f"Diffusion prior roughness path {prior_roughness_path} does not exist."
+                )
             output_dict["prior_roughness"] = self._read_prior_image(
                 prior_roughness_path,
                 actual_w,
@@ -549,7 +593,9 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
 
         # Add EXIF exposure if available for this frame
         if self.exif_exposures is not None and self.exif_exposures[idx] is not None:
-            output_dict["exposure"] = torch.tensor(self.exif_exposures[idx], dtype=torch.float32)
+            output_dict["exposure"] = torch.tensor(
+                self.exif_exposures[idx], dtype=torch.float32
+            )
 
         return output_dict
 
@@ -566,7 +612,9 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
         # Get intrinsics for current worker
         worker_intrinsics = self._lazy_worker_intrinsics_cache()
 
-        camera_params_dict, rays_ori, rays_dir, camera_name, pixel_coords = worker_intrinsics[intr]
+        camera_params_dict, rays_ori, rays_dir, camera_name, pixel_coords = (
+            worker_intrinsics[intr]
+        )
 
         sample = {
             "rgb_gt": data,
@@ -584,17 +632,25 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
             sample["mask"] = mask.clamp(0.0, 1.0).to(torch.float32)
 
         if "gradient_mask" in batch:
-            gradient_mask = batch["gradient_mask"][0].to(self.device, non_blocking=True) / 255.0
+            gradient_mask = (
+                batch["gradient_mask"][0].to(self.device, non_blocking=True) / 255.0
+            )
             sample["gradient_mask"] = gradient_mask.clamp(0.0, 1.0).to(torch.float32)
 
         prior_kwargs = {}
         if "prior_normal" in batch:
-            prior_normal = batch["prior_normal"][0].to(self.device, non_blocking=True) / 255.0
+            prior_normal = (
+                batch["prior_normal"][0].to(self.device, non_blocking=True) / 255.0
+            )
             prior_kwargs["normal"] = prior_normal * 2.0 - 1.0
         if "prior_albedo" in batch:
-            prior_kwargs["albedo"] = batch["prior_albedo"][0].to(self.device, non_blocking=True)
+            prior_kwargs["albedo"] = batch["prior_albedo"][0].to(
+                self.device, non_blocking=True
+            )
         if "prior_roughness" in batch:
-            prior_kwargs["roughness"] = batch["prior_roughness"][0].to(self.device, non_blocking=True)
+            prior_kwargs["roughness"] = batch["prior_roughness"][0].to(
+                self.device, non_blocking=True
+            )
         if prior_kwargs:
             sample["prior"] = BatchPrior(**prior_kwargs)
 
@@ -605,10 +661,16 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
         return Batch(**sample)
 
     @staticmethod
-    def _read_prior_image(path: str, width: int, height: int, num_channels: int) -> torch.Tensor:
+    def _read_prior_image(
+        path: str, width: int, height: int, num_channels: int
+    ) -> torch.Tensor:
         image = np.asarray(Image.open(path))
         if image.shape[:2] != (height, width):
-            image = np.asarray(Image.fromarray(image).resize((width, height), Image.Resampling.BILINEAR))
+            image = np.asarray(
+                Image.fromarray(image).resize(
+                    (width, height), Image.Resampling.BILINEAR
+                )
+            )
         if image.ndim == 2:
             image = image[..., None]
         if image.ndim == 3 and image.shape[2] == 4:
@@ -649,7 +711,9 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
                     [0.0, 0.0, 0.0, 1.0],
                 ]
             )
-            trans_mat_world_to_camera = camera_convention_rot @ trans_mat_world_to_camera
+            trans_mat_world_to_camera = (
+                camera_convention_rot @ trans_mat_world_to_camera
+            )
 
             # Get camera ID and corresponding intrinsics
             camera_id = self.get_intrinsics_idx(i_cam)
@@ -667,7 +731,9 @@ class ColmapDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
 
             assert image_data.dtype == np.uint8, "Image data must be of type uint8"
             rgb = image_data.reshape(h, w, 3) / np.float32(255.0)
-            assert rgb.dtype == np.float32, f"RGB image must be float32, got {rgb.dtype}"
+            assert rgb.dtype == np.float32, (
+                f"RGB image must be float32, got {rgb.dtype}"
+            )
 
             cam_list.append(
                 {

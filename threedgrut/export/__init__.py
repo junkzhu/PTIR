@@ -95,7 +95,9 @@ except ModuleNotFoundError as e:
         raise
     import warnings
 
-    warnings.warn(f"Transform/visibility utilities unavailable: {e}", ImportWarning, stacklevel=2)
+    warnings.warn(
+        f"Transform/visibility utilities unavailable: {e}", ImportWarning, stacklevel=2
+    )
 
 try:
     from threedgrut.export.importers.usd import USDImporter
@@ -113,4 +115,6 @@ except ModuleNotFoundError as e:
         raise
     import warnings
 
-    warnings.warn(f"USD exporters/importers unavailable: {e}", ImportWarning, stacklevel=2)
+    warnings.warn(
+        f"USD exporters/importers unavailable: {e}", ImportWarning, stacklevel=2
+    )

@@ -76,7 +76,9 @@ def _extract_camera_params_from_dataset(dataset) -> Optional[List]:
                 params_tuple = dataset.intrinsics.get(camera_id)
 
                 if params_tuple is None:
-                    logger.warning(f"No intrinsics found for frame {frame_idx}, camera_id {camera_id}")
+                    logger.warning(
+                        f"No intrinsics found for frame {frame_idx}, camera_id {camera_id}"
+                    )
                     camera_params.append(None)
                     continue
 
@@ -87,19 +89,35 @@ def _extract_camera_params_from_dataset(dataset) -> Optional[List]:
                     params = OpenCVPinholeCameraModelParameters(
                         resolution=np.array(params_dict["resolution"], dtype=np.uint64),
                         shutter_type=ShutterType[params_dict["shutter_type"]],
-                        principal_point=np.array(params_dict["principal_point"], dtype=np.float32),
-                        focal_length=np.array(params_dict["focal_length"], dtype=np.float32),
-                        radial_coeffs=np.array(params_dict["radial_coeffs"], dtype=np.float32),
-                        tangential_coeffs=np.array(params_dict["tangential_coeffs"], dtype=np.float32),
-                        thin_prism_coeffs=np.array(params_dict["thin_prism_coeffs"], dtype=np.float32),
+                        principal_point=np.array(
+                            params_dict["principal_point"], dtype=np.float32
+                        ),
+                        focal_length=np.array(
+                            params_dict["focal_length"], dtype=np.float32
+                        ),
+                        radial_coeffs=np.array(
+                            params_dict["radial_coeffs"], dtype=np.float32
+                        ),
+                        tangential_coeffs=np.array(
+                            params_dict["tangential_coeffs"], dtype=np.float32
+                        ),
+                        thin_prism_coeffs=np.array(
+                            params_dict["thin_prism_coeffs"], dtype=np.float32
+                        ),
                     )
                 elif camera_name == "OpenCVFisheyeCameraModelParameters":
                     params = OpenCVFisheyeCameraModelParameters(
                         resolution=np.array(params_dict["resolution"], dtype=np.uint64),
                         shutter_type=ShutterType[params_dict["shutter_type"]],
-                        principal_point=np.array(params_dict["principal_point"], dtype=np.float32),
-                        focal_length=np.array(params_dict["focal_length"], dtype=np.float32),
-                        radial_coeffs=np.array(params_dict["radial_coeffs"], dtype=np.float32),
+                        principal_point=np.array(
+                            params_dict["principal_point"], dtype=np.float32
+                        ),
+                        focal_length=np.array(
+                            params_dict["focal_length"], dtype=np.float32
+                        ),
+                        radial_coeffs=np.array(
+                            params_dict["radial_coeffs"], dtype=np.float32
+                        ),
                         max_angle=float(params_dict["max_angle"]),
                     )
                 else:
@@ -110,7 +128,9 @@ def _extract_camera_params_from_dataset(dataset) -> Optional[List]:
                 camera_params.append(params)
 
             except Exception as e:
-                logger.warning(f"Failed to extract camera params for frame {frame_idx}: {e}")
+                logger.warning(
+                    f"Failed to extract camera params for frame {frame_idx}: {e}"
+                )
                 camera_params.append(None)
 
         return camera_params
@@ -120,7 +140,9 @@ def _extract_camera_params_from_dataset(dataset) -> Optional[List]:
         # NeRFDataset: single intrinsics for all frames
         intrinsics_list = dataset.intrinsics
         if len(intrinsics_list) != 4:
-            logger.warning(f"Expected intrinsics list [fx, fy, cx, cy], got {len(intrinsics_list)} elements")
+            logger.warning(
+                f"Expected intrinsics list [fx, fy, cx, cy], got {len(intrinsics_list)} elements"
+            )
             return None
 
         fx, fy, cx, cy = intrinsics_list
@@ -205,7 +227,9 @@ class USDExporter(ModelExporter):
         self.sorting_mode_hint = sorting_mode_hint
         self.linear_srgb = linear_srgb
 
-    def _create_default_stage(self, referenced_stages: List[NamedUSDStage]) -> NamedUSDStage:
+    def _create_default_stage(
+        self, referenced_stages: List[NamedUSDStage]
+    ) -> NamedUSDStage:
         """
         Create a default.usda that references the data stages.
 
@@ -259,7 +283,9 @@ class USDExporter(ModelExporter):
 
         logger.info(f"Schema: LightField (post-activation)")
 
-        logger.info(f"Exporting {attrs.num_gaussians} Gaussians, SH degree {caps.sh_degree}")
+        logger.info(
+            f"Exporting {attrs.num_gaussians} Gaussians, SH degree {caps.sh_degree}"
+        )
 
         # Compute normalizing transform if enabled
         normalizing_transform = np.eye(4)
@@ -275,7 +301,11 @@ class USDExporter(ModelExporter):
         stage = initialize_usd_stage(up_axis="Y")
 
         apply_coordinate_transform = kwargs.get("apply_coordinate_transform", False)
-        coordinate_transform = get_3dgrut_to_usdz_coordinate_transform() if apply_coordinate_transform else None
+        coordinate_transform = (
+            get_3dgrut_to_usdz_coordinate_transform()
+            if apply_coordinate_transform
+            else None
+        )
 
         # Create Gaussian content root with optional normalizing and coordinate transform
         gaussians_root = create_gaussian_model_root(
@@ -284,7 +314,9 @@ class USDExporter(ModelExporter):
             flip_y_axis=False,
             flip_z_axis=False,
             root_path="/World/Gaussians",
-            normalizing_transform=normalizing_transform if self.apply_normalizing_transform else None,
+            normalizing_transform=normalizing_transform
+            if self.apply_normalizing_transform
+            else None,
             coordinate_transform=coordinate_transform,
         )
 
@@ -322,9 +354,13 @@ class USDExporter(ModelExporter):
                 camera_params = _extract_camera_params_from_dataset(dataset)
 
                 if camera_params is not None:
-                    logger.info(f"Extracted camera params for {len(camera_params)} frames")
+                    logger.info(
+                        f"Extracted camera params for {len(camera_params)} frames"
+                    )
                 else:
-                    logger.warning("Could not extract camera intrinsics from dataset, using default")
+                    logger.warning(
+                        "Could not extract camera intrinsics from dataset, using default"
+                    )
 
                 export_cameras_to_usd(
                     stage=stage,
@@ -349,7 +385,9 @@ class USDExporter(ModelExporter):
                     envmap_filename="envmap.png",
                 )
                 if envmap_bytes is not None:
-                    files.append(NamedSerialized(filename="envmap.png", serialized=envmap_bytes))
+                    files.append(
+                        NamedSerialized(filename="envmap.png", serialized=envmap_bytes)
+                    )
                     logger.info("Exported background as DomeLight")
             except (AttributeError, ValueError, ImportError) as e:
                 logger.warning(f"Failed to export background: {e}")
@@ -362,7 +400,9 @@ class USDExporter(ModelExporter):
             gaussians_stage = NamedUSDStage(filename="gaussians.usdc", stage=stage)
             default_stage = self._create_default_stage([gaussians_stage])
             # default.usda must be first in USDZ
-            write_to_usdz(output_path, [default_stage, gaussians_stage], files if files else None)
+            write_to_usdz(
+                output_path, [default_stage, gaussians_stage], files if files else None
+            )
         elif suffix in [".usda", ".usd", ".usdc"]:
             # Export as plain USD (format determined by extension)
             stage.Export(str(output_path))
@@ -376,7 +416,9 @@ class USDExporter(ModelExporter):
             usdz_path = output_path.with_suffix(".usdz")
             gaussians_stage = NamedUSDStage(filename="gaussians.usdc", stage=stage)
             default_stage = self._create_default_stage([gaussians_stage])
-            write_to_usdz(usdz_path, [default_stage, gaussians_stage], files if files else None)
+            write_to_usdz(
+                usdz_path, [default_stage, gaussians_stage], files if files else None
+            )
 
         logger.info(f"USD export complete: {output_path}")
 
@@ -403,7 +445,11 @@ class USDExporter(ModelExporter):
             half_features=half_features,
             export_cameras=getattr(export_conf, "export_cameras", True),
             export_background=getattr(export_conf, "export_background", True),
-            apply_normalizing_transform=getattr(export_conf, "apply_normalizing_transform", True),
-            sorting_mode_hint=getattr(export_conf, "sorting_mode_hint", "cameraDistance"),
+            apply_normalizing_transform=getattr(
+                export_conf, "apply_normalizing_transform", True
+            ),
+            sorting_mode_hint=getattr(
+                export_conf, "sorting_mode_hint", "cameraDistance"
+            ),
             linear_srgb=getattr(export_conf, "linear_srgb", False),
         )

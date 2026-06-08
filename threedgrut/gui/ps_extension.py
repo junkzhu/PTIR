@@ -39,14 +39,26 @@ def set_custom_cugl_bindings():
     load_3dgrut_gui_plugin()
 
     ps_device_func_dict = {
-        "map_resource_and_get_array": lambda handle: _3dgrut_gui_plugin.cuda.map_graphics_resource_array(handle),
-        "unmap_resource": lambda handle: _3dgrut_gui_plugin.cuda.unmap_graphics_resource(handle),
-        "register_gl_buffer": lambda native_id: _3dgrut_gui_plugin.cuda.register_gl_buffer(native_id),
-        "register_gl_image_2d": lambda native_id: _3dgrut_gui_plugin.cuda.register_gl_texture(native_id),
-        "unregister_resource": lambda handle: _3dgrut_gui_plugin.cuda.unregister_cuda_resource(handle),
+        "map_resource_and_get_array": lambda handle: (
+            _3dgrut_gui_plugin.cuda.map_graphics_resource_array(handle)
+        ),
+        "unmap_resource": lambda handle: (
+            _3dgrut_gui_plugin.cuda.unmap_graphics_resource(handle)
+        ),
+        "register_gl_buffer": lambda native_id: (
+            _3dgrut_gui_plugin.cuda.register_gl_buffer(native_id)
+        ),
+        "register_gl_image_2d": lambda native_id: (
+            _3dgrut_gui_plugin.cuda.register_gl_texture(native_id)
+        ),
+        "unregister_resource": lambda handle: (
+            _3dgrut_gui_plugin.cuda.unregister_cuda_resource(handle)
+        ),
         "get_array_ptr": lambda input_array: (input_array.data_ptr(), None, None, None),
-        "memcpy_2d": lambda dst_ptr, src_ptr, width, height: _3dgrut_gui_plugin.cuda.memcpy_2d_to_array_async(
-            dst_ptr, 0, 0, src_ptr, width, width, height
+        "memcpy_2d": lambda dst_ptr, src_ptr, width, height: (
+            _3dgrut_gui_plugin.cuda.memcpy_2d_to_array_async(
+                dst_ptr, 0, 0, src_ptr, width, width, height
+            )
         ),
     }
     ps.set_device_interop_funcs(ps_device_func_dict)
@@ -60,7 +72,9 @@ def initialize_cugl_interop():
             import cuda
             import cupy
 
-            logger.info("polyscope loaded with cupy, cuda-python for cu-opengl interop.")
+            logger.info(
+                "polyscope loaded with cupy, cuda-python for cu-opengl interop."
+            )
             # polyscope is available with cupy / cuda-python, do nothing
         except ImportError:
             set_custom_cugl_bindings()  # polyscope is available without cupy / cuda-python, use custom bindings

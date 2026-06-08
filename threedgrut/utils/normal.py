@@ -37,7 +37,9 @@ def normal_mae(
         if valid_mask.ndim == angular_error.ndim + 1:
             valid_mask = valid_mask.squeeze(-1)
         if average_full_image:
-            angular_error = torch.where(valid_mask, angular_error, torch.zeros_like(angular_error))
+            angular_error = torch.where(
+                valid_mask, angular_error, torch.zeros_like(angular_error)
+            )
             return angular_error.mean()
         angular_error = angular_error[valid_mask]
 
@@ -53,7 +55,9 @@ class NormalUtils:
     def __init__(self):
         pass
 
-    def initialize_shading_normal_from_rotation(self, rotation: torch.Tensor) -> torch.Tensor:
+    def initialize_shading_normal_from_rotation(
+        self, rotation: torch.Tensor
+    ) -> torch.Tensor:
         rotation_matrix = self._quaternion_to_so3(rotation)
         local_z_axis = rotation_matrix[:, :, 2]
         return F.normalize(local_z_axis, dim=-1, eps=1e-6)
@@ -74,7 +78,9 @@ class NormalUtils:
         pred_dist = self._to_channel_last_batch(pred_dist, channels=1)
         valid = self._to_channel_last_batch(valid, channels=1).bool()
         if pred_opacity is not None:
-            pred_opacity = self._to_channel_last_batch(pred_opacity.detach(), channels=1).clamp(0.0, 1.0)
+            pred_opacity = self._to_channel_last_batch(
+                pred_opacity.detach(), channels=1
+            ).clamp(0.0, 1.0)
 
         if foreground_mask is not None:
             foreground_mask = self._prepare_mask(foreground_mask, pred_dist)
@@ -85,7 +91,9 @@ class NormalUtils:
 
         world_rotation = T_to_world[:, :3, :3]
         world_translation = T_to_world[:, None, None, :3, 3]
-        points = torch.einsum("bij,bhwj->bhwi", world_rotation, points) + world_translation
+        points = (
+            torch.einsum("bij,bhwj->bhwi", world_rotation, points) + world_translation
+        )
 
         pseudo_normal = torch.zeros_like(points)
         pseudo_normal_mask = torch.zeros_like(valid)
@@ -107,7 +115,9 @@ class NormalUtils:
             normals = self._remap_pseudo_normal_axes(normals)
             if pred_opacity is not None:
                 normals = normals * pred_opacity[:, 1:-1, 1:-1]
-            normals = torch.where(valid_normal_mask.expand_as(normals), normals, torch.zeros_like(normals))
+            normals = torch.where(
+                valid_normal_mask.expand_as(normals), normals, torch.zeros_like(normals)
+            )
 
             pseudo_normal[:, 1:-1, 1:-1] = normals
             pseudo_normal_mask[:, 1:-1, 1:-1] = valid_normal_mask
@@ -141,12 +151,18 @@ class NormalUtils:
             elif tensor.shape[1] == channels:
                 tensor = tensor.permute(0, 2, 3, 1)
             else:
-                raise ValueError(f"Expected tensor with {channels} channels, got shape {tuple(tensor.shape)}")
+                raise ValueError(
+                    f"Expected tensor with {channels} channels, got shape {tuple(tensor.shape)}"
+                )
         else:
-            raise ValueError(f"Expected a 2D, 3D, or 4D tensor, got shape {tuple(tensor.shape)}")
+            raise ValueError(
+                f"Expected a 2D, 3D, or 4D tensor, got shape {tuple(tensor.shape)}"
+            )
 
         if tensor.shape[-1] != channels:
-            raise ValueError(f"Expected tensor with {channels} channels, got shape {tuple(tensor.shape)}")
+            raise ValueError(
+                f"Expected tensor with {channels} channels, got shape {tuple(tensor.shape)}"
+            )
 
         return tensor
 
@@ -163,7 +179,9 @@ class NormalUtils:
         y = q[:, 2]
         z = q[:, 3]
 
-        rotation_matrix = torch.zeros((q.shape[0], 3, 3), dtype=rotation.dtype, device=rotation.device)
+        rotation_matrix = torch.zeros(
+            (q.shape[0], 3, 3), dtype=rotation.dtype, device=rotation.device
+        )
         rotation_matrix[:, 0, 0] = 1 - 2 * (y * y + z * z)
         rotation_matrix[:, 0, 1] = 2 * (x * y - w * z)
         rotation_matrix[:, 0, 2] = 2 * (x * z + w * y)

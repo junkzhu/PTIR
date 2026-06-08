@@ -30,7 +30,11 @@ OmegaConf.register_new_resolver("int_list", lambda l: [int(x) for x in l])
 
 def get_git_revision_hash() -> str:
     try:
-        return subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("ascii").strip()
+        return (
+            subprocess.check_output(["git", "rev-parse", "HEAD"])
+            .decode("ascii")
+            .strip()
+        )
     except Exception:
         return "Unknown"
 

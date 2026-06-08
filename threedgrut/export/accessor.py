@@ -65,12 +65,24 @@ class GaussianAttributes:
     def __post_init__(self):
         """Validate array shapes."""
         n = self.positions.shape[0]
-        assert self.positions.shape == (n, 3), f"positions shape mismatch: {self.positions.shape}"
-        assert self.rotations.shape == (n, 4), f"rotations shape mismatch: {self.rotations.shape}"
-        assert self.scales.shape == (n, 3), f"scales shape mismatch: {self.scales.shape}"
-        assert self.densities.shape[0] == n, f"densities count mismatch: {self.densities.shape[0]} vs {n}"
-        assert self.albedo.shape == (n, 3), f"albedo shape mismatch: {self.albedo.shape}"
-        assert self.specular.shape[0] == n, f"specular count mismatch: {self.specular.shape[0]} vs {n}"
+        assert self.positions.shape == (n, 3), (
+            f"positions shape mismatch: {self.positions.shape}"
+        )
+        assert self.rotations.shape == (n, 4), (
+            f"rotations shape mismatch: {self.rotations.shape}"
+        )
+        assert self.scales.shape == (n, 3), (
+            f"scales shape mismatch: {self.scales.shape}"
+        )
+        assert self.densities.shape[0] == n, (
+            f"densities count mismatch: {self.densities.shape[0]} vs {n}"
+        )
+        assert self.albedo.shape == (n, 3), (
+            f"albedo shape mismatch: {self.albedo.shape}"
+        )
+        assert self.specular.shape[0] == n, (
+            f"specular count mismatch: {self.specular.shape[0]} vs {n}"
+        )
 
     @property
     def num_gaussians(self) -> int:
@@ -110,7 +122,14 @@ class GaussianAttributes:
         valid_albedo = np.all(np.isfinite(self.albedo), axis=1)
         valid_specular = np.all(np.isfinite(self.specular), axis=1)
 
-        return valid_positions & valid_rotations & valid_scales & valid_densities & valid_albedo & valid_specular
+        return (
+            valid_positions
+            & valid_rotations
+            & valid_scales
+            & valid_densities
+            & valid_albedo
+            & valid_specular
+        )
 
     def get_low_opacity_mask(self, threshold: float = 1e-6) -> np.ndarray:
         """
@@ -125,7 +144,9 @@ class GaussianAttributes:
         opacities = self.densities.flatten()
         return opacities >= threshold
 
-    def get_visibility_mask(self, visibility: np.ndarray, threshold: float = 0.0) -> np.ndarray:
+    def get_visibility_mask(
+        self, visibility: np.ndarray, threshold: float = 0.0
+    ) -> np.ndarray:
         """
         Get a mask of Gaussians with visibility above threshold.
 
@@ -199,7 +220,8 @@ def filter_gaussians(
         low_opacity_count = np.sum(combined_mask) - np.sum(combined_mask & opacity_mask)
         if low_opacity_count > 0:
             logger.info(
-                f"Filtered {low_opacity_count} low-opacity Gaussians " f"(threshold={settings.opacity_threshold:.1e})"
+                f"Filtered {low_opacity_count} low-opacity Gaussians "
+                f"(threshold={settings.opacity_threshold:.1e})"
             )
         stats["low_opacity"] = low_opacity_count
         combined_mask &= opacity_mask
@@ -213,8 +235,12 @@ def filter_gaussians(
             )
             stats["low_visibility"] = 0
         else:
-            visibility_mask = attrs.get_visibility_mask(visibility, settings.visibility_threshold)
-            low_visibility_count = np.sum(combined_mask) - np.sum(combined_mask & visibility_mask)
+            visibility_mask = attrs.get_visibility_mask(
+                visibility, settings.visibility_threshold
+            )
+            low_visibility_count = np.sum(combined_mask) - np.sum(
+                combined_mask & visibility_mask
+            )
             if low_visibility_count > 0:
                 logger.info(
                     f"Filtered {low_visibility_count} low-visibility Gaussians "
@@ -307,7 +333,9 @@ class GaussianExportAccessor:
         scale_activation = "exp"
         is_surfel = False
         if self.conf is not None:
-            density_activation = getattr(self.conf.model, "density_activation", "sigmoid")
+            density_activation = getattr(
+                self.conf.model, "density_activation", "sigmoid"
+            )
             scale_activation = getattr(self.conf.model, "scale_activation", "exp")
             primitive_type = getattr(self.conf.render, "primitive_type", "")
             is_surfel = primitive_type == "trisurfel"
@@ -335,9 +363,15 @@ class GaussianExportAccessor:
         """
         # Extract tensors from model
         positions = self.model.get_positions().detach().cpu().numpy()
-        rotations = self.model.get_rotation(preactivation=preactivation).detach().cpu().numpy()
-        scales = self.model.get_scale(preactivation=preactivation).detach().cpu().numpy()
-        densities = self.model.get_density(preactivation=preactivation).detach().cpu().numpy()
+        rotations = (
+            self.model.get_rotation(preactivation=preactivation).detach().cpu().numpy()
+        )
+        scales = (
+            self.model.get_scale(preactivation=preactivation).detach().cpu().numpy()
+        )
+        densities = (
+            self.model.get_density(preactivation=preactivation).detach().cpu().numpy()
+        )
         albedo = self.model.get_features_albedo().detach().cpu().numpy()
         specular = self.model.get_features_specular().detach().cpu().numpy()
 

@@ -10,8 +10,14 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 def _parse_args():
-    parser = argparse.ArgumentParser(description="Generate RGB2X diffusion priors for RGB images.")
-    parser.add_argument("dataset_root", type=Path, help="Dataset root used to preserve relative output paths.")
+    parser = argparse.ArgumentParser(
+        description="Generate RGB2X diffusion priors for RGB images."
+    )
+    parser.add_argument(
+        "dataset_root",
+        type=Path,
+        help="Dataset root used to preserve relative output paths.",
+    )
     parser.add_argument(
         "--images",
         type=Path,
@@ -34,7 +40,11 @@ def _parse_args():
     parser.add_argument("--input-size", type=int, default=512)
     parser.add_argument("--inference-steps", type=int, default=50)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--overwrite", action="store_true", help="Regenerate priors even if output files exist.")
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Regenerate priors even if output files exist.",
+    )
     parser.add_argument(
         "--local-files-only",
         action="store_true",

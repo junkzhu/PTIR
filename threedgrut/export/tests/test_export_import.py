@@ -72,7 +72,9 @@ class MockGaussianModel(ExportableModel):
         )[:num_gaussians]
 
         # Rotations: identity quaternions (w=1, x=y=z=0)
-        self._rotations = torch.zeros((num_gaussians, 4), dtype=torch.float32, device=device)
+        self._rotations = torch.zeros(
+            (num_gaussians, 4), dtype=torch.float32, device=device
+        )
         self._rotations[:, 0] = 1.0  # w component
 
         # Scales: pre-activation (log space), known values
@@ -86,11 +88,15 @@ class MockGaussianModel(ExportableModel):
         )  # sigmoid(2) ≈ 0.88
 
         # Albedo (DC term): known RGB values
-        self._albedo = torch.tensor([[0.5, 0.3, 0.2]] * num_gaussians, dtype=torch.float32, device=device)
+        self._albedo = torch.tensor(
+            [[0.5, 0.3, 0.2]] * num_gaussians, dtype=torch.float32, device=device
+        )
 
         # Specular (higher-order SH): zeros for simplicity
         num_specular_coeffs = (sh_degree + 1) ** 2 - 1
-        self._specular = torch.zeros((num_gaussians, num_specular_coeffs * 3), dtype=torch.float32, device=device)
+        self._specular = torch.zeros(
+            (num_gaussians, num_specular_coeffs * 3), dtype=torch.float32, device=device
+        )
 
     def get_positions(self) -> torch.Tensor:
         return self._positions
@@ -167,7 +173,11 @@ class TestPLYExportImport:
             # PLY stores pre-activation values
             expected_scales = model.get_scale(preactivation=True).cpu().numpy()
             np.testing.assert_allclose(
-                attrs.scales, expected_scales, rtol=1e-5, atol=1e-6, err_msg="Scales mismatch after PLY export/import"
+                attrs.scales,
+                expected_scales,
+                rtol=1e-5,
+                atol=1e-6,
+                err_msg="Scales mismatch after PLY export/import",
             )
 
     def test_ply_export_import_densities(self):
@@ -229,7 +239,11 @@ class TestPLYExportImport:
 
             expected_albedo = model.get_features_albedo().cpu().numpy()
             np.testing.assert_allclose(
-                attrs.albedo, expected_albedo, rtol=1e-5, atol=1e-6, err_msg="Albedo mismatch after PLY export/import"
+                attrs.albedo,
+                expected_albedo,
+                rtol=1e-5,
+                atol=1e-6,
+                err_msg="Albedo mismatch after PLY export/import",
             )
 
 
@@ -287,7 +301,11 @@ class TestUSDExportImport:
             # USD LightField stores post-activation (actual) scales
             expected_scales = model.get_scale(preactivation=False).cpu().numpy()
             np.testing.assert_allclose(
-                attrs.scales, expected_scales, rtol=1e-4, atol=1e-5, err_msg="Scales mismatch after USD export/import"
+                attrs.scales,
+                expected_scales,
+                rtol=1e-4,
+                atol=1e-5,
+                err_msg="Scales mismatch after USD export/import",
             )
 
     def test_usd_export_import_densities_post_activation(self):
@@ -366,7 +384,11 @@ class TestUSDExportImport:
 
             expected_albedo = model.get_features_albedo().cpu().numpy()
             np.testing.assert_allclose(
-                attrs.albedo, expected_albedo, rtol=1e-4, atol=1e-5, err_msg="Albedo mismatch after USD export/import"
+                attrs.albedo,
+                expected_albedo,
+                rtol=1e-4,
+                atol=1e-5,
+                err_msg="Albedo mismatch after USD export/import",
             )
 
 
@@ -417,7 +439,9 @@ class TestExportImportConsistency:
             stage = Usd.Stage.Open(str(usd_path))
             assert stage, "Failed to open exported stage"
             errors = _validate_stage(stage)
-            assert not errors, "USD validation failed:\n" + "\n".join(e.GetMessage() for e in errors)
+            assert not errors, "USD validation failed:\n" + "\n".join(
+                e.GetMessage() for e in errors
+            )
 
 
 def _find_prim_with_color_space_api(stage: Usd.Stage):

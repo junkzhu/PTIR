@@ -41,7 +41,9 @@ from threedgrut.export.importers import (
 )
 from threedgrut.export.usd.exporter import USDExporter
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 
@@ -122,7 +124,9 @@ def get_exporter(
                 export_cameras=False,
                 export_background=False,
                 apply_normalizing_transform=False,
-                sorting_mode_hint=render_order_hint if render_order_hint is not None else "cameraDistance",
+                sorting_mode_hint=render_order_hint
+                if render_order_hint is not None
+                else "cameraDistance",
                 linear_srgb=linear_srgb,
             ),
             False,
@@ -189,7 +193,9 @@ def transcode(
     attrs, caps = importer.load(input_path)
     source_is_preactivation = importer.stores_preactivation
 
-    logger.info(f"Loaded {attrs.num_gaussians} Gaussians (preactivation={source_is_preactivation})")
+    logger.info(
+        f"Loaded {attrs.num_gaussians} Gaussians (preactivation={source_is_preactivation})"
+    )
 
     # Get exporter
     exporter, target_expects_preactivation = get_exporter(
@@ -211,7 +217,9 @@ def transcode(
 
     # Export
     logger.info(f"Exporting to {output_path}...")
-    exporter.export(adapter, output_path, apply_coordinate_transform=apply_coordinate_transform)
+    exporter.export(
+        adapter, output_path, apply_coordinate_transform=apply_coordinate_transform
+    )
 
     logger.info(f"Transcode complete: {input_path} -> {output_path}")
 

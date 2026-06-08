@@ -157,7 +157,9 @@ def main():
 
     # Configure logging
     log_level = logging.DEBUG if args.verbose else logging.INFO
-    logging.basicConfig(level=log_level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    logging.basicConfig(
+        level=log_level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
 
     # Validate paths
     checkpoint_path = Path(args.checkpoint)
@@ -195,13 +197,19 @@ def main():
 
             # Check if dataset path exists in config
             if not hasattr(conf, "path") or not conf.path:
-                logger.warning("No dataset path in checkpoint. Use --dataset to specify path for camera export.")
+                logger.warning(
+                    "No dataset path in checkpoint. Use --dataset to specify path for camera export."
+                )
             elif not hasattr(conf, "dataset") or not hasattr(conf.dataset, "type"):
-                logger.warning("No dataset type in checkpoint config. Cannot load dataset for camera export.")
+                logger.warning(
+                    "No dataset type in checkpoint config. Cannot load dataset for camera export."
+                )
             else:
                 dataset = datasets.make_test(name=conf.dataset.type, config=conf)
                 split = getattr(dataset, "split", "unknown")
-                logger.info(f"Loaded dataset with {len(dataset)} frames for camera export (split={split})")
+                logger.info(
+                    f"Loaded dataset with {len(dataset)} frames for camera export (split={split})"
+                )
         except Exception as e:
             logger.warning(f"Failed to load dataset for camera export: {e}")
             if args.verbose:

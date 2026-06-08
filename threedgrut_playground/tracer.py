@@ -50,12 +50,18 @@ class Tracer:
         self.conf = conf
         self.num_update_bvh = 0
 
-        logger.info(f'🔆 Creating Optix tracing pipeline.. Using CUDA path: "{torch.utils.cpp_extension.CUDA_HOME}"')
-        torch.zeros(1, device=self.device)  # Create a dummy tensor to force cuda context init
+        logger.info(
+            f'🔆 Creating Optix tracing pipeline.. Using CUDA path: "{torch.utils.cpp_extension.CUDA_HOME}"'
+        )
+        torch.zeros(
+            1, device=self.device
+        )  # Create a dummy tensor to force cuda context init
         load_playground_plugin(conf)
 
         playground_module_path = os.path.dirname(__file__)
-        threedgrt_tracer_module_path = os.path.abspath(os.path.join(playground_module_path, "..", "threedgrt_tracer"))
+        threedgrt_tracer_module_path = os.path.abspath(
+            os.path.join(playground_module_path, "..", "threedgrt_tracer")
+        )
 
         self.tracer_wrapper = _playground_plugin.HybridOptixTracer(
             threedgrt_tracer_module_path,
@@ -84,22 +90,35 @@ class Tracer:
             )
             self.tracer_wrapper.build_bvh(
                 gaussians.positions.view(-1, 3).contiguous(),
-                gaussians.rotation_activation(gaussians.rotation).view(-1, 4).contiguous(),
+                gaussians.rotation_activation(gaussians.rotation)
+                .view(-1, 4)
+                .contiguous(),
                 gaussians.scale_activation(gaussians.scale).view(-1, 3).contiguous(),
-                gaussians.density_activation(gaussians.density).view(-1, 1).contiguous(),
+                gaussians.density_activation(gaussians.density)
+                .view(-1, 1)
+                .contiguous(),
                 rebuild_bvh,
                 allow_bvh_update,
             )
             self.num_update_bvh = 0 if rebuild_bvh else self.num_update_bvh + 1
 
-    def build_mesh_acc(self, mesh_vertices, mesh_faces, rebuild=True, allow_update=True):
+    def build_mesh_acc(
+        self, mesh_vertices, mesh_faces, rebuild=True, allow_update=True
+    ):
         with torch.cuda.nvtx.range(f"build-mesh-bvh-full-build-{rebuild}"):
             self.tracer_wrapper.build_mesh_bvh(
-                mesh_vertices.view(-1, 3).contiguous(), mesh_faces.view(-1, 3).contiguous(), rebuild, allow_update
+                mesh_vertices.view(-1, 3).contiguous(),
+                mesh_faces.view(-1, 3).contiguous(),
+                rebuild,
+                allow_update,
             )
 
     def render(self, gaussians, gpu_batch, train=False, frame_id=0):
-        assert ("rays_o_cam" in gpu_batch) and ("rays_d_cam" in gpu_batch) and ("poses" in gpu_batch)
+        assert (
+            ("rays_o_cam" in gpu_batch)
+            and ("rays_d_cam" in gpu_batch)
+            and ("poses" in gpu_batch)
+        )
 
         num_gaussians = gaussians.num_gaussians
         with torch.cuda.nvtx.range(f"model.forward({num_gaussians} gaussians)"):
@@ -113,22 +132,30 @@ class Tracer:
             mog_dns = gaussians.get_density().contiguous()
             mog_rot = gaussians.get_rotation().contiguous()
             mog_scl = gaussians.get_scale().contiguous()
-            particle_density = torch.concat([mog_pos, mog_dns, mog_rot, mog_scl, torch.zeros_like(mog_dns)], dim=1)
+            particle_density = torch.concat(
+                [mog_pos, mog_dns, mog_rot, mog_scl, torch.zeros_like(mog_dns)], dim=1
+            )
 
-            pred_rgb, pred_opacity, pred_dist, pred_normals, hits_count = self.tracer_wrapper.trace(
-                frame_id,
-                gpu_batch["poses"].contiguous(),
-                gpu_batch["rays_o_cam"].contiguous(),
-                gpu_batch["rays_d_cam"].contiguous(),
-                particle_density,
-                features.contiguous(),
-                gaussians.n_active_features,
-                self.conf.render.min_transmittance,
+            pred_rgb, pred_opacity, pred_dist, pred_normals, hits_count = (
+                self.tracer_wrapper.trace(
+                    frame_id,
+                    gpu_batch["poses"].contiguous(),
+                    gpu_batch["rays_o_cam"].contiguous(),
+                    gpu_batch["rays_d_cam"].contiguous(),
+                    particle_density,
+                    features.contiguous(),
+                    gaussians.n_active_features,
+                    self.conf.render.min_transmittance,
+                )
             )
 
             # NOTE: disable background
             pred_rgb, pred_opacity = gaussians.background(
-                gpu_batch["poses"].contiguous(), gpu_batch["rays_d_cam"].contiguous(), pred_rgb, pred_opacity, train
+                gpu_batch["poses"].contiguous(),
+                gpu_batch["rays_d_cam"].contiguous(),
+                pred_rgb,
+                pred_opacity,
+                train,
             )
 
         return {
@@ -142,19 +169,27 @@ class Tracer:
     @staticmethod
     def to_native_pbr_material(pbr_mat):
         make_contiguous_tex = lambda x, c: (
-            x.contiguous() if x is not None else torch.empty([0, 0, c], dtype=torch.float32)
+            x.contiguous()
+            if x is not None
+            else torch.empty([0, 0, c], dtype=torch.float32)
         )
         make_contiguous_diffuse = lambda x: (
-            x.cpu().contiguous() if x is not None else torch.ones(4, dtype=torch.float32)
+            x.cpu().contiguous()
+            if x is not None
+            else torch.ones(4, dtype=torch.float32)
         )
         make_contiguous_emissive = lambda x: (
-            x.cpu().contiguous() if x is not None else torch.zeros(4, dtype=torch.float32)
+            x.cpu().contiguous()
+            if x is not None
+            else torch.zeros(4, dtype=torch.float32)
         )
         cpbr_material = _playground_plugin.CPBRMaterial()
         cpbr_material.material_id = pbr_mat.material_id
         cpbr_material.diffuseMap = make_contiguous_tex(pbr_mat.diffuse_map, 4)
         cpbr_material.emissiveMap = make_contiguous_tex(pbr_mat.emissive_map, 4)
-        cpbr_material.metallicRoughnessMap = make_contiguous_tex(pbr_mat.metallic_roughness_map, 2)
+        cpbr_material.metallicRoughnessMap = make_contiguous_tex(
+            pbr_mat.metallic_roughness_map, 2
+        )
         cpbr_material.normalMap = make_contiguous_tex(pbr_mat.normal_map, 4)
         cpbr_material.diffuseFactor = make_contiguous_diffuse(pbr_mat.diffuse_factor)
         cpbr_material.emissiveFactor = make_contiguous_emissive(pbr_mat.emissive_factor)
@@ -205,7 +240,9 @@ class Tracer:
         if envmap_offset is None:
             envmap = torch.zeros([2], dtype=torch.float32)
 
-        poses = torch.tensor([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]], dtype=torch.float32)
+        poses = torch.tensor(
+            [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]], dtype=torch.float32
+        )
 
         num_gaussians = gaussians.num_gaussians
         with torch.cuda.nvtx.range(f"model.forward({num_gaussians} gaussians)"):
@@ -219,35 +256,39 @@ class Tracer:
             mog_dns = gaussians.get_density().contiguous()
             mog_rot = gaussians.get_rotation().contiguous()
             mog_scl = gaussians.get_scale().contiguous()
-            particle_density = torch.concat([mog_pos, mog_dns, mog_rot, mog_scl, torch.zeros_like(mog_dns)], dim=1)
+            particle_density = torch.concat(
+                [mog_pos, mog_dns, mog_rot, mog_scl, torch.zeros_like(mog_dns)], dim=1
+            )
             sph_degree = gaussians.n_active_features
             min_transmittance = self.conf.render.min_transmittance
             envmap_offset = envmap_offset.contiguous()
 
-            pred_rgb, pred_opacity, pred_dist, pred_normals, hits_count = self.tracer_wrapper.trace_hybrid(
-                frame_id,
-                poses,
-                ray_o,
-                ray_d,
-                particle_density,
-                features,
-                sph_degree,
-                min_transmittance,
-                ray_max_t,
-                playground_opts,
-                mesh_faces,
-                vertex_normals,
-                vertex_tangents,
-                vertex_tangents_mask,
-                primitive_type,
-                material_uv,
-                material_id,
-                materials,
-                is_sync_materials,
-                refractive_index,
-                envmap,
-                envmap_offset,
-                max_pbr_bounces,
+            pred_rgb, pred_opacity, pred_dist, pred_normals, hits_count = (
+                self.tracer_wrapper.trace_hybrid(
+                    frame_id,
+                    poses,
+                    ray_o,
+                    ray_d,
+                    particle_density,
+                    features,
+                    sph_degree,
+                    min_transmittance,
+                    ray_max_t,
+                    playground_opts,
+                    mesh_faces,
+                    vertex_normals,
+                    vertex_tangents,
+                    vertex_tangents_mask,
+                    primitive_type,
+                    material_uv,
+                    material_id,
+                    materials,
+                    is_sync_materials,
+                    refractive_index,
+                    envmap,
+                    envmap_offset,
+                    max_pbr_bounces,
+                )
             )
 
             pred_dist = pred_dist[:, :, :, 0:1]  # return only the hit distance

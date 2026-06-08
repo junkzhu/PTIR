@@ -53,9 +53,15 @@ class ViserViewer:
         self.server = viser.ViserServer(port=self.port)
         self.reset_view_button = self.server.gui.add_button("Reset View")
         self.need_update = False
-        self.resolution_slider = self.server.gui.add_slider("Resolution", min=384, max=4096, step=2, initial_value=1024)
-        self.near_plane_slider = self.server.gui.add_slider("Near", min=0.1, max=30, step=0.5, initial_value=0.1)
-        self.far_plane_slider = self.server.gui.add_slider("Far", min=30.0, max=1000.0, step=10.0, initial_value=1000.0)
+        self.resolution_slider = self.server.gui.add_slider(
+            "Resolution", min=384, max=4096, step=2, initial_value=1024
+        )
+        self.near_plane_slider = self.server.gui.add_slider(
+            "Near", min=0.1, max=30, step=0.5, initial_value=0.1
+        )
+        self.far_plane_slider = self.server.gui.add_slider(
+            "Far", min=30.0, max=1000.0, step=10.0, initial_value=1000.0
+        )
         self.fps = self.server.gui.add_text("FPS", initial_value="-1", disabled=True)
 
         @self.resolution_slider.on_update
@@ -74,7 +80,9 @@ class ViserViewer:
         def _(_):
             self.need_update = True
             for client in self.server.get_clients().values():
-                client.camera.up_direction = tf.SO3(client.camera.wxyz) @ np.array([0.0, -1.0, 0.0])
+                client.camera.up_direction = tf.SO3(client.camera.wxyz) @ np.array(
+                    [0.0, -1.0, 0.0]
+                )
 
         @self.server.on_client_connect
         def _(client: viser.ClientHandle):
@@ -111,7 +119,10 @@ class ViserViewer:
                     view_matrix = get_c2w(client.camera)
                     fov_y = client.camera.fov
                     width, height = W, H
-                    near, far = self.near_plane_slider.value, self.far_plane_slider.value
+                    near, far = (
+                        self.near_plane_slider.value,
+                        self.far_plane_slider.value,
+                    )
                     kaolin_camera = Camera.from_args(
                         view_matrix=view_matrix,
                         fov=fov_y,
@@ -145,7 +156,10 @@ class ViserViewer:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--gs_object", type=str, required=True, help="Path of pretrained 3dgrt checkpoint, as .pt / .ingp / .ply file."
+        "--gs_object",
+        type=str,
+        required=True,
+        help="Path of pretrained 3dgrt checkpoint, as .pt / .ingp / .ply file.",
     )
     parser.add_argument(
         "--mesh_assets",
@@ -175,7 +189,9 @@ if __name__ == "__main__":
         envmap_assets_folder=args.envmap_assets,
         default_config=args.default_gs_config,
     )
-    viewer = ViserViewer(viewer_ip_port=args.port, engine=engine, target_fps=args.target_fps)
+    viewer = ViserViewer(
+        viewer_ip_port=args.port, engine=engine, target_fps=args.target_fps
+    )
     last_time = time.time()
     while True:
         start = time.time()

@@ -25,7 +25,9 @@ from threedgrut_playground.utils.rng import rng_torch_low_discrepancy
 
 
 class DepthOfField:
-    RNG_MODE = "low_discrepancy_seq"  # Options: 'independent_random', 'low_discrepancy_seq'
+    RNG_MODE = (
+        "low_discrepancy_seq"  # Options: 'independent_random', 'low_discrepancy_seq'
+    )
     """ Random number generator mode -
         - independent random: straightforward torch's random, each number is IID
         - low discrepancy sequences: uses Owen's scrambling of Sobol sequence, converges faster for accumulated spp 
@@ -74,7 +76,9 @@ class DepthOfField:
         if DepthOfField.RNG_MODE == "independent_random":
             seed = torch.rand([ray_count, 2], device=rays_ori.device)
         elif DepthOfField.RNG_MODE == "low_discrepancy_seq":
-            seed = (pixel_x.long() * 19349663 + pixel_y.long() * 96925573).reshape(ray_count) & 0xFFFFFFFF
+            seed = (pixel_x.long() * 19349663 + pixel_y.long() * 96925573).reshape(
+                ray_count
+            ) & 0xFFFFFFFF
             index = (seed.new_ones(ray_count) * self.spp_accumulated_for_frame).long()
             seed = rng_torch_low_discrepancy(index, seed)
             seed = torch.stack(seed, dim=1)

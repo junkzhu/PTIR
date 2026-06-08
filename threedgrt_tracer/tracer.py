@@ -66,7 +66,9 @@ class Tracer:
             sph_degree,
             min_transmittance,
         ):
-            particle_density = torch.concat([mog_pos, mog_dns, mog_rot, mog_scl, torch.zeros_like(mog_dns)], dim=1)
+            particle_density = torch.concat(
+                [mog_pos, mog_dns, mog_rot, mog_scl, torch.zeros_like(mog_dns)], dim=1
+            )
             (
                 ray_radiance,
                 ray_density,
@@ -150,31 +152,33 @@ class Tracer:
                 mog_snrm,
             ) = ctx.saved_variables
             frame_id = ctx.frame_id
-            particle_density_grd, mog_sph_grd, mog_sn_grd = ctx.tracer_wrapper.trace_bwd(
-                frame_id,
-                ray_to_world,
-                ray_ori,
-                ray_dir,
-                ray_radiance,
-                ray_density,
-                ray_hit_distance,
-                ray_hit_distance_second_moment,
-                ray_depth_distortion,
-                ray_normals,
-                ray_shadingnormal,
-                particle_density,
-                mog_sph,
-                mog_snrm,
-                ray_radiance_grd,
-                ray_density_grd,
-                ray_hit_distance_grd,
-                ray_hit_distance_second_moment_grd,
-                ray_depth_distortion_grd,
-                ray_normals_grd,
-                ray_shadingnormal_grd,
-                ctx.render_opts,
-                ctx.sph_degree,
-                ctx.min_transmittance,
+            particle_density_grd, mog_sph_grd, mog_sn_grd = (
+                ctx.tracer_wrapper.trace_bwd(
+                    frame_id,
+                    ray_to_world,
+                    ray_ori,
+                    ray_dir,
+                    ray_radiance,
+                    ray_density,
+                    ray_hit_distance,
+                    ray_hit_distance_second_moment,
+                    ray_depth_distortion,
+                    ray_normals,
+                    ray_shadingnormal,
+                    particle_density,
+                    mog_sph,
+                    mog_snrm,
+                    ray_radiance_grd,
+                    ray_density_grd,
+                    ray_hit_distance_grd,
+                    ray_hit_distance_second_moment_grd,
+                    ray_depth_distortion_grd,
+                    ray_normals_grd,
+                    ray_shadingnormal_grd,
+                    ctx.render_opts,
+                    ctx.sph_degree,
+                    ctx.min_transmittance,
+                )
             )
             mog_pos_grd, mog_dns_grd, mog_rot_grd, mog_scl_grd, _ = torch.split(
                 particle_density_grd, [3, 1, 4, 3, 1], dim=1
@@ -206,8 +210,12 @@ class Tracer:
         self.conf = conf
         self.num_update_bvh = 0
 
-        logger.info(f'🔆 Creating Optix tracing pipeline.. Using CUDA path: "{torch.utils.cpp_extension.CUDA_HOME}"')
-        torch.zeros(1, device=self.device)  # Create a dummy tensor to force cuda context init
+        logger.info(
+            f'🔆 Creating Optix tracing pipeline.. Using CUDA path: "{torch.utils.cpp_extension.CUDA_HOME}"'
+        )
+        torch.zeros(
+            1, device=self.device
+        )  # Create a dummy tensor to force cuda context init
         load_3dgrt_plugin(conf)
 
         self.tracer_wrapper = _3dgrt_plugin.OptixTracer(
@@ -224,7 +232,9 @@ class Tracer:
             self.conf.render.enable_hitcounts,
         )
 
-        self.frame_timer = CudaTimer() if self.conf.render.enable_kernel_timings else None
+        self.frame_timer = (
+            CudaTimer() if self.conf.render.enable_kernel_timings else None
+        )
         self.timings = {}
 
     def build_acc(self, gaussians, rebuild=True):
@@ -239,18 +249,28 @@ class Tracer:
             )
             self.tracer_wrapper.build_bvh(
                 gaussians.positions.view(-1, 3).contiguous(),
-                gaussians.rotation_activation(gaussians.rotation).view(-1, 4).contiguous(),
+                gaussians.rotation_activation(gaussians.rotation)
+                .view(-1, 4)
+                .contiguous(),
                 gaussians.scale_activation(gaussians.scale).view(-1, 3).contiguous(),
-                gaussians.density_activation(gaussians.density).view(-1, 1).contiguous(),
+                gaussians.density_activation(gaussians.density)
+                .view(-1, 1)
+                .contiguous(),
                 rebuild_bvh,
                 allow_bvh_update,
             )
             self.num_update_bvh = 0 if rebuild_bvh else self.num_update_bvh + 1
 
-    def render(self, gaussians, gpu_batch: Batch, train=False, frame_id=0, sh_indirect: bool = False):
+    def render(
+        self,
+        gaussians,
+        gpu_batch: Batch,
+        train=False,
+        frame_id=0,
+        sh_indirect: bool = False,
+    ):
         num_gaussians = gaussians.num_gaussians
         with torch.cuda.nvtx.range(f"model.forward({num_gaussians} gaussians)"):
-
             if self.frame_timer is not None:
                 self.frame_timer.start()
 
@@ -285,7 +305,11 @@ class Tracer:
                 self.frame_timer.end()
 
             pred_rgb, pred_opacity = gaussians.background(
-                gpu_batch.T_to_world.contiguous(), gpu_batch.rays_dir.contiguous(), pred_rgb, pred_opacity, train
+                gpu_batch.T_to_world.contiguous(),
+                gpu_batch.rays_dir.contiguous(),
+                pred_rgb,
+                pred_opacity,
+                train,
             )
 
             pred_dist = pred_dist / pred_opacity
@@ -303,6 +327,8 @@ class Tracer:
             "pred_normals": torch.nn.functional.normalize(pred_normals, dim=3),
             "pred_shadingnormal": pred_shadingnormal,
             "hits_count": hits_count,
-            "frame_time_ms": self.frame_timer.timing() if self.frame_timer is not None else 0.0,
+            "frame_time_ms": self.frame_timer.timing()
+            if self.frame_timer is not None
+            else 0.0,
             "mog_visibility": mog_visibility,
         }

@@ -46,7 +46,9 @@ def ssim(img1, img2, window_size=11, size_average=True):
 
 
 @torch.cuda.nvtx.range("pseudo_normal_loss")
-def pseudo_normal_loss(render_normal, pseudo_normal, valid_mask=None, eps=1e-6, detach_pseudo_normal=True):
+def pseudo_normal_loss(
+    render_normal, pseudo_normal, valid_mask=None, eps=1e-6, detach_pseudo_normal=True
+):
     """
     Args:
         render_normal: [B, H, W, 3] or [H, W, 3], world-space rendered normal.
@@ -88,18 +90,24 @@ def prior_normal_alignment_loss(render_normal, prior_normal, valid_mask=None, ep
     loss = 1.0 - (render_normal * prior_normal).sum(dim=-1)
 
     if valid_mask is not None:
-        valid_mask = valid_mask.detach().to(device=render_normal.device, dtype=render_normal.dtype)
+        valid_mask = valid_mask.detach().to(
+            device=render_normal.device, dtype=render_normal.dtype
+        )
         if valid_mask.ndim == loss.ndim + 1:
             valid_mask = valid_mask.squeeze(-1)
         elif valid_mask.ndim == loss.ndim:
             pass
         else:
-            raise ValueError(f"valid_mask must be compatible with {tuple(loss.shape)}, got {valid_mask.ndim}D")
+            raise ValueError(
+                f"valid_mask must be compatible with {tuple(loss.shape)}, got {valid_mask.ndim}D"
+            )
 
         if valid_mask.shape[0] == 1 and loss.shape[0] != 1:
             valid_mask = valid_mask.expand(loss.shape[0], -1, -1)
         if valid_mask.shape != loss.shape:
-            raise ValueError(f"valid_mask shape {tuple(valid_mask.shape)} is not compatible with {tuple(loss.shape)}")
+            raise ValueError(
+                f"valid_mask shape {tuple(valid_mask.shape)} is not compatible with {tuple(loss.shape)}"
+            )
 
         loss = loss * valid_mask
         return loss.sum() / torch.clamp(valid_mask.sum(), min=eps)
@@ -122,7 +130,11 @@ def mask_entropy_loss(pred_opacity, mask, eps=1e-6):
     if mask is None:
         return pred_opacity.sum() * 0.0
 
-    image_mask = mask.detach().to(device=pred_opacity.device, dtype=pred_opacity.dtype).clamp(0.0, 1.0)
+    image_mask = (
+        mask.detach()
+        .to(device=pred_opacity.device, dtype=pred_opacity.dtype)
+        .clamp(0.0, 1.0)
+    )
     rendered_opacity = pred_opacity.clamp(eps, 1.0 - eps)
 
     if image_mask.ndim == rendered_opacity.ndim - 1:
@@ -148,7 +160,9 @@ def depth_distortion_loss(pred_depth_distortion):
         pred_depth_distortion: Per-pixel distortion map, shaped [B, H, W, 1] or [B, H, W].
     """
     if pred_depth_distortion is None:
-        raise ValueError("pred_depth_distortion must be provided for depth_distortion_loss")
+        raise ValueError(
+            "pred_depth_distortion must be provided for depth_distortion_loss"
+        )
 
     if pred_depth_distortion.numel() == 0:
         return pred_depth_distortion.sum() * 0.0
@@ -177,7 +191,9 @@ def _mask_to_bhw1(mask, reference):
     elif mask.ndim == 4:
         pass
     else:
-        raise ValueError(f"mask must be shaped [B, H, W] or [B, H, W, 1], got {mask.ndim}D")
+        raise ValueError(
+            f"mask must be shaped [B, H, W] or [B, H, W, 1], got {mask.ndim}D"
+        )
 
     if mask.shape[-1] != 1:
         mask = mask[..., :1]
@@ -186,7 +202,9 @@ def _mask_to_bhw1(mask, reference):
         mask = mask.expand(reference.shape[0], -1, -1, -1)
 
     if mask.shape[:3] != reference.shape[:3]:
-        raise ValueError(f"mask shape {tuple(mask.shape)} is not compatible with {tuple(reference.shape)}")
+        raise ValueError(
+            f"mask shape {tuple(mask.shape)} is not compatible with {tuple(reference.shape)}"
+        )
 
     return mask.clamp(0.0, 1.0)
 
@@ -232,7 +250,9 @@ def edge_aware_smoothness_loss(value_map, gt_image, mask=None, eps=1e-3, scale=1
         scale: Multiplier for the GT image gradient inside exp(-scale * gt_grad).
     """
     if value_map.ndim != 4:
-        raise ValueError(f"value_map must be shaped [B, H, W, C], got {value_map.ndim}D")
+        raise ValueError(
+            f"value_map must be shaped [B, H, W, C], got {value_map.ndim}D"
+        )
     if gt_image.ndim != 4:
         raise ValueError(f"gt_image must be shaped [B, H, W, C], got {gt_image.ndim}D")
 

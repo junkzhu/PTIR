@@ -49,8 +49,9 @@ from threedgrut.utils.logger import logger
 from threedgrut.utils.misc import to_torch
 
 
-class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVisualization):
-
+class NCoreDataset(
+    torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVisualization
+):
     def __init__(
         self,
         datapath: str,
@@ -139,7 +140,9 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
         self.split: str = split
 
         # load single-sequence NCore V4 meta-file
-        assert (path := Path(datapath)).is_file(), f"NCoreDataset: provided path {path} not a file"
+        assert (path := Path(datapath)).is_file(), (
+            f"NCoreDataset: provided path {path} not a file"
+        )
         with open(path, "r") as fp:
             try:
                 dataset_meta = json.load(fp)
@@ -149,9 +152,16 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
         assert all(
             (
                 key in dataset_meta
-                for key in ("sequence_id", "sequence_timestamp_interval_us", "version", "component_stores")
+                for key in (
+                    "sequence_id",
+                    "sequence_timestamp_interval_us",
+                    "version",
+                    "component_stores",
+                )
             )
-        ), f"NCoreDataset: provided json file {path} not a NCore V4 single-sequence file"
+        ), (
+            f"NCoreDataset: provided json file {path} not a NCore V4 single-sequence file"
+        )
 
         time_start = dataset_meta["sequence_timestamp_interval_us"]["start"]
         time_stop = dataset_meta["sequence_timestamp_interval_us"]["stop"]
@@ -186,13 +196,17 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
                 # in case we move back from a worker to the main process we should also re-init
                 self.worker_id = None
                 self.rng = np.random.default_rng(seed=0)  # deterministic sampling
-            case torch.utils.data._utils.worker.WorkerInfo(id=worker_id, seed=worker_seed):  # type: ignore
+            case torch.utils.data._utils.worker.WorkerInfo(
+                id=worker_id, seed=worker_seed
+            ):  # type: ignore
                 # worker process case
                 if self.sequence_loaders and self.worker_id is worker_id:
                     # skip re-initialization
                     return
                 self.worker_id = worker_id
-                self.rng = np.random.default_rng(seed=worker_seed)  # non-deterministic sampling
+                self.rng = np.random.default_rng(
+                    seed=worker_seed
+                )  # non-deterministic sampling
 
         # Reload case: check if reloading is sufficient for initialization
         if self.sequence_loaders:
@@ -211,37 +225,58 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
 
         self.n_unique_cameras = 0
         self.camera_unique_ids: dict[str, list[UniqueSensorId]] = defaultdict(list)
-        self.sequence_camera_sensors: dict[str, dict[str, ncore.data.CameraSensorProtocol]] = {}
-        self.sequence_camera_models: dict[str, dict[str, ncore.sensors.CameraModel]] = {}
+        self.sequence_camera_sensors: dict[
+            str, dict[str, ncore.data.CameraSensorProtocol]
+        ] = {}
+        self.sequence_camera_models: dict[
+            str, dict[str, ncore.sensors.CameraModel]
+        ] = {}
         self.sequence_camera_unique_ids: dict[str, dict[str, UniqueSensorId]] = {}
-        self.sequence_cameras_all_pixels: dict[str, dict[str, np.ndarray]] = defaultdict(dict)
-        self.sequence_cameras_all_rays: dict[str, dict[str, np.ndarray]] = defaultdict(dict)
-        self.sequence_cameras_valid_pixels_ego_masks: dict[str, dict[str, np.ndarray]] = defaultdict(dict)
-        self.sequence_cameras_frame_valid_pixels_masks: dict[str, dict[str, dict[int, np.ndarray]]] = defaultdict(
-            lambda: defaultdict(dict)
+        self.sequence_cameras_all_pixels: dict[str, dict[str, np.ndarray]] = (
+            defaultdict(dict)
         )
-        self.sequence_cameras_pixels_subsample: dict[str, dict[str, np.ndarray]] = defaultdict(dict)
-        self.sequence_cameras_rays_subsample: dict[str, dict[str, np.ndarray]] = defaultdict(dict)
+        self.sequence_cameras_all_rays: dict[str, dict[str, np.ndarray]] = defaultdict(
+            dict
+        )
+        self.sequence_cameras_valid_pixels_ego_masks: dict[
+            str, dict[str, np.ndarray]
+        ] = defaultdict(dict)
+        self.sequence_cameras_frame_valid_pixels_masks: dict[
+            str, dict[str, dict[int, np.ndarray]]
+        ] = defaultdict(lambda: defaultdict(dict))
+        self.sequence_cameras_pixels_subsample: dict[str, dict[str, np.ndarray]] = (
+            defaultdict(dict)
+        )
+        self.sequence_cameras_rays_subsample: dict[str, dict[str, np.ndarray]] = (
+            defaultdict(dict)
+        )
 
         self.n_unique_lidars = 0
         self.lidar_unique_ids: dict[str, list[UniqueSensorId]] = defaultdict(list)
-        self.sequence_lidar_sensors: dict[str, dict[str, ncore.data.LidarSensorProtocol]] = {}
+        self.sequence_lidar_sensors: dict[
+            str, dict[str, ncore.data.LidarSensorProtocol]
+        ] = {}
         self.sequence_lidar_unique_ids: dict[str, dict[str, UniqueSensorId]] = {}
 
         self.sequence_point_clouds_source_ids: dict[str, list[str]] = {}
-        self.sequence_point_clouds_sources: dict[str, dict[str, PointCloudsSourceProtocol]] = {}
+        self.sequence_point_clouds_sources: dict[
+            str, dict[str, PointCloudsSourceProtocol]
+        ] = {}
 
         sequence_id = self.sequence_id
 
         # Construct V4 sequence loader — SequenceComponentGroupsReader handles
         # expansion of the meta JSON file to component store paths internally.
-        sequence_loader = self.sequence_loaders[sequence_id] = ncore.data.v4.SequenceLoaderV4(
-            ncore.data.v4.SequenceComponentGroupsReader(
-                [self.sequence_meta_file_path], open_consolidated=self.open_consolidated
-            ),
-            poses_component_group_name=self.poses_component_group,
-            intrinsics_component_group_name=self.intrinsics_component_group,
-            masks_component_group_name=self.masks_component_group,
+        sequence_loader = self.sequence_loaders[sequence_id] = (
+            ncore.data.v4.SequenceLoaderV4(
+                ncore.data.v4.SequenceComponentGroupsReader(
+                    [self.sequence_meta_file_path],
+                    open_consolidated=self.open_consolidated,
+                ),
+                poses_component_group_name=self.poses_component_group,
+                intrinsics_component_group_name=self.intrinsics_component_group,
+                masks_component_group_name=self.masks_component_group,
+            )
         )
 
         # Auto-detect _single_ sensors if not specified - sensors need to be specified explicitly
@@ -257,9 +292,9 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
             logger.info(f"Auto-detected camera: {self.camera_ids}")
         else:
             self.camera_ids = self.init_camera_ids
-            assert all(
-                isinstance(cid, str) for cid in self.camera_ids
-            ), f"NCoreDataset: camera_ids should be a list of strings, got {self.camera_ids}"
+            assert all(isinstance(cid, str) for cid in self.camera_ids), (
+                f"NCoreDataset: camera_ids should be a list of strings, got {self.camera_ids}"
+            )
             logger.info(f"Using cameras: {self.camera_ids}")
 
         self.lidar_ids: list[str]
@@ -273,14 +308,15 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
             logger.info(f"Auto-detected lidar: {self.lidar_ids}")
         else:
             self.lidar_ids = self.init_lidar_ids
-            assert all(
-                isinstance(lid, str) for lid in self.lidar_ids
-            ), f"NCoreDataset: lidar_ids should be a list of strings, got {self.lidar_ids}"
+            assert all(isinstance(lid, str) for lid in self.lidar_ids), (
+                f"NCoreDataset: lidar_ids should be a list of strings, got {self.lidar_ids}"
+            )
             logger.info(f"Using lidars: {self.lidar_ids}")
 
         # Load camera sensors
         camera_sensors = self.sequence_camera_sensors[sequence_id] = {
-            camera_id: sequence_loader.get_camera_sensor(camera_id) for camera_id in self.camera_ids
+            camera_id: sequence_loader.get_camera_sensor(camera_id)
+            for camera_id in self.camera_ids
         }
 
         # Load camera models
@@ -290,14 +326,20 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
 
             # Scale camera model parameters for downsampled images
             if self.downsample < 1.0:
-                model_params = model_params.transform(image_domain_scale=self.downsample)
+                model_params = model_params.transform(
+                    image_domain_scale=self.downsample
+                )
 
-            camera_model = ncore.sensors.CameraModel.from_parameters(model_params, device="cpu", dtype=torch.float32)
+            camera_model = ncore.sensors.CameraModel.from_parameters(
+                model_params, device="cpu", dtype=torch.float32
+            )
 
             camera_models[camera_id] = camera_model
 
         # Log per-camera image resolutions
-        logger.info(f"NCoreDataset [{self.split}] sequence '{sequence_id}' per-camera image resolutions:")
+        logger.info(
+            f"NCoreDataset [{self.split}] sequence '{sequence_id}' per-camera image resolutions:"
+        )
         for camera_id, camera_model in camera_models.items():
             width = int(camera_model.resolution[0].item())
             height = int(camera_model.resolution[1].item())
@@ -305,18 +347,32 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
 
         # Construct unique camera instance ids and indices
         self.sequence_camera_unique_ids[sequence_id] = {
-            camera_id: UniqueSensorId("@".join((camera_id, sequence_id)), camera_instance_idx)
-            for camera_instance_idx, camera_id in enumerate(self.camera_ids, self.n_unique_cameras)
+            camera_id: UniqueSensorId(
+                "@".join((camera_id, sequence_id)), camera_instance_idx
+            )
+            for camera_instance_idx, camera_id in enumerate(
+                self.camera_ids, self.n_unique_cameras
+            )
         }
         self.n_unique_cameras += len(self.camera_ids)
         for camera_id in self.camera_ids:
-            self.camera_unique_ids[camera_id].append(self.sequence_camera_unique_ids[sequence_id][camera_id])
+            self.camera_unique_ids[camera_id].append(
+                self.sequence_camera_unique_ids[sequence_id][camera_id]
+            )
 
         # Restrict effective FOV of omnidirectional cameras
         for camera_model in camera_models.values():
-            if not isinstance(camera_model, (ncore.sensors.FThetaCameraModel, ncore.sensors.OpenCVFisheyeCameraModel)):
+            if not isinstance(
+                camera_model,
+                (
+                    ncore.sensors.FThetaCameraModel,
+                    ncore.sensors.OpenCVFisheyeCameraModel,
+                ),
+            ):
                 continue
-            camera_model.max_angle = min(np.deg2rad(self.camera_max_fov_deg) / 2.0, camera_model.max_angle)
+            camera_model.max_angle = min(
+                np.deg2rad(self.camera_max_fov_deg) / 2.0, camera_model.max_angle
+            )
 
         # Determine all pixels and rays per camera
         for camera_id in self.camera_ids:
@@ -326,25 +382,45 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
             w = int(camera_model.resolution[0].item())
             h = int(camera_model.resolution[1].item())
 
-            camera_pixels_x, camera_pixels_y = np.meshgrid(np.arange(w, dtype=np.int16), np.arange(h, dtype=np.int16))
+            camera_pixels_x, camera_pixels_y = np.meshgrid(
+                np.arange(w, dtype=np.int16), np.arange(h, dtype=np.int16)
+            )
 
             self.sequence_cameras_all_pixels[sequence_id] |= {
-                camera_id: np.stack([camera_pixels_x.flatten(), camera_pixels_y.flatten()], axis=1)
+                camera_id: np.stack(
+                    [camera_pixels_x.flatten(), camera_pixels_y.flatten()], axis=1
+                )
             }
 
             if self.n_val_image_subsample > 1:
                 assert (
-                    w % self.n_val_image_subsample == 0 and h % self.n_val_image_subsample == 0
-                ), f"NCoreDataset: Validation subsample factor {self.n_val_image_subsample} invalid for camera {camera_id} with resolution {w}x{h}"
+                    w % self.n_val_image_subsample == 0
+                    and h % self.n_val_image_subsample == 0
+                ), (
+                    f"NCoreDataset: Validation subsample factor {self.n_val_image_subsample} invalid for camera {camera_id} with resolution {w}x{h}"
+                )
                 camera_pixels_x_subsample, camera_pixels_y_subsample = np.meshgrid(
-                    np.arange(start=0, stop=w, step=self.n_val_image_subsample, dtype=np.int16),
-                    np.arange(start=0, stop=h, step=self.n_val_image_subsample, dtype=np.int16),
+                    np.arange(
+                        start=0, stop=w, step=self.n_val_image_subsample, dtype=np.int16
+                    ),
+                    np.arange(
+                        start=0, stop=h, step=self.n_val_image_subsample, dtype=np.int16
+                    ),
                 )
             else:
-                camera_pixels_x_subsample, camera_pixels_y_subsample = camera_pixels_x, camera_pixels_y
+                camera_pixels_x_subsample, camera_pixels_y_subsample = (
+                    camera_pixels_x,
+                    camera_pixels_y,
+                )
 
             self.sequence_cameras_pixels_subsample[sequence_id] |= {
-                camera_id: np.stack([camera_pixels_x_subsample.flatten(), camera_pixels_y_subsample.flatten()], axis=1)
+                camera_id: np.stack(
+                    [
+                        camera_pixels_x_subsample.flatten(),
+                        camera_pixels_y_subsample.flatten(),
+                    ],
+                    axis=1,
+                )
             }
 
             # Statically unmasked pixels (ego mask)
@@ -356,15 +432,23 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
                 camera_valid_pixels_ego_mask = np.logical_not(camera_mask_array)
             else:
                 camera_valid_pixels_ego_mask = np.ones(
-                    (int(camera_model.resolution[1].item()), int(camera_model.resolution[0].item())), dtype=bool
+                    (
+                        int(camera_model.resolution[1].item()),
+                        int(camera_model.resolution[0].item()),
+                    ),
+                    dtype=bool,
                 )
-            self.sequence_cameras_valid_pixels_ego_masks[sequence_id] |= {camera_id: camera_valid_pixels_ego_mask}
+            self.sequence_cameras_valid_pixels_ego_masks[sequence_id] |= {
+                camera_id: camera_valid_pixels_ego_mask
+            }
 
             # Precompute all rays
             h_rays = h
             w_rays = w
             self.sequence_cameras_all_rays[sequence_id] |= {
-                camera_id: camera_model.pixels_to_camera_rays(self.sequence_cameras_all_pixels[sequence_id][camera_id])
+                camera_id: camera_model.pixels_to_camera_rays(
+                    self.sequence_cameras_all_pixels[sequence_id][camera_id]
+                )
                 .reshape(h_rays, w_rays, 3)
                 .numpy()
             }
@@ -388,30 +472,44 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
 
         # Load lidar sensors
         self.sequence_lidar_sensors[sequence_id] = {
-            lidar_id: sequence_loader.get_lidar_sensor(lidar_id) for lidar_id in self.lidar_ids
+            lidar_id: sequence_loader.get_lidar_sensor(lidar_id)
+            for lidar_id in self.lidar_ids
         }
 
         # Construct unique lidar instance ids and indices
         self.sequence_lidar_unique_ids[sequence_id] = {
-            lidar_id: UniqueSensorId("@".join((lidar_id, sequence_id)), lidar_instance_idx)
-            for lidar_instance_idx, lidar_id in enumerate(self.lidar_ids, self.n_unique_lidars)
+            lidar_id: UniqueSensorId(
+                "@".join((lidar_id, sequence_id)), lidar_instance_idx
+            )
+            for lidar_instance_idx, lidar_id in enumerate(
+                self.lidar_ids, self.n_unique_lidars
+            )
         }
         self.n_unique_lidars += len(self.lidar_ids)
         for lidar_id in self.lidar_ids:
-            self.lidar_unique_ids[lidar_id].append(self.sequence_lidar_unique_ids[sequence_id][lidar_id])
+            self.lidar_unique_ids[lidar_id].append(
+                self.sequence_lidar_unique_ids[sequence_id][lidar_id]
+            )
 
         # Auto-detect all available point cloud sources (lidar + native point clouds)
         if self.init_lidar_ids is None:
-            self.sequence_point_clouds_source_ids[sequence_id] = list(sequence_loader.lidar_ids) + list(
-                sequence_loader.point_clouds_ids
+            self.sequence_point_clouds_source_ids[sequence_id] = list(
+                sequence_loader.lidar_ids
+            ) + list(sequence_loader.point_clouds_ids)
+            logger.info(
+                f"Auto-detected point cloud sources: {self.sequence_point_clouds_source_ids[sequence_id]}"
             )
-            logger.info(f"Auto-detected point cloud sources: {self.sequence_point_clouds_source_ids[sequence_id]}")
         else:
             self.sequence_point_clouds_source_ids[sequence_id] = self.init_lidar_ids
             assert all(
-                isinstance(sid, str) for sid in self.sequence_point_clouds_source_ids[sequence_id]
-            ), f"NCoreDataset: lidar_ids should be a list of strings, got {self.sequence_point_clouds_source_ids[sequence_id]}"
-            logger.info(f"Using point cloud sources: {self.sequence_point_clouds_source_ids[sequence_id]}")
+                isinstance(sid, str)
+                for sid in self.sequence_point_clouds_source_ids[sequence_id]
+            ), (
+                f"NCoreDataset: lidar_ids should be a list of strings, got {self.sequence_point_clouds_source_ids[sequence_id]}"
+            )
+            logger.info(
+                f"Using point cloud sources: {self.sequence_point_clouds_source_ids[sequence_id]}"
+            )
 
         self.sequence_point_clouds_sources[sequence_id] = {
             source_id: sequence_loader.get_point_clouds_source(source_id)
@@ -422,22 +520,35 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
         # making sure *both* frame start and end-times are fully covered
         def get_sensor_frame_range(frames_timestamps_us: np.ndarray) -> range:
             # make sure end-of-frame times are are covered by the time range
-            cover_range = self.time_range_us.cover_range(frames_timestamps_us[:, ncore.data.FrameTimepoint.END])
+            cover_range = self.time_range_us.cover_range(
+                frames_timestamps_us[:, ncore.data.FrameTimepoint.END]
+            )
             # make sure that the first frame's start-of-frame time is also covered - skip frames as required
             # (could be more than a single frame if frame ranges are not exclusively partitioning the time range)
             while len(cover_range) and (
-                int(frames_timestamps_us[cover_range.start, ncore.data.FrameTimepoint.START]) not in self.time_range_us
+                int(
+                    frames_timestamps_us[
+                        cover_range.start, ncore.data.FrameTimepoint.START
+                    ]
+                )
+                not in self.time_range_us
             ):
                 cover_range = cover_range[1:]
 
             return cover_range
 
         self.camera_frame_ranges: dict[str, range] = {
-            camera_id: get_sensor_frame_range(self.sequence_camera_sensors[sequence_id][camera_id].frames_timestamps_us)
+            camera_id: get_sensor_frame_range(
+                self.sequence_camera_sensors[sequence_id][
+                    camera_id
+                ].frames_timestamps_us
+            )
             for camera_id in self.camera_ids
         }
         self.lidar_frame_ranges: dict[str, range] = {
-            lidar_id: get_sensor_frame_range(self.sequence_lidar_sensors[sequence_id][lidar_id].frames_timestamps_us)
+            lidar_id: get_sensor_frame_range(
+                self.sequence_lidar_sensors[sequence_id][lidar_id].frames_timestamps_us
+            )
             for lidar_id in self.lidar_ids
         }
 
@@ -446,7 +557,9 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
         self.camera_val_frame_indices: dict[str, np.ndarray] = {}
         frames_per_camera_dict: dict[str, int] = {}
         for camera_id, camera_frame_range in self.camera_frame_ranges.items():
-            all_frames = np.arange(camera_frame_range.start, camera_frame_range.stop, dtype=np.int32)
+            all_frames = np.arange(
+                camera_frame_range.start, camera_frame_range.stop, dtype=np.int32
+            )
 
             # Validation: every val_frame_interval-th frame (e.g., 0, 8, 16, 24, ...)
             val_mask = (all_frames % self.val_frame_interval) == 0
@@ -456,20 +569,28 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
             self.camera_train_frame_indices[camera_id] = all_frames[~val_mask]
 
             if self.split == "train":
-                frames_per_camera_dict[camera_id] = len(self.camera_train_frame_indices[camera_id])
+                frames_per_camera_dict[camera_id] = len(
+                    self.camera_train_frame_indices[camera_id]
+                )
             else:
-                frames_per_camera_dict[camera_id] = len(self.camera_val_frame_indices[camera_id])
+                frames_per_camera_dict[camera_id] = len(
+                    self.camera_val_frame_indices[camera_id]
+                )
 
         # Log temporal window and frame counts
         temporal_start_sec = self.time_range_us.start / 1e6
         temporal_end_sec = self.time_range_us.stop / 1e6
-        temporal_duration_sec = (self.time_range_us.stop - self.time_range_us.start) / 1e6
+        temporal_duration_sec = (
+            self.time_range_us.stop - self.time_range_us.start
+        ) / 1e6
         logger.info(
             f"NCoreDataset [{self.split}] - Temporal window: {temporal_start_sec:.2f}s to {temporal_end_sec:.2f}s (duration: {temporal_duration_sec:.2f}s)"
         )
 
         total_frames = sum(frames_per_camera_dict.values())
-        logger.info(f"NCoreDataset [{self.split}] frame counts (after temporal filtering):")
+        logger.info(
+            f"NCoreDataset [{self.split}] frame counts (after temporal filtering):"
+        )
         for camera_id, count in frames_per_camera_dict.items():
             logger.info(f"  {camera_id}: {count} frames")
         logger.info(f"  Total: {total_frames} frames")
@@ -485,7 +606,9 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
             cumulative_offset += frames_per_camera_dict[camera_id]
 
         # Compute world-to-world_global transformation from pose graph
-        world_world_global_edge = sequence_loader.pose_graph.get_edge("world", "world_global")
+        world_world_global_edge = sequence_loader.pose_graph.get_edge(
+            "world", "world_global"
+        )
         if world_world_global_edge is not None:
             T_world_base = world_world_global_edge.T_source_target
         else:
@@ -496,11 +619,13 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
 
         # Compute per-frame valid pixels from static ego-car masks
         for camera_id, camera_frame_range in self.camera_frame_ranges.items():
-            camera_valid_pixels_ego_mask = self.sequence_cameras_valid_pixels_ego_masks[sequence_id][camera_id]
+            camera_valid_pixels_ego_mask = self.sequence_cameras_valid_pixels_ego_masks[
+                sequence_id
+            ][camera_id]
             for camera_frame_idx in camera_frame_range:
-                self.sequence_cameras_frame_valid_pixels_masks[sequence_id][camera_id] |= {
-                    camera_frame_idx: camera_valid_pixels_ego_mask.copy()
-                }
+                self.sequence_cameras_frame_valid_pixels_masks[sequence_id][
+                    camera_id
+                ] |= {camera_frame_idx: camera_valid_pixels_ego_mask.copy()}
 
         # Compute the first frame timestamp for relative time computation
         self.first_frame_timestamp_us = None
@@ -508,8 +633,13 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
             camera_sensor = self.sequence_camera_sensors[sequence_id][camera_id]
             camera_frame_range = self.camera_frame_ranges[camera_id]
             if len(camera_frame_range) > 0:
-                first_frame_ts = camera_sensor.get_frame_timestamp_us(camera_frame_range.start)
-                if self.first_frame_timestamp_us is None or first_frame_ts < self.first_frame_timestamp_us:
+                first_frame_ts = camera_sensor.get_frame_timestamp_us(
+                    camera_frame_range.start
+                )
+                if (
+                    self.first_frame_timestamp_us is None
+                    or first_frame_ts < self.first_frame_timestamp_us
+                ):
                     self.first_frame_timestamp_us = first_frame_ts
 
         if self.first_frame_timestamp_us is None:
@@ -518,11 +648,17 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
     def get_camera_sensor_ids(self, unique_sensors: bool = True) -> list[str]:
         """Returns the unique (unique_sensors=True) or logical (unique_sensors=False) camera sensor ids"""
         if unique_sensors:
-            return [unique_id.id for unique_ids in self.camera_unique_ids.values() for unique_id in unique_ids]
+            return [
+                unique_id.id
+                for unique_ids in self.camera_unique_ids.values()
+                for unique_id in unique_ids
+            ]
         else:
             return self.camera_ids
 
-    def get_n_frames_per_camera(self, unique_sensors: bool = True) -> npt.NDArray[np.int32]:
+    def get_n_frames_per_camera(
+        self, unique_sensors: bool = True
+    ) -> npt.NDArray[np.int32]:
         """Returns an array of split-specific frame counts per camera sensor instance.
 
         For training split: returns training-only frame counts (excluding validation frames).
@@ -531,14 +667,18 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
         self._init_worker()  # make sure worker is initialized at this point
 
         frame_indices = (
-            self.camera_train_frame_indices if self.split.startswith("train") else self.camera_val_frame_indices
+            self.camera_train_frame_indices
+            if self.split.startswith("train")
+            else self.camera_val_frame_indices
         )
         return np.array(
             [len(frame_indices[camera_id]) for camera_id in self.camera_ids],
             dtype=np.int32,
         )
 
-    def _get_camera_centers(self, camera_id: str, frame_indices: np.ndarray) -> np.ndarray:
+    def _get_camera_centers(
+        self, camera_id: str, frame_indices: np.ndarray
+    ) -> np.ndarray:
         """Return camera centers in world-global space for the given frame indices."""
         sequence_id = self.sequence_id
         camera_sensor = self.sequence_camera_sensors[sequence_id][camera_id]
@@ -590,7 +730,9 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
             if len(frame_indices) == 0:
                 continue
             try:
-                camera_sensor = self.sequence_camera_sensors[self.sequence_id][camera_id]
+                camera_sensor = self.sequence_camera_sensors[self.sequence_id][
+                    camera_id
+                ]
                 poses = self._transform_poses_to_world_global(
                     camera_sensor.get_frames_T_source_target(
                         source_node=camera_sensor.sensor_id,
@@ -602,9 +744,15 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
                 ).reshape(-1, 4, 4)
                 all_poses.append(poses)
             except Exception as e:
-                logger.warning(f"NCoreDataset.get_poses: failed to retrieve poses for camera '{camera_id}': {e}")
+                logger.warning(
+                    f"NCoreDataset.get_poses: failed to retrieve poses for camera '{camera_id}': {e}"
+                )
 
-        return np.concatenate(all_poses, axis=0) if all_poses else np.empty((0, 4, 4), dtype=np.float32)
+        return (
+            np.concatenate(all_poses, axis=0)
+            if all_poses
+            else np.empty((0, 4, 4), dtype=np.float32)
+        )
 
     def get_scene_extent(self):
         """Compute scene extent from ALL camera centers (both train and val).
@@ -653,7 +801,10 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
             return self._n_train_frames
 
         # Validation: count validation frames across all cameras
-        return sum(len(self.camera_val_frame_indices[camera_id]) for camera_id in self.camera_ids)
+        return sum(
+            len(self.camera_val_frame_indices[camera_id])
+            for camera_id in self.camera_ids
+        )
 
     def _transform_poses_to_world_global(
         self,
@@ -668,7 +819,9 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
         Supports both singular (4,4) and batched (N,4,4) input poses.
         """
 
-        T_poses_world_global = T_world_to_world_global @ T_poses_world.reshape((-1, 4, 4))  # (N,4,4)
+        T_poses_world_global = T_world_to_world_global @ T_poses_world.reshape(
+            (-1, 4, 4)
+        )  # (N,4,4)
 
         return T_poses_world_global.squeeze()
 
@@ -700,7 +853,9 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
         frame_timestamp_us = camera_sensor.get_frame_timestamp_us(camera_frame_index)
         return float((frame_timestamp_us - self.first_frame_timestamp_us) / 1000.0)
 
-    def _decode_jpeg_bytes(self, encoded: bytes, target_width: int, target_height: int) -> np.ndarray:
+    def _decode_jpeg_bytes(
+        self, encoded: bytes, target_width: int, target_height: int
+    ) -> np.ndarray:
         """Decode JPEG bytes with simplejpeg, applying downscale during decode via min_width/min_height.
 
         Args:
@@ -738,7 +893,9 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
         Returns:
             Decoded RGB image as uint8 numpy array at the target (downsampled) resolution.
         """
-        camera_model = self.sequence_camera_models[self.sequence_id][camera_sensor.sensor_id]
+        camera_model = self.sequence_camera_models[self.sequence_id][
+            camera_sensor.sensor_id
+        ]
         target_w = int(camera_model.resolution[0].item())
         target_h = int(camera_model.resolution[1].item())
 
@@ -755,7 +912,9 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
         # PIL fallback: full-resolution decode + optional cv2 resize
         frame_image_array = camera_sensor.get_frame_image_array(frame_index)
         if self.downsample < 1.0:
-            frame_image_array = cv2.resize(frame_image_array, (target_w, target_h), interpolation=cv2.INTER_AREA)
+            frame_image_array = cv2.resize(
+                frame_image_array, (target_w, target_h), interpolation=cv2.INTER_AREA
+            )
         return frame_image_array
 
     @torch.cuda.nvtx.range("ncore_dataset::_getitem")
@@ -787,7 +946,9 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
                 sampled_camera_id = camera_id
 
                 camera_sensor = self.sequence_camera_sensors[sequence_id][camera_id]
-                camera_all_pixels = self.sequence_cameras_all_pixels[sequence_id][camera_id]
+                camera_all_pixels = self.sequence_cameras_all_pixels[sequence_id][
+                    camera_id
+                ]
 
                 # Get pre-computed training frame list for unbiased sampling
                 train_frames = self.camera_train_frame_indices[camera_id]
@@ -800,22 +961,33 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
                 camera_frame_index = train_frames[closest_idx]
 
                 # Compact, 0-based, contiguous training frame index (camera-blocked)
-                global_frame_idx = self.camera_linear_start_frame_indices[camera_id] + closest_idx
+                global_frame_idx = (
+                    self.camera_linear_start_frame_indices[camera_id] + closest_idx
+                )
 
                 # Decode image (with accelerated JPEG decoding + downscaling if available)
-                frame_image_array = self._decode_image(camera_sensor, camera_frame_index)
+                frame_image_array = self._decode_image(
+                    camera_sensor, camera_frame_index
+                )
 
                 # Sample ALL pixels from the image (full image training)
                 pixel_samples = camera_all_pixels
                 rgb = to_torch(
-                    frame_image_array[pixel_samples[:, 1], pixel_samples[:, 0]].astype(np.float32) / 255.0,
+                    frame_image_array[pixel_samples[:, 1], pixel_samples[:, 0]].astype(
+                        np.float32
+                    )
+                    / 255.0,
                     device="cpu",
                 )
 
                 # Get start/end poses in world-global frame (renderer handles shutter interpolation)
-                T_sensor_startend = self._get_start_end_poses_world_global(camera_sensor, camera_frame_index)
+                T_sensor_startend = self._get_start_end_poses_world_global(
+                    camera_sensor, camera_frame_index
+                )
 
-            frame_time_ms = self._compute_frame_time_ms(camera_sensor, camera_frame_index)
+            frame_time_ms = self._compute_frame_time_ms(
+                camera_sensor, camera_frame_index
+            )
             camera_index = self.camera_ids.index(sampled_camera_id)
 
             batch_dict: dict[str, Any] = {
@@ -846,14 +1018,18 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
 
                 camera_sensor = self.sequence_camera_sensors[sequence_id][camera_id]
                 camera_model = self.sequence_camera_models[sequence_id][camera_id]
-                camera_pixels_subsampled = self.sequence_cameras_pixels_subsample[sequence_id][camera_id]
+                camera_pixels_subsampled = self.sequence_cameras_pixels_subsample[
+                    sequence_id
+                ][camera_id]
 
                 # determine frame of current camera (from validation frame list)
                 val_frame_list_idx = idx - run_frames
                 camera_frame_index = val_frames_in_range[val_frame_list_idx]
 
                 # Decode image (with accelerated JPEG decoding + downscaling if available)
-                frame_image_array = self._decode_image(camera_sensor, camera_frame_index)
+                frame_image_array = self._decode_image(
+                    camera_sensor, camera_frame_index
+                )
 
                 # Get full camera model resolution for mask resizing
                 w_full = int(camera_model.resolution[0].item())
@@ -861,14 +1037,16 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
 
                 # sample image colors at pixel centers
                 rgb = (
-                    frame_image_array[camera_pixels_subsampled[:, 1], camera_pixels_subsampled[:, 0]].astype(np.float32)
+                    frame_image_array[
+                        camera_pixels_subsampled[:, 1], camera_pixels_subsampled[:, 0]
+                    ].astype(np.float32)
                     / 255.0
                 )
 
                 # sample valid pixel mask
-                frame_valid_pixel_mask = self.sequence_cameras_frame_valid_pixels_masks[sequence_id][camera_id][
-                    camera_frame_index
-                ]
+                frame_valid_pixel_mask = self.sequence_cameras_frame_valid_pixels_masks[
+                    sequence_id
+                ][camera_id][camera_frame_index]
 
                 if self.downsample < 1.0:
                     frame_valid_pixel_mask = cv2.resize(
@@ -877,19 +1055,27 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
                         interpolation=cv2.INTER_NEAREST,
                     ).astype(bool)
 
-                valid = frame_valid_pixel_mask[camera_pixels_subsampled[:, 1], camera_pixels_subsampled[:, 0]]
+                valid = frame_valid_pixel_mask[
+                    camera_pixels_subsampled[:, 1], camera_pixels_subsampled[:, 0]
+                ]
 
                 # Get start/end poses in world-global frame (renderer handles shutter interpolation)
-                T_sensor_startend = self._get_start_end_poses_world_global(camera_sensor, camera_frame_index)
+                T_sensor_startend = self._get_start_end_poses_world_global(
+                    camera_sensor, camera_frame_index
+                )
 
-                frame_time_ms = self._compute_frame_time_ms(camera_sensor, camera_frame_index)
+                frame_time_ms = self._compute_frame_time_ms(
+                    camera_sensor, camera_frame_index
+                )
                 camera_index = self.camera_ids.index(camera_id)
 
                 return {
                     "rgb": to_torch(rgb, device="cpu"),
                     "valid": to_torch(valid, device="cpu"),
                     "T_camera_to_world": to_torch(T_sensor_startend[0], device="cpu"),
-                    "T_camera_to_world_end": to_torch(T_sensor_startend[1], device="cpu"),
+                    "T_camera_to_world_end": to_torch(
+                        T_sensor_startend[1], device="cpu"
+                    ),
                     "camera_id": camera_id,
                     "frame_idx": -1,  # Validation: -1 signals novel-view mode for PPISP
                     "camera_idx": camera_index,
@@ -897,7 +1083,9 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
 
             raise IndexError(f"Out of range validation sample {idx}")
 
-    def _sensor_ids_to_unique_ids(self, input_sensor_ids: list[str], sensor_type: str) -> Generator[str, None, None]:
+    def _sensor_ids_to_unique_ids(
+        self, input_sensor_ids: list[str], sensor_type: str
+    ) -> Generator[str, None, None]:
         """Converts logical or unique sensor ids to the corresponding set of unique ids for a certain sensor type.
         Valid unique ids are provided as is, logical sensor ids are expanded to the corresponding unique ids.
         Raises KeyError if input sensor was not found"""
@@ -950,16 +1138,20 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
         self._init_worker()
 
         # default to first source instance if not provided explicitly
-        sequence_point_clouds_source_ids = self.sequence_point_clouds_source_ids[self.sequence_id]
-        assert len(
-            sequence_point_clouds_source_ids
-        ), f"NCoreDataset: At least a single point cloud source needs to be available for point-cloud generation"
+        sequence_point_clouds_source_ids = self.sequence_point_clouds_source_ids[
+            self.sequence_id
+        ]
+        assert len(sequence_point_clouds_source_ids), (
+            f"NCoreDataset: At least a single point cloud source needs to be available for point-cloud generation"
+        )
         if point_clouds_source_ids is None:
             point_clouds_source_ids = [sequence_point_clouds_source_ids[0]]
 
         time_range = self.time_range_us
         pose_graph = self.sequence_loaders[self.sequence_id].pose_graph
-        sequence_point_clouds_sources = self.sequence_point_clouds_sources[self.sequence_id]
+        sequence_point_clouds_sources = self.sequence_point_clouds_sources[
+            self.sequence_id
+        ]
         for source_id in point_clouds_source_ids:
             source = sequence_point_clouds_sources[source_id]
 
@@ -968,23 +1160,32 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
                 pc = source.get_pc(pc_idx)
 
                 # Transform to world frame via pose graph
-                pc_world = pc.transform("world", pc.reference_frame_timestamp_us, pose_graph)
+                pc_world = pc.transform(
+                    "world", pc.reference_frame_timestamp_us, pose_graph
+                )
                 xyz_world = pc_world.xyz
 
                 # Apply world-to-world_global scene-level transform
                 xyz_world_global = (
-                    self.T_world_to_world_global[:3, :3] @ xyz_world.T + self.T_world_to_world_global[:3, 3:4]
+                    self.T_world_to_world_global[:3, :3] @ xyz_world.T
+                    + self.T_world_to_world_global[:3, 3:4]
                 ).T
 
                 # RGB color: try PointCloud attribute first, then generic_data fallback
                 color = None
                 if pc.has_attribute(self.lidar_color_generic_data_name):
                     color = pc.get_attribute(self.lidar_color_generic_data_name)
-                elif source.has_pc_generic_data(pc_idx, self.lidar_color_generic_data_name):
-                    color = source.get_pc_generic_data(pc_idx, self.lidar_color_generic_data_name)
+                elif source.has_pc_generic_data(
+                    pc_idx, self.lidar_color_generic_data_name
+                ):
+                    color = source.get_pc_generic_data(
+                        pc_idx, self.lidar_color_generic_data_name
+                    )
 
                 # Dynamic flag filtering
-                if non_dynamic_points_only and source.has_pc_generic_data(pc_idx, "dynamic_flag"):
+                if non_dynamic_points_only and source.has_pc_generic_data(
+                    pc_idx, "dynamic_flag"
+                ):
                     dynamic_flags = source.get_pc_generic_data(pc_idx, "dynamic_flag")
                     non_dynamic_mask = dynamic_flags != 1  # 1 ~ DYNAMIC
                     xyz_world_global = xyz_world_global[non_dynamic_mask]
@@ -1003,9 +1204,12 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
                 )
                 sensor_origin_world = T_ref_world[:3, 3]
                 sensor_origin_wg = (
-                    self.T_world_to_world_global[:3, :3] @ sensor_origin_world + self.T_world_to_world_global[:3, 3]
+                    self.T_world_to_world_global[:3, :3] @ sensor_origin_world
+                    + self.T_world_to_world_global[:3, 3]
                 )
-                xyz_start = np.broadcast_to(sensor_origin_wg[np.newaxis, :], xyz_world_global.shape).copy()
+                xyz_start = np.broadcast_to(
+                    sensor_origin_wg[np.newaxis, :], xyz_world_global.shape
+                ).copy()
 
                 yield PointCloud(
                     xyz_start=to_torch(xyz_start, device="cpu"),
@@ -1016,7 +1220,9 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
 
     # ---- Framework protocol methods (BoundedMultiViewDataset, DatasetVisualization) ----
 
-    def _lazy_worker_gpu_cache(self) -> dict[str, tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
+    def _lazy_worker_gpu_cache(
+        self,
+    ) -> dict[str, tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
         """Lazily create and cache camera-space rays + pixel coords on GPU for the current worker.
 
         Each DataLoader worker creates its own GPU tensors on first use.
@@ -1032,33 +1238,50 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
             for sequence_id in self.sequence_cameras_all_rays:
                 if self.split.startswith("train"):
                     # Training: use full-resolution rays
-                    for camera_id, rays_np in self.sequence_cameras_all_rays[sequence_id].items():
+                    for camera_id, rays_np in self.sequence_cameras_all_rays[
+                        sequence_id
+                    ].items():
                         h_full, w_full = rays_np.shape[:2]
                         rays_dir = torch.from_numpy(rays_np).to(
                             dtype=torch.float32, device=self.device, non_blocking=True
                         )
                         rays_ori = torch.zeros_like(rays_dir)
-                        pixel_coords = create_pixel_coords(w_full, h_full, device=self.device)
+                        pixel_coords = create_pixel_coords(
+                            w_full, h_full, device=self.device
+                        )
                         cache[camera_id] = (rays_ori, rays_dir, pixel_coords)
                 else:
                     # Validation: use subsampled rays if n_val_image_subsample > 1, else full
                     if self.n_val_image_subsample > 1:
-                        for camera_id, rays_sub_np in self.sequence_cameras_rays_subsample[sequence_id].items():
+                        for (
+                            camera_id,
+                            rays_sub_np,
+                        ) in self.sequence_cameras_rays_subsample[sequence_id].items():
                             w, h = self._camera_resolutions[camera_id]
-                            rays_dir = torch.from_numpy(rays_sub_np.reshape(h, w, 3)).to(
-                                dtype=torch.float32, device=self.device, non_blocking=True
+                            rays_dir = torch.from_numpy(
+                                rays_sub_np.reshape(h, w, 3)
+                            ).to(
+                                dtype=torch.float32,
+                                device=self.device,
+                                non_blocking=True,
                             )
                             rays_ori = torch.zeros_like(rays_dir)
                             pixel_coords = create_pixel_coords(w, h, device=self.device)
                             cache[camera_id] = (rays_ori, rays_dir, pixel_coords)
                     else:
-                        for camera_id, rays_np in self.sequence_cameras_all_rays[sequence_id].items():
+                        for camera_id, rays_np in self.sequence_cameras_all_rays[
+                            sequence_id
+                        ].items():
                             h_full, w_full = rays_np.shape[:2]
                             rays_dir = torch.from_numpy(rays_np).to(
-                                dtype=torch.float32, device=self.device, non_blocking=True
+                                dtype=torch.float32,
+                                device=self.device,
+                                non_blocking=True,
                             )
                             rays_ori = torch.zeros_like(rays_dir)
-                            pixel_coords = create_pixel_coords(w_full, h_full, device=self.device)
+                            pixel_coords = create_pixel_coords(
+                                w_full, h_full, device=self.device
+                            )
                             cache[camera_id] = (rays_ori, rays_dir, pixel_coords)
 
             self._worker_gpu_cache[worker_id] = cache
@@ -1098,7 +1321,9 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
         if T_to_world.ndim == 2:
             T_to_world = T_to_world.unsqueeze(0)
 
-        T_to_world_end = batch["T_camera_to_world_end"].to(self.device, non_blocking=True)
+        T_to_world_end = batch["T_camera_to_world_end"].to(
+            self.device, non_blocking=True
+        )
         if T_to_world_end.ndim == 2:
             T_to_world_end = T_to_world_end.unsqueeze(0)
 
@@ -1127,7 +1352,9 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
             batch_dict["rgb_gt"] = rgb_gt
 
         # --- Intrinsics ----------------------------------------------------------
-        intrinsics_result = self._get_camera_model_parameters_for_resolution(camera_id, w, h)
+        intrinsics_result = self._get_camera_model_parameters_for_resolution(
+            camera_id, w, h
+        )
         if intrinsics_result is not None:
             intrinsics_params, model_type_name = intrinsics_result
             batch_dict[f"intrinsics_{model_type_name}"] = intrinsics_params
@@ -1135,14 +1362,24 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
         # --- Frame / camera indices (PPISP post-processing) ----------------------
         if "frame_idx" in batch:
             frame_idx = batch["frame_idx"]
-            batch_dict["frame_idx"] = frame_idx[0].item() if isinstance(frame_idx, torch.Tensor) else int(frame_idx)
+            batch_dict["frame_idx"] = (
+                frame_idx[0].item()
+                if isinstance(frame_idx, torch.Tensor)
+                else int(frame_idx)
+            )
         if "camera_idx" in batch:
             camera_idx = batch["camera_idx"]
-            batch_dict["camera_idx"] = camera_idx[0].item() if isinstance(camera_idx, torch.Tensor) else int(camera_idx)
+            batch_dict["camera_idx"] = (
+                camera_idx[0].item()
+                if isinstance(camera_idx, torch.Tensor)
+                else int(camera_idx)
+            )
 
         return Batch(**batch_dict)
 
-    def _get_camera_model_parameters_for_resolution(self, camera_id, render_w, render_h):
+    def _get_camera_model_parameters_for_resolution(
+        self, camera_id, render_w, render_h
+    ):
         """
         Extract camera model parameters scaled to the render resolution.
 
@@ -1178,7 +1415,9 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
             )
 
             # Use shutter type from camera parameters (renderer handles interpolation natively)
-            logger.info(f"[Shutter] Camera {camera_id}: shutter_type = {scaled_params.shutter_type.name}")
+            logger.info(
+                f"[Shutter] Camera {camera_id}: shutter_type = {scaled_params.shutter_type.name}"
+            )
 
             # Build parameter dict from the properly-scaled NCore parameters.
             # Distortion coefficients are resolution-independent and preserved through transform().
@@ -1219,7 +1458,9 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
                 )
                 return None
 
-            logger.info(f"[Distortion] Camera {camera_id}: Using NCore native lens distortion parameters")
+            logger.info(
+                f"[Distortion] Camera {camera_id}: Using NCore native lens distortion parameters"
+            )
 
             # Cache for future use
             model_type_name = type(scaled_params).__name__
@@ -1287,7 +1528,9 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
             num_frames = camera_frame_range.stop - camera_frame_range.start
             frame_step = max(1, num_frames // max_frames_per_camera)
 
-            for frame_idx in range(camera_frame_range.start, camera_frame_range.stop, frame_step):
+            for frame_idx in range(
+                camera_frame_range.start, camera_frame_range.stop, frame_step
+            ):
                 try:
                     T_sensor_to_world_flat = camera_sensor.get_frames_T_source_target(
                         source_node=camera_sensor.sensor_id,
@@ -1300,13 +1543,17 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
                     else:
                         T_sensor_to_world = T_sensor_to_world_flat
 
-                    T_sensor_to_world_global_batch = self._transform_poses_to_world_global(
-                        T_sensor_to_world[None, :, :], self.T_world_to_world_global
+                    T_sensor_to_world_global_batch = (
+                        self._transform_poses_to_world_global(
+                            T_sensor_to_world[None, :, :], self.T_world_to_world_global
+                        )
                     )
                     if T_sensor_to_world_global_batch.ndim == 3:
                         T_sensor_to_world_global = T_sensor_to_world_global_batch[0]
                     elif T_sensor_to_world_global_batch.ndim == 2:
-                        T_sensor_to_world_global = T_sensor_to_world_global_batch.reshape(4, 4)
+                        T_sensor_to_world_global = (
+                            T_sensor_to_world_global_batch.reshape(4, 4)
+                        )
                     else:
                         T_sensor_to_world_global = T_sensor_to_world_global_batch
 
@@ -1325,7 +1572,9 @@ class NCoreDataset(torch.utils.data.Dataset, BoundedMultiViewDataset, DatasetVis
 
                     frame_image = camera_sensor.get_frame_image_array(frame_idx)
                     if self.n_val_image_subsample > 1:
-                        frame_image = cv2.resize(frame_image, (w_viz, h_viz), interpolation=cv2.INTER_AREA)
+                        frame_image = cv2.resize(
+                            frame_image, (w_viz, h_viz), interpolation=cv2.INTER_AREA
+                        )
                     rgb_img = frame_image.astype(np.float32) / 255.0
 
                     cam_list.append(

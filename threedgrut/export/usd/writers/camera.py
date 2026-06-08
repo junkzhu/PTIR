@@ -45,43 +45,81 @@ def _add_opencv_pinhole_camera_intrinsics(
 ) -> None:
     """Add OpenCV pinhole camera intrinsics to USD camera prim."""
     # Camera projection type
-    camera_prim.CreateAttribute("cameraProjectionType", Sdf.ValueTypeNames.Token).Set(Vt.Token("pinholeOpenCV"))
+    camera_prim.CreateAttribute("cameraProjectionType", Sdf.ValueTypeNames.Token).Set(
+        Vt.Token("pinholeOpenCV")
+    )
 
     # Resolution
     resolution_list = params.resolution.tolist()
-    camera_prim.CreateAttribute("fthetaWidth", Sdf.ValueTypeNames.Float).Set(float(resolution_list[0]))
-    camera_prim.CreateAttribute("fthetaHeight", Sdf.ValueTypeNames.Float).Set(float(resolution_list[1]))
+    camera_prim.CreateAttribute("fthetaWidth", Sdf.ValueTypeNames.Float).Set(
+        float(resolution_list[0])
+    )
+    camera_prim.CreateAttribute("fthetaHeight", Sdf.ValueTypeNames.Float).Set(
+        float(resolution_list[1])
+    )
 
     # Principal point
     principal_point_list = params.principal_point.tolist()
-    camera_prim.CreateAttribute("fthetaCx", Sdf.ValueTypeNames.Float).Set(float(principal_point_list[0]))
-    camera_prim.CreateAttribute("fthetaCy", Sdf.ValueTypeNames.Float).Set(float(principal_point_list[1]))
+    camera_prim.CreateAttribute("fthetaCx", Sdf.ValueTypeNames.Float).Set(
+        float(principal_point_list[0])
+    )
+    camera_prim.CreateAttribute("fthetaCy", Sdf.ValueTypeNames.Float).Set(
+        float(principal_point_list[1])
+    )
 
     # Focal length
     focal_length_list = params.focal_length.tolist()
-    camera_prim.CreateAttribute("openCVFx", Sdf.ValueTypeNames.Float).Set(float(focal_length_list[0]))
-    camera_prim.CreateAttribute("openCVFy", Sdf.ValueTypeNames.Float).Set(float(focal_length_list[1]))
+    camera_prim.CreateAttribute("openCVFx", Sdf.ValueTypeNames.Float).Set(
+        float(focal_length_list[0])
+    )
+    camera_prim.CreateAttribute("openCVFy", Sdf.ValueTypeNames.Float).Set(
+        float(focal_length_list[1])
+    )
 
     # Radial distortion coefficients [k1,k2,k3,k4,k5,k6]
     radial_coeffs_list = params.radial_coeffs.tolist()
-    camera_prim.CreateAttribute("fthetaPolyA", Sdf.ValueTypeNames.Float).Set(float(radial_coeffs_list[0]))
-    camera_prim.CreateAttribute("fthetaPolyB", Sdf.ValueTypeNames.Float).Set(float(radial_coeffs_list[1]))
-    camera_prim.CreateAttribute("fthetaPolyC", Sdf.ValueTypeNames.Float).Set(float(radial_coeffs_list[2]))
-    camera_prim.CreateAttribute("fthetaPolyD", Sdf.ValueTypeNames.Float).Set(float(radial_coeffs_list[3]))
-    camera_prim.CreateAttribute("fthetaPolyE", Sdf.ValueTypeNames.Float).Set(float(radial_coeffs_list[4]))
-    camera_prim.CreateAttribute("fthetaPolyF", Sdf.ValueTypeNames.Float).Set(float(radial_coeffs_list[5]))
+    camera_prim.CreateAttribute("fthetaPolyA", Sdf.ValueTypeNames.Float).Set(
+        float(radial_coeffs_list[0])
+    )
+    camera_prim.CreateAttribute("fthetaPolyB", Sdf.ValueTypeNames.Float).Set(
+        float(radial_coeffs_list[1])
+    )
+    camera_prim.CreateAttribute("fthetaPolyC", Sdf.ValueTypeNames.Float).Set(
+        float(radial_coeffs_list[2])
+    )
+    camera_prim.CreateAttribute("fthetaPolyD", Sdf.ValueTypeNames.Float).Set(
+        float(radial_coeffs_list[3])
+    )
+    camera_prim.CreateAttribute("fthetaPolyE", Sdf.ValueTypeNames.Float).Set(
+        float(radial_coeffs_list[4])
+    )
+    camera_prim.CreateAttribute("fthetaPolyF", Sdf.ValueTypeNames.Float).Set(
+        float(radial_coeffs_list[5])
+    )
 
     # Tangential distortion coefficients [p1,p2]
     tangential_coeffs_list = params.tangential_coeffs.tolist()
-    camera_prim.CreateAttribute("p0", Sdf.ValueTypeNames.Float).Set(float(tangential_coeffs_list[0]))
-    camera_prim.CreateAttribute("p1", Sdf.ValueTypeNames.Float).Set(float(tangential_coeffs_list[1]))
+    camera_prim.CreateAttribute("p0", Sdf.ValueTypeNames.Float).Set(
+        float(tangential_coeffs_list[0])
+    )
+    camera_prim.CreateAttribute("p1", Sdf.ValueTypeNames.Float).Set(
+        float(tangential_coeffs_list[1])
+    )
 
     # Thin prism distortion coefficients [s1,s2,s3,s4]
     thin_prism_coeffs_list = params.thin_prism_coeffs.tolist()
-    camera_prim.CreateAttribute("s0", Sdf.ValueTypeNames.Float).Set(float(thin_prism_coeffs_list[0]))
-    camera_prim.CreateAttribute("s1", Sdf.ValueTypeNames.Float).Set(float(thin_prism_coeffs_list[1]))
-    camera_prim.CreateAttribute("s2", Sdf.ValueTypeNames.Float).Set(float(thin_prism_coeffs_list[2]))
-    camera_prim.CreateAttribute("s3", Sdf.ValueTypeNames.Float).Set(float(thin_prism_coeffs_list[3]))
+    camera_prim.CreateAttribute("s0", Sdf.ValueTypeNames.Float).Set(
+        float(thin_prism_coeffs_list[0])
+    )
+    camera_prim.CreateAttribute("s1", Sdf.ValueTypeNames.Float).Set(
+        float(thin_prism_coeffs_list[1])
+    )
+    camera_prim.CreateAttribute("s2", Sdf.ValueTypeNames.Float).Set(
+        float(thin_prism_coeffs_list[2])
+    )
+    camera_prim.CreateAttribute("s3", Sdf.ValueTypeNames.Float).Set(
+        float(thin_prism_coeffs_list[3])
+    )
 
 
 def _add_opencv_fisheye_camera_intrinsics(
@@ -90,32 +128,56 @@ def _add_opencv_fisheye_camera_intrinsics(
 ) -> None:
     """Add OpenCV fisheye camera intrinsics to USD camera prim."""
     # Camera projection type
-    camera_prim.CreateAttribute("cameraProjectionType", Sdf.ValueTypeNames.Token).Set(Vt.Token("fisheyeOpenCV"))
+    camera_prim.CreateAttribute("cameraProjectionType", Sdf.ValueTypeNames.Token).Set(
+        Vt.Token("fisheyeOpenCV")
+    )
 
     # Resolution
     resolution_list = params.resolution.tolist()
-    camera_prim.CreateAttribute("fthetaWidth", Sdf.ValueTypeNames.Float).Set(float(resolution_list[0]))
-    camera_prim.CreateAttribute("fthetaHeight", Sdf.ValueTypeNames.Float).Set(float(resolution_list[1]))
+    camera_prim.CreateAttribute("fthetaWidth", Sdf.ValueTypeNames.Float).Set(
+        float(resolution_list[0])
+    )
+    camera_prim.CreateAttribute("fthetaHeight", Sdf.ValueTypeNames.Float).Set(
+        float(resolution_list[1])
+    )
 
     # Principal point
     principal_point_list = params.principal_point.tolist()
-    camera_prim.CreateAttribute("fthetaCx", Sdf.ValueTypeNames.Float).Set(float(principal_point_list[0]))
-    camera_prim.CreateAttribute("fthetaCy", Sdf.ValueTypeNames.Float).Set(float(principal_point_list[1]))
+    camera_prim.CreateAttribute("fthetaCx", Sdf.ValueTypeNames.Float).Set(
+        float(principal_point_list[0])
+    )
+    camera_prim.CreateAttribute("fthetaCy", Sdf.ValueTypeNames.Float).Set(
+        float(principal_point_list[1])
+    )
 
     # Focal length
     focal_length_list = params.focal_length.tolist()
-    camera_prim.CreateAttribute("openCVFx", Sdf.ValueTypeNames.Float).Set(float(focal_length_list[0]))
-    camera_prim.CreateAttribute("openCVFy", Sdf.ValueTypeNames.Float).Set(float(focal_length_list[1]))
+    camera_prim.CreateAttribute("openCVFx", Sdf.ValueTypeNames.Float).Set(
+        float(focal_length_list[0])
+    )
+    camera_prim.CreateAttribute("openCVFy", Sdf.ValueTypeNames.Float).Set(
+        float(focal_length_list[1])
+    )
 
     # Radial distortion coefficients [k1,k2,k3,k4]
     radial_coeffs_list = params.radial_coeffs.tolist()
-    camera_prim.CreateAttribute("fthetaPolyA", Sdf.ValueTypeNames.Float).Set(float(radial_coeffs_list[0]))
-    camera_prim.CreateAttribute("fthetaPolyB", Sdf.ValueTypeNames.Float).Set(float(radial_coeffs_list[1]))
-    camera_prim.CreateAttribute("fthetaPolyC", Sdf.ValueTypeNames.Float).Set(float(radial_coeffs_list[2]))
-    camera_prim.CreateAttribute("fthetaPolyD", Sdf.ValueTypeNames.Float).Set(float(radial_coeffs_list[3]))
+    camera_prim.CreateAttribute("fthetaPolyA", Sdf.ValueTypeNames.Float).Set(
+        float(radial_coeffs_list[0])
+    )
+    camera_prim.CreateAttribute("fthetaPolyB", Sdf.ValueTypeNames.Float).Set(
+        float(radial_coeffs_list[1])
+    )
+    camera_prim.CreateAttribute("fthetaPolyC", Sdf.ValueTypeNames.Float).Set(
+        float(radial_coeffs_list[2])
+    )
+    camera_prim.CreateAttribute("fthetaPolyD", Sdf.ValueTypeNames.Float).Set(
+        float(radial_coeffs_list[3])
+    )
 
     # Max FoV (convert from radians to degrees, x2 for full FoV)
-    camera_prim.CreateAttribute("fthetaMaxFov", Sdf.ValueTypeNames.Float).Set(float(2.0 * np.rad2deg(params.max_angle)))
+    camera_prim.CreateAttribute("fthetaMaxFov", Sdf.ValueTypeNames.Float).Set(
+        float(2.0 * np.rad2deg(params.max_angle))
+    )
 
 
 def _add_simple_pinhole_intrinsics(
@@ -134,11 +196,15 @@ def _add_simple_pinhole_intrinsics(
 
     camera_prim.GetFocalLengthAttr().Set(focal_length_mm)
     camera_prim.GetHorizontalApertureAttr().Set(sensor_width_mm)
-    camera_prim.GetVerticalApertureAttr().Set(sensor_width_mm * resolution[1] / resolution[0])
+    camera_prim.GetVerticalApertureAttr().Set(
+        sensor_width_mm * resolution[1] / resolution[0]
+    )
 
     # Principal point offset from center
     horizontal_offset = ((cx / resolution[0]) - 0.5) * sensor_width_mm
-    vertical_offset = ((cy / resolution[1]) - 0.5) * (sensor_width_mm * resolution[1] / resolution[0])
+    vertical_offset = ((cy / resolution[1]) - 0.5) * (
+        sensor_width_mm * resolution[1] / resolution[0]
+    )
     camera_prim.GetHorizontalApertureOffsetAttr().Set(horizontal_offset)
     camera_prim.GetVerticalApertureOffsetAttr().Set(vertical_offset)
 
@@ -182,7 +248,9 @@ def export_cameras_to_usd(
     # Coordinate transform from 3DGRUT (right-down-front) to USD camera (right-up-back)
     # 3DGRUT: X=right, Y=down, Z=front
     # USD:    X=right, Y=up, Z=back
-    camera_coord_flip = np.array([[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]], dtype=np.float64)
+    camera_coord_flip = np.array(
+        [[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]], dtype=np.float64
+    )
 
     for i in range(num_cameras):
         camera_name = f"{camera_prefix}_{i:04d}"
@@ -196,7 +264,11 @@ def export_cameras_to_usd(
         camera.GetClippingRangeAttr().Set(Gf.Vec2f(DEFAULT_NEAR_CLIP, DEFAULT_FAR_CLIP))
 
         # Add intrinsics based on available data
-        if camera_params is not None and i < len(camera_params) and camera_params[i] is not None:
+        if (
+            camera_params is not None
+            and i < len(camera_params)
+            and camera_params[i] is not None
+        ):
             params = camera_params[i]
             if isinstance(params, OpenCVPinholeCameraModelParameters):
                 _add_opencv_pinhole_camera_intrinsics(camera_prim, params)
@@ -205,13 +277,23 @@ def export_cameras_to_usd(
             else:
                 # Fallback to default focal length
                 camera.GetFocalLengthAttr().Set(24.0)
-                logger.warning(f"Unsupported camera model for camera {i}, using default intrinsics")
+                logger.warning(
+                    f"Unsupported camera model for camera {i}, using default intrinsics"
+                )
         elif intrinsics is not None and resolutions is not None:
             # Simple pinhole from intrinsics list
             if i < len(resolutions):
-                resolution = resolutions[i].tolist() if isinstance(resolutions[i], np.ndarray) else resolutions[i]
+                resolution = (
+                    resolutions[i].tolist()
+                    if isinstance(resolutions[i], np.ndarray)
+                    else resolutions[i]
+                )
             else:
-                resolution = resolutions[0].tolist() if isinstance(resolutions[0], np.ndarray) else resolutions[0]
+                resolution = (
+                    resolutions[0].tolist()
+                    if isinstance(resolutions[0], np.ndarray)
+                    else resolutions[0]
+                )
             _add_simple_pinhole_intrinsics(camera_prim, intrinsics, resolution)
         else:
             # Fallback to default focal length
@@ -272,7 +354,9 @@ def export_camera_rig_with_timestamps(
     rig_xform = UsdGeom.Xformable(rig_prim)
 
     # Coordinate transform
-    camera_coord_flip = np.array([[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]], dtype=np.float64)
+    camera_coord_flip = np.array(
+        [[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]], dtype=np.float64
+    )
 
     # USD time code setup
     usd_time_code_per_second = stage.GetTimeCodesPerSecond()
@@ -308,7 +392,9 @@ def export_camera_rig_with_timestamps(
         stage.SetMetadata("endTimeCode", usd_end_time_code)
 
     if timestamps_us is not None:
-        stage.SetMetadataByDictKey("customLayerData", "absoluteTimeOffsetMicroSec", timestamp_offset_us)
+        stage.SetMetadataByDictKey(
+            "customLayerData", "absoluteTimeOffsetMicroSec", timestamp_offset_us
+        )
 
     # Create camera prim under rig (static relative to rig)
     camera_path = f"{root_path}/{camera_name}"

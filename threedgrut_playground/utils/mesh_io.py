@@ -62,13 +62,19 @@ def load_missing_material_info(path, materials, device):
     for mat in materials:
         missing_mat = scene_mats[mat["material_name"]]
         emissiveFactor = (
-            missing_mat.emissiveFactor if missing_mat.emissiveFactor is not None else torch.zeros(3, device=device)
+            missing_mat.emissiveFactor
+            if missing_mat.emissiveFactor is not None
+            else torch.zeros(3, device=device)
         )
         emissiveTexture = None  # TODO (operel): Support texture load
         alphaMode = enum2alphamode[missing_mat.alphaMode]
         alphaCutoff = missing_mat.alphaCutoff
-        mat["emissive_map"] = _to_tensor(emissiveTexture, is_normalize=True, is_pad_to_float4=True)
-        mat["emissive_factor"] = _to_tensor(emissiveFactor, is_normalize=True, device="cpu")
+        mat["emissive_map"] = _to_tensor(
+            emissiveTexture, is_normalize=True, is_pad_to_float4=True
+        )
+        mat["emissive_factor"] = _to_tensor(
+            emissiveFactor, is_normalize=True, device="cpu"
+        )
         mat["alpha_mode"] = alphaMode
         mat["alpha_cutoff"] = alphaCutoff
 
@@ -83,7 +89,9 @@ def load_materials(mesh, device):
 
     for mat in materials:
         diffuseFactor = (
-            mat.diffuse_color if mat.diffuse_color is not None else torch.tensor([1.0, 1.0, 1.0, 1.0], device=device)
+            mat.diffuse_color
+            if mat.diffuse_color is not None
+            else torch.tensor([1.0, 1.0, 1.0, 1.0], device=device)
         )
 
         diffuseTexture = mat.diffuse_texture
@@ -103,7 +111,9 @@ def load_materials(mesh, device):
                 dim=2,
             )
         elif mat.metallic_texture is not None and mat.roughness_texture is None:
-            metallicRoughnessTexture = torch.cat([mat.metallic_texture, torch.zeros_like(mat.metallic_texture)], dim=2)
+            metallicRoughnessTexture = torch.cat(
+                [mat.metallic_texture, torch.zeros_like(mat.metallic_texture)], dim=2
+            )
         elif mat.metallic_texture is None and mat.roughness_texture is not None:
             metallicRoughnessTexture = torch.cat(
                 [
@@ -129,15 +139,25 @@ def load_materials(mesh, device):
         # kaolin pre-scales normal channel: https://github.com/NVIDIAGameWorks/kaolin/blob/master/kaolin/io/gltf.py#L241
         normalTexture = mat.normals_texture
 
-        transmissionFactor = mat.transmittance_value if mat.transmittance_value is not None else 0.0
+        transmissionFactor = (
+            mat.transmittance_value if mat.transmittance_value is not None else 0.0
+        )
         ior = mat.ior_value if mat.ior_value is not None else 1.0
 
         loaded_mat = dict(
             material_name=mat.material_name,
-            diffuse_map=_to_tensor(diffuseTexture, is_normalize=True, is_pad_to_float4=True),
-            metallic_roughness_map=_to_tensor(metallicRoughnessTexture, is_normalize=False, is_pad_to_float4=True),
-            normal_map=_to_tensor(normalTexture, is_normalize=False, is_pad_to_float4=True),
-            diffuse_factor=_to_tensor(diffuseFactor, is_normalize=True, device="cpu", is_pad_to_float4=True),
+            diffuse_map=_to_tensor(
+                diffuseTexture, is_normalize=True, is_pad_to_float4=True
+            ),
+            metallic_roughness_map=_to_tensor(
+                metallicRoughnessTexture, is_normalize=False, is_pad_to_float4=True
+            ),
+            normal_map=_to_tensor(
+                normalTexture, is_normalize=False, is_pad_to_float4=True
+            ),
+            diffuse_factor=_to_tensor(
+                diffuseFactor, is_normalize=True, device="cpu", is_pad_to_float4=True
+            ),
             metallic_factor=float(metallicFactor),
             roughness_factor=float(roughnessFactor),
             transmission_factor=float(transmissionFactor),
@@ -157,7 +177,8 @@ def load_mesh(path: str, device):
         mesh = kaolin.io.import_mesh(path, triangulate=True)
     else:
         raise ValueError(
-            f"Cannot load mesh asset with unsupported format: {format}. " f"Supported types: .obj, .glb, .gltf"
+            f"Cannot load mesh asset with unsupported format: {format}. "
+            f"Supported types: .obj, .glb, .gltf"
         )
 
     mesh = mesh.float_tensors_to(torch.float32)
@@ -167,16 +188,24 @@ def load_mesh(path: str, device):
 
     # Compute vertex normals if needed
     if not mesh.has_attribute("vertex_normals") or len(mesh.vertex_normals) == 0:
-        vertex_normals = igl.per_vertex_normals(mesh.vertices.numpy(), mesh.faces.numpy())
-        mesh.vertex_normals = torch.tensor(vertex_normals, device=device, dtype=torch.float32)
+        vertex_normals = igl.per_vertex_normals(
+            mesh.vertices.numpy(), mesh.faces.numpy()
+        )
+        mesh.vertex_normals = torch.tensor(
+            vertex_normals, device=device, dtype=torch.float32
+        )
 
     num_verts = len(mesh.vertices)
     num_faces = len(mesh.faces)
     mesh = mesh.to(device=device)
 
-    mesh.vertex_tangents = mesh.vertex_tangents if mesh.has_attribute("vertex_tangents") else None
+    mesh.vertex_tangents = (
+        mesh.vertex_tangents if mesh.has_attribute("vertex_tangents") else None
+    )
 
-    mesh.uvs = mesh.uvs if mesh.has_attribute("uvs") else mesh.vertices.new_zeros(num_verts, 2)
+    mesh.uvs = (
+        mesh.uvs if mesh.has_attribute("uvs") else mesh.vertices.new_zeros(num_verts, 2)
+    )
     # If uvs + face_uvs_idx are available, use to compute face_uvs
     if not mesh.has_attribute("face_uvs"):
         if mesh.has_attribute("face_uvs_idx") and len(mesh.uvs) > 0:

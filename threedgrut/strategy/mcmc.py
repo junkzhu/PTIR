@@ -69,14 +69,19 @@ class MCMCStrategy(BaseStrategy):
         # Precompute the look up table for binomial coefficients (Eq 9 in the MCMC paper)
         self.binoms = torch.tensor(
             [
-                [math.comb(n, k) if k <= n else 0 for k in range(config.strategy.binom_n_max)]
+                [
+                    math.comb(n, k) if k <= n else 0
+                    for k in range(config.strategy.binom_n_max)
+                ]
                 for n in range(config.strategy.binom_n_max)
             ],
             dtype=torch.float32,
             device=self.model.device,
         )
 
-    def _post_optimizer_step(self, step: int, scene_extent: float, train_dataset, batch=None, writer=None) -> bool:
+    def _post_optimizer_step(
+        self, step: int, scene_extent: float, train_dataset, batch=None, writer=None
+    ) -> bool:
         # Relocate dead gaussians to the alive areas
         if check_step_condition(
             step,
@@ -116,7 +121,9 @@ class MCMCStrategy(BaseStrategy):
         n_dead_gaussians = len(dead_idxs)
 
         if n_dead_gaussians:
-            sampled_idxs, new_densities, new_scales = self.sample_new_gaussians(n_dead_gaussians, alive_idxs)
+            sampled_idxs, new_densities, new_scales = self.sample_new_gaussians(
+                n_dead_gaussians, alive_idxs
+            )
 
             def update_param_fn(name: str, param: torch.Tensor) -> torch.Tensor:
                 if name == "density":
@@ -133,17 +140,23 @@ class MCMCStrategy(BaseStrategy):
             self._update_param_with_optimizer(update_param_fn, update_optimizer_fn)
 
         if self.conf.strategy.print_stats:
-            logger.info(f"Relocated {n_dead_gaussians} ({n_dead_gaussians / len(densities) * 100:.2f}%) gaussians")
+            logger.info(
+                f"Relocated {n_dead_gaussians} ({n_dead_gaussians / len(densities) * 100:.2f}%) gaussians"
+            )
 
     @torch.no_grad()
     def add_new_gaussians(self) -> None:
         # Get the current number of gaussians
         current_num_gaussians = self.model.num_gaussians
-        target_num_gaussians = min(self.conf.strategy.add.max_n_gaussians, int(1.05 * current_num_gaussians))
+        target_num_gaussians = min(
+            self.conf.strategy.add.max_n_gaussians, int(1.05 * current_num_gaussians)
+        )
         num_gaussians_to_add = max(0, target_num_gaussians - current_num_gaussians)
 
         if num_gaussians_to_add:
-            sampled_idxs, new_densities, new_scales = self.sample_new_gaussians(num_gaussians_to_add)
+            sampled_idxs, new_densities, new_scales = self.sample_new_gaussians(
+                num_gaussians_to_add
+            )
 
             def update_param_fn(name: str, param: torch.Tensor) -> torch.Tensor:
                 if name == "density":
@@ -175,12 +188,17 @@ class MCMCStrategy(BaseStrategy):
             if param_gorup["name"] == "positions":
                 current_lr = param_gorup["lr"]
 
-        def op_sigmoid(x: torch.Tensor, k: int = 100, x0: float = 0.995) -> torch.Tensor:
+        def op_sigmoid(
+            x: torch.Tensor, k: int = 100, x0: float = 0.995
+        ) -> torch.Tensor:
             return 1 / (1 + torch.exp(-k * (x - x0)))
 
         # Current positional learning rate multiplied by the config paramater scale
         noise = (
-            torch.randn_like(positions) * (op_sigmoid(1 - densities)) * self.conf.strategy.perturb.noise_lr * current_lr
+            torch.randn_like(positions)
+            * (op_sigmoid(1 - densities))
+            * self.conf.strategy.perturb.noise_lr
+            * current_lr
         )
         noise = torch.bmm(covariance, noise.unsqueeze(-1)).squeeze(-1)
 
@@ -193,16 +211,22 @@ class MCMCStrategy(BaseStrategy):
         scales = self.model.get_scale()
 
         if valid_indices is None:
-            valid_indices = torch.arange(0, int(densities.shape[0]), device=densities.device, dtype=torch.int32)
+            valid_indices = torch.arange(
+                0, int(densities.shape[0]), device=densities.device, dtype=torch.int32
+            )
 
         probabilities = densities[valid_indices].flatten()  # ensure its shape is [N,]
 
         # Sample the locations to which the dead Gaussians will be moved proportional to the opacity of the alive Gaussians
-        sampled_idxs = _multinomial_sample(probabilities, num_gaussians, replacement=True)
+        sampled_idxs = _multinomial_sample(
+            probabilities, num_gaussians, replacement=True
+        )
         sampled_idxs = valid_indices[sampled_idxs]
 
         ratios = (
-            (torch.bincount(sampled_idxs)[sampled_idxs] + 1).clamp_(min=1, max=self.conf.strategy.binom_n_max).int()
+            (torch.bincount(sampled_idxs)[sampled_idxs] + 1)
+            .clamp_(min=1, max=self.conf.strategy.binom_n_max)
+            .int()
         )
 
         new_densities, new_scales = _mcmc_plugin.compute_relocation_tensor(
@@ -215,7 +239,9 @@ class MCMCStrategy(BaseStrategy):
 
         new_densities = self.model.density_activation_inv(
             torch.clamp(
-                new_densities, max=1.0 - torch.finfo(torch.float32).eps, min=self.conf.strategy.opacity_threshold
+                new_densities,
+                max=1.0 - torch.finfo(torch.float32).eps,
+                min=self.conf.strategy.opacity_threshold,
             )
         )
 

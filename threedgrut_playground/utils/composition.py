@@ -24,7 +24,9 @@ def join_gaussians(*gaussians):
     i.e.: max_sh_degree, n_active_features and scene_extent.
     """
     main_gaussian = gaussians[0]
-    composition = MixtureOfGaussians(conf=main_gaussian.conf, scene_extent=main_gaussian.scene_extent)
+    composition = MixtureOfGaussians(
+        conf=main_gaussian.conf, scene_extent=main_gaussian.scene_extent
+    )
     fields = [
         "positions",
         "rotation",

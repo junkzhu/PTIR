@@ -34,7 +34,9 @@ class PLYExporter(ModelExporter):
     """
 
     @staticmethod
-    def _construct_list_of_attributes(features_albedo, features_specular, scale, rotation):
+    def _construct_list_of_attributes(
+        features_albedo, features_specular, scale, rotation
+    ):
         """Construct the list of PLY attribute names."""
         attrs = ["x", "y", "z", "nx", "ny", "nz"]
         # DC coefficients (albedo)
@@ -51,7 +53,14 @@ class PLYExporter(ModelExporter):
         return attrs
 
     @torch.no_grad()
-    def export(self, model: ExportableModel, output_path: Path, dataset=None, conf=None, **kwargs) -> None:
+    def export(
+        self,
+        model: ExportableModel,
+        output_path: Path,
+        dataset=None,
+        conf=None,
+        **kwargs,
+    ) -> None:
         """Export the model to a PLY file.
 
         Args:
@@ -70,13 +79,17 @@ class PLYExporter(ModelExporter):
         num_gaussians = attrs.num_gaussians
 
         # Create normal vectors (placeholder, pointing up)
-        mogt_nrm = np.repeat(np.array([[0, 0, 1]], dtype=np.float32), repeats=num_gaussians, axis=0)
+        mogt_nrm = np.repeat(
+            np.array([[0, 0, 1]], dtype=np.float32), repeats=num_gaussians, axis=0
+        )
 
         # Reshape specular coefficients for PLY format (channel-major layout)
         # From [N, M*3] to [N, M, 3] to [N, 3, M] to [N, M*3] (channel-major)
         num_speculars = (accessor.get_max_sh_degree() + 1) ** 2 - 1
         mogt_specular = attrs.specular.reshape((num_gaussians, num_speculars, 3))
-        mogt_specular = mogt_specular.transpose(0, 2, 1).reshape((num_gaussians, num_speculars * 3))
+        mogt_specular = mogt_specular.transpose(0, 2, 1).reshape(
+            (num_gaussians, num_speculars * 3)
+        )
 
         # Build PLY dtype
         dtype_full = [
@@ -89,7 +102,15 @@ class PLYExporter(ModelExporter):
         # Create PLY element
         elements = np.empty(num_gaussians, dtype=dtype_full)
         attributes = np.concatenate(
-            (attrs.positions, mogt_nrm, attrs.albedo, mogt_specular, attrs.densities, attrs.scales, attrs.rotations),
+            (
+                attrs.positions,
+                mogt_nrm,
+                attrs.albedo,
+                mogt_specular,
+                attrs.densities,
+                attrs.scales,
+                attrs.rotations,
+            ),
             axis=1,
         )
         elements[:] = list(map(tuple, attributes))

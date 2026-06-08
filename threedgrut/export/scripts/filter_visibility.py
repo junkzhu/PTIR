@@ -114,7 +114,9 @@ def compute_average_visibility(
     if num_views > 0:
         average_visibility = visibility_sum / num_views
     else:
-        logger.warning("No views processed for visibility computation, returning zero visibility")
+        logger.warning(
+            "No views processed for visibility computation, returning zero visibility"
+        )
         average_visibility = visibility_sum
 
     # Convert to numpy
@@ -131,7 +133,9 @@ def compute_average_visibility(
     for threshold in [0.0, 0.01, 0.05, 0.1, 0.2, 0.5]:
         count_below = np.sum(result < threshold)
         pct_below = 100.0 * count_below / num_gaussians
-        logger.info(f"  Gaussians with visibility < {threshold}: {count_below} ({pct_below:.2f}%)")
+        logger.info(
+            f"  Gaussians with visibility < {threshold}: {count_below} ({pct_below:.2f}%)"
+        )
 
     return result
 

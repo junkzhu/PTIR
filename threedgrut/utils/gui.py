@@ -45,11 +45,15 @@ class GUI:
 
         ps.set_use_prefs_file(False)
 
-        if self.conf.dataset.type == "nerf":  # NeRF synthetic uses the blender coordinate-system
+        if (
+            self.conf.dataset.type == "nerf"
+        ):  # NeRF synthetic uses the blender coordinate-system
             ps.set_up_dir("z_up")
             ps.set_front_dir("neg_y_front")
             ps.set_navigation_style("turntable")
-        elif self.conf.dataset.type == "colmap":  # Colmap scenes use a cartesian coordinate-system
+        elif (
+            self.conf.dataset.type == "colmap"
+        ):  # Colmap scenes use a cartesian coordinate-system
             ps.set_up_dir("neg_y_up")
             ps.set_front_dir("neg_z_front")
             ps.set_navigation_style("free")
@@ -124,7 +128,20 @@ class GUI:
             ]
         )
         edges = np.array(
-            [[0, 1], [0, 2], [0, 3], [1, 4], [1, 5], [2, 6], [2, 4], [3, 5], [3, 6], [4, 7], [5, 7], [6, 7]]
+            [
+                [0, 1],
+                [0, 2],
+                [0, 3],
+                [1, 4],
+                [1, 5],
+                [2, 6],
+                [2, 4],
+                [3, 5],
+                [3, 6],
+                [4, 7],
+                [5, 7],
+                [6, 7],
+            ]
         )
         ps.register_curve_network("bbox", nodes, edges)
 
@@ -143,7 +160,9 @@ class GUI:
             look_dir = c2w[:3, 2]
             up_dir = -c2w[:3, 1]
             cam_params = ps.get_view_camera_parameters()
-            extrinsics = ps.CameraExtrinsics(root=root, look_dir=look_dir, up_dir=up_dir)
+            extrinsics = ps.CameraExtrinsics(
+                root=root, look_dir=look_dir, up_dir=up_dir
+            )
             intrinsics = ps.CameraIntrinsics(
                 fov_vertical_deg=cam_params.get_fov_vertical_deg(),
                 aspect=cam_params.get_aspect(),
@@ -152,8 +171,13 @@ class GUI:
 
     def update_cloud_viz(self):
         # re-initialize the viz
-        if self.ps_point_cloud is None or self.ps_point_cloud.n_points() != self.model.positions.shape[0]:
-            self.ps_point_cloud = ps.register_point_cloud("centers", to_np(self.model.positions))
+        if (
+            self.ps_point_cloud is None
+            or self.ps_point_cloud.n_points() != self.model.positions.shape[0]
+        ):
+            self.ps_point_cloud = ps.register_point_cloud(
+                "centers", to_np(self.model.positions)
+            )
             self.ps_point_cloud_buffer = self.ps_point_cloud.get_buffer("points")
 
             # always do a CPU-roundtrip update
@@ -167,12 +191,19 @@ class GUI:
         view_params = ps.get_view_camera_parameters()
         cam_center = view_params.get_position()
         corner_rays = view_params.generate_camera_ray_corners()
-        c_ul, c_ur, c_ll, c_lr = [torch.tensor(a, device=DEFAULT_DEVICE, dtype=torch.float32) for a in corner_rays]
+        c_ul, c_ur, c_ll, c_lr = [
+            torch.tensor(a, device=DEFAULT_DEVICE, dtype=torch.float32)
+            for a in corner_rays
+        ]
 
         # generate view camera ray origins and directions
         interp_x, interp_y = torch.meshgrid(
-            torch.linspace(0.0, window_w - 1, window_w, device=DEFAULT_DEVICE, dtype=torch.float32),
-            torch.linspace(0.0, window_h - 1, window_h, device=DEFAULT_DEVICE, dtype=torch.float32),
+            torch.linspace(
+                0.0, window_w - 1, window_w, device=DEFAULT_DEVICE, dtype=torch.float32
+            ),
+            torch.linspace(
+                0.0, window_h - 1, window_h, device=DEFAULT_DEVICE, dtype=torch.float32
+            ),
             indexing="xy",
         )
         u = interp_x
@@ -181,9 +212,9 @@ class GUI:
         FOCAL = fov2focal(np.deg2rad(view_params.get_fov_vertical_deg()), window_h)
         xs = ((u + 0.5) - 0.5 * window_w) / FOCAL
         ys = ((v + 0.5) - 0.5 * window_h) / FOCAL
-        rays_dir = torch.nn.functional.normalize(torch.stack((xs, ys, torch.ones_like(xs)), axis=-1), dim=-1).unsqueeze(
-            0
-        )
+        rays_dir = torch.nn.functional.normalize(
+            torch.stack((xs, ys, torch.ones_like(xs)), axis=-1), dim=-1
+        ).unsqueeze(0)
 
         # Render a frame
         with torch.no_grad():
@@ -193,7 +224,11 @@ class GUI:
             inputs = Batch(
                 intrinsics=[FOCAL, FOCAL, window_w / 2, window_h / 2],
                 T_to_world=torch.FloatTensor(C2W).unsqueeze(0),
-                rays_ori=torch.zeros((1, window_h, window_w, 3), device=DEFAULT_DEVICE, dtype=torch.float32),
+                rays_ori=torch.zeros(
+                    (1, window_h, window_w, 3),
+                    device=DEFAULT_DEVICE,
+                    dtype=torch.float32,
+                ),
                 rays_dir=rays_dir.reshape(1, window_h, window_w, 3),
             )
 
@@ -227,7 +262,6 @@ class GUI:
             self.viz_curr_render_size = (window_w, window_h)
 
             if style == "color" or style == "normals":
-
                 dummy_image = np.ones((window_h, window_w, 4), dtype=np.float32)
 
                 ps.add_color_alpha_image_quantity(
@@ -239,13 +273,16 @@ class GUI:
                     show_in_imgui_window=False,
                 )
 
-                self.viz_render_color_buffer = ps.get_quantity_buffer(self.viz_render_name, "colors")
+                self.viz_render_color_buffer = ps.get_quantity_buffer(
+                    self.viz_render_name, "colors"
+                )
                 self.viz_render_scalar_buffer = None
 
             elif style == "density":
-
                 dummy_vals = np.zeros((window_h, window_w), dtype=np.float32)
-                dummy_vals[0] = 1.0  # hack so the default polyscope scale gets set more nicely
+                dummy_vals[0] = (
+                    1.0  # hack so the default polyscope scale gets set more nicely
+                )
 
                 self.viz_main_image = ps.add_scalar_image_quantity(
                     self.viz_render_name,
@@ -259,12 +296,15 @@ class GUI:
                 )
 
                 self.viz_render_color_buffer = None
-                self.viz_render_scalar_buffer = ps.get_quantity_buffer(self.viz_render_name, "values")
+                self.viz_render_scalar_buffer = ps.get_quantity_buffer(
+                    self.viz_render_name, "values"
+                )
 
             elif style == "distance":
-
                 dummy_vals = np.zeros((window_h, window_w), dtype=np.float32)
-                dummy_vals[0] = 3.0  # hack so the default polyscope scale gets set more nicely
+                dummy_vals[0] = (
+                    3.0  # hack so the default polyscope scale gets set more nicely
+                )
 
                 ps.add_scalar_image_quantity(
                     self.viz_render_name,
@@ -278,12 +318,15 @@ class GUI:
                 )
 
                 self.viz_render_color_buffer = None
-                self.viz_render_scalar_buffer = ps.get_quantity_buffer(self.viz_render_name, "values")
+                self.viz_render_scalar_buffer = ps.get_quantity_buffer(
+                    self.viz_render_name, "values"
+                )
 
             elif style == "hits":
-
                 dummy_vals = np.zeros((window_h, window_w), dtype=np.float32)
-                dummy_vals[0] = 1.0  # hack so the default polyscope scale gets set more nicely
+                dummy_vals[0] = (
+                    1.0  # hack so the default polyscope scale gets set more nicely
+                )
 
                 self.viz_main_image = ps.add_scalar_image_quantity(
                     self.viz_render_name,
@@ -297,15 +340,21 @@ class GUI:
                 )
 
                 self.viz_render_color_buffer = None
-                self.viz_render_scalar_buffer = ps.get_quantity_buffer(self.viz_render_name, "values")
+                self.viz_render_scalar_buffer = ps.get_quantity_buffer(
+                    self.viz_render_name, "values"
+                )
 
         # do the actual rendering
-        sple_orad, sple_odns, sple_odist, sple_onrm, sple_ohit = self.render_from_current_ps_view()
+        sple_orad, sple_odns, sple_odist, sple_onrm, sple_ohit = (
+            self.render_from_current_ps_view()
+        )
 
         # update the data
         if style == "color":
             # append 1s for alpha
-            sple_orad = torch.cat((sple_orad, torch.ones_like(sple_orad[:, :, :, 0:1])), dim=-1)
+            sple_orad = torch.cat(
+                (sple_orad, torch.ones_like(sple_orad[:, :, :, 0:1])), dim=-1
+            )
             if self.update_from_device:
                 self.viz_render_color_buffer.update_data_from_device(sple_orad.detach())
             else:
@@ -313,23 +362,31 @@ class GUI:
 
         elif style == "density":
             if self.update_from_device:
-                self.viz_render_scalar_buffer.update_data_from_device(sple_odns.detach())
+                self.viz_render_scalar_buffer.update_data_from_device(
+                    sple_odns.detach()
+                )
             else:
                 self.viz_render_scalar_buffer.update_data(to_np(sple_odns))
 
         elif style == "distance":
             if self.update_from_device:
                 self.viz_render_scalar_buffer.update_data_from_device(
-                    (sple_odist.detach() * self.viz_render_style_scale) / torch.clamp(sple_odns, min=1e-06)
+                    (sple_odist.detach() * self.viz_render_style_scale)
+                    / torch.clamp(sple_odns, min=1e-06)
                 )
             else:
                 self.viz_render_scalar_buffer.update_data(
-                    to_np((sple_odist * self.viz_render_style_scale) / torch.clamp(sple_odns, min=1e-06))
+                    to_np(
+                        (sple_odist * self.viz_render_style_scale)
+                        / torch.clamp(sple_odns, min=1e-06)
+                    )
                 )
 
         elif style == "hits":
             if self.update_from_device:
-                self.viz_render_scalar_buffer.update_data_from_device(sple_ohit.detach())
+                self.viz_render_scalar_buffer.update_data_from_device(
+                    sple_ohit.detach()
+                )
             else:
                 self.viz_render_scalar_buffer.update_data(to_np(sple_ohit))
 
@@ -337,7 +394,9 @@ class GUI:
             # scale in rendering space
             sple_onrm = 0.5 * (sple_onrm + 1)
             # append 1s for alpha
-            sple_onrm = torch.cat((sple_onrm, torch.ones_like(sple_onrm[:, :, :, 0:1])), dim=-1)
+            sple_onrm = torch.cat(
+                (sple_onrm, torch.ones_like(sple_onrm[:, :, :, 0:1])), dim=-1
+            )
             if self.update_from_device:
                 self.viz_render_color_buffer.update_data_from_device(sple_onrm.detach())
             else:
@@ -349,7 +408,11 @@ class GUI:
 
         splprep_k = 3  # default value for splprep
         if len(trajectory) <= splprep_k:
-            logger.warning("Trajectory too short to interpolate. Need at least {} points.".format(splprep_k + 1))
+            logger.warning(
+                "Trajectory too short to interpolate. Need at least {} points.".format(
+                    splprep_k + 1
+                )
+            )
             return
 
         out_video = None
@@ -369,14 +432,21 @@ class GUI:
         output_video_filename = "output.mp4"
 
         for eye, target in logger.track(
-            list(zip(eyes_new, targets_new)), description="Write Video", color="misty_rose1", transient=True
+            list(zip(eyes_new, targets_new)),
+            description="Write Video",
+            color="misty_rose1",
+            transient=True,
         ):
             ps.look_at(eye, target)
             rgb, _, _, _, _ = self.render_from_current_ps_view()
 
             if out_video is None:
                 out_video = cv2.VideoWriter(
-                    output_video_filename, cv2.VideoWriter_fourcc(*"mp4v"), 30, (rgb.shape[2], rgb.shape[1]), True
+                    output_video_filename,
+                    cv2.VideoWriter_fourcc(*"mp4v"),
+                    30,
+                    (rgb.shape[2], rgb.shape[1]),
+                    True,
                 )
 
             data = rgb[0].clip(0, 1).detach().cpu().numpy()
@@ -393,8 +463,12 @@ class GUI:
 
         # FPS counter
         io = psim.GetIO()
-        psim.TextUnformatted(f"Rolling: {1000.0 / io.Framerate:.1f} ms/frame ({io.Framerate:.1f} fps)")
-        psim.TextUnformatted(f"Last: {io.DeltaTime * 1000:.1f} ms/frame ({1./io.DeltaTime:.1f} fps)")
+        psim.TextUnformatted(
+            f"Rolling: {1000.0 / io.Framerate:.1f} ms/frame ({io.Framerate:.1f} fps)"
+        )
+        psim.TextUnformatted(
+            f"Last: {io.DeltaTime * 1000:.1f} ms/frame ({1.0 / io.DeltaTime:.1f} fps)"
+        )
 
         # Create a little ImGUI UI
         psim.SetNextItemOpen(True, psim.ImGuiCond_FirstUseEver)
@@ -425,7 +499,8 @@ class GUI:
                 cam_center = view_params.get_position()
                 corner_rays = view_params.generate_camera_ray_corners()
                 c_ul, c_ur, c_ll, c_lr = [
-                    torch.tensor(a, device=DEFAULT_DEVICE, dtype=torch.float32) for a in corner_rays
+                    torch.tensor(a, device=DEFAULT_DEVICE, dtype=torch.float32)
+                    for a in corner_rays
                 ]
                 c_mid = (c_ul + c_ur + c_ll + c_lr) / 4
                 trajectory.append((cam_center, cam_center + c_mid.cpu().numpy()))
@@ -435,21 +510,33 @@ class GUI:
             if psim.Button("Render Trajectory"):
                 self.render_trajectory()
 
-            _, self.viz_render_show_details = psim.Checkbox("Infos", self.viz_render_show_details)
+            _, self.viz_render_show_details = psim.Checkbox(
+                "Infos", self.viz_render_show_details
+            )
             if self.viz_render_show_details:
                 psim.SameLine()
-                psim.Text(f"({self.render_width}x{self.render_height}) @ {self.render_timer.timing()} ms.")
+                psim.Text(
+                    f"({self.render_width}x{self.render_height}) @ {self.render_timer.timing()} ms."
+                )
 
-            _, self.viz_render_style_ind = psim.Combo("Style", self.viz_render_style_ind, self.viz_render_styles)
+            _, self.viz_render_style_ind = psim.Combo(
+                "Style", self.viz_render_style_ind, self.viz_render_styles
+            )
             if self.viz_render_styles[self.viz_render_style_ind] == "distance":
                 psim.SameLine()
-                _, self.viz_render_style_scale = psim.InputFloat("scale", self.viz_render_style_scale, 0.01)
+                _, self.viz_render_style_scale = psim.InputFloat(
+                    "scale", self.viz_render_style_scale, 0.01
+                )
 
-            changed, self.viz_render_subsample = psim.InputInt("Subsample Factor", self.viz_render_subsample, 1)
+            changed, self.viz_render_subsample = psim.InputInt(
+                "Subsample Factor", self.viz_render_subsample, 1
+            )
             if changed:
                 self.viz_render_subsample = max(self.viz_render_subsample, 1)
 
-            _, self.viz_render_train_view = psim.Checkbox("render w/ train=True", self.viz_render_train_view)
+            _, self.viz_render_train_view = psim.Checkbox(
+                "render w/ train=True", self.viz_render_train_view
+            )
 
             psim.TreePop()
 

@@ -38,7 +38,9 @@ class EnvAliasTable:
     pdf: torch.Tensor
 
 
-def build_alias_table(weights: torch.Tensor, eps: float = 0.0) -> tuple[torch.Tensor, torch.Tensor]:
+def build_alias_table(
+    weights: torch.Tensor, eps: float = 0.0
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Build a Vose alias table from non-negative weights.
 
     Returns flattened ``prob`` and ``alias`` tensors suitable for the C-side
@@ -51,7 +53,9 @@ def build_alias_table(weights: torch.Tensor, eps: float = 0.0) -> tuple[torch.Te
         raise ValueError(f"eps must be non-negative, got {eps}.")
 
     device = weights_tensor.device
-    flat_weights = weights_tensor.detach().reshape(-1).to(device="cpu", dtype=torch.float64)
+    flat_weights = (
+        weights_tensor.detach().reshape(-1).to(device="cpu", dtype=torch.float64)
+    )
     flat_weights = torch.where(
         torch.isfinite(flat_weights) & (flat_weights > 0.0),
         flat_weights,
@@ -77,7 +81,9 @@ def build_alias_table(weights: torch.Tensor, eps: float = 0.0) -> tuple[torch.Te
             small_index = small.pop()
             large_index = large.pop()
 
-            probabilities[small_index] = np.float32(np.clip(scaled_weights[small_index], 0.0, 1.0))
+            probabilities[small_index] = np.float32(
+                np.clip(scaled_weights[small_index], 0.0, 1.0)
+            )
             aliases[small_index] = large_index
 
             scaled_weights[large_index] -= 1.0 - scaled_weights[small_index]
@@ -93,8 +99,16 @@ def build_alias_table(weights: torch.Tensor, eps: float = 0.0) -> tuple[torch.Te
             probabilities[index] = 1.0
             aliases[index] = index
 
-    prob = torch.from_numpy(probabilities).to(device=device, dtype=torch.float32).contiguous()
-    alias = torch.from_numpy(aliases.astype(np.int32)).to(device=device, dtype=torch.int32).contiguous()
+    prob = (
+        torch.from_numpy(probabilities)
+        .to(device=device, dtype=torch.float32)
+        .contiguous()
+    )
+    alias = (
+        torch.from_numpy(aliases.astype(np.int32))
+        .to(device=device, dtype=torch.int32)
+        .contiguous()
+    )
     return prob, alias
 
 
@@ -104,7 +118,9 @@ def _environment_luminance(
 ) -> torch.Tensor:
     tensor = torch.as_tensor(environment)
     if tensor.ndim != 3 or tensor.shape[-1] < 3:
-        raise ValueError(f"Environment must have shape [H, W, C>=3], got {tuple(tensor.shape)}")
+        raise ValueError(
+            f"Environment must have shape [H, W, C>=3], got {tuple(tensor.shape)}"
+        )
 
     rgb = tensor[..., :3].detach().to(dtype=torch.float32)
     rgb = torch.where(torch.isfinite(rgb) & (rgb > 0.0), rgb, torch.zeros_like(rgb))
@@ -120,13 +136,17 @@ def _resize_2d_environment_for_alias_table(
     if target_size is None:
         return tensor
     if len(target_size) != 2:
-        raise ValueError(f"target_size must be a (height, width) pair, got {target_size}.")
+        raise ValueError(
+            f"target_size must be a (height, width) pair, got {target_size}."
+        )
 
     target_height, target_width = int(target_size[0]), int(target_size[1])
     if target_height <= 0 or target_width <= 0:
         raise ValueError(f"target_size entries must be positive, got {target_size}.")
     if tensor.ndim != 3 or tensor.shape[-1] < 3:
-        raise ValueError(f"Environment must have shape [H, W, C>=3], got {tuple(tensor.shape)}")
+        raise ValueError(
+            f"Environment must have shape [H, W, C>=3], got {tuple(tensor.shape)}"
+        )
     if tuple(tensor.shape[:2]) == (target_height, target_width):
         return tensor
 
@@ -135,13 +155,26 @@ def _resize_2d_environment_for_alias_table(
     return resized.squeeze(0).permute(1, 2, 0).contiguous()
 
 
-def _equirect_solid_angles(height: int, width: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
-    row_edges = (torch.arange(height + 1, dtype=dtype, device=device) / float(height) - 0.5) * torch.pi
-    row_solid_angles = (2.0 * torch.pi / float(width)) * (torch.sin(row_edges[1:]) - torch.sin(row_edges[:-1]))
-    return torch.clamp(row_solid_angles, min=0.0).reshape(height, 1).expand(height, width).contiguous()
+def _equirect_solid_angles(
+    height: int, width: int, device: torch.device, dtype: torch.dtype
+) -> torch.Tensor:
+    row_edges = (
+        torch.arange(height + 1, dtype=dtype, device=device) / float(height) - 0.5
+    ) * torch.pi
+    row_solid_angles = (2.0 * torch.pi / float(width)) * (
+        torch.sin(row_edges[1:]) - torch.sin(row_edges[:-1])
+    )
+    return (
+        torch.clamp(row_solid_angles, min=0.0)
+        .reshape(height, 1)
+        .expand(height, width)
+        .contiguous()
+    )
 
 
-def _cubemap_solid_angles(face_size: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+def _cubemap_solid_angles(
+    face_size: int, device: torch.device, dtype: torch.dtype
+) -> torch.Tensor:
     edges = torch.linspace(-1.0, 1.0, face_size + 1, dtype=dtype, device=device)
     u0 = edges[:-1].reshape(1, face_size)
     u1 = edges[1:].reshape(1, face_size)
@@ -169,7 +202,9 @@ def _environment_solid_angles(
 ) -> torch.Tensor:
     if environment_type == "cube":
         if height != 6 * width:
-            raise ValueError(f"Cubemap environment must have shape [6*N, N, C], got H={height}, W={width}.")
+            raise ValueError(
+                f"Cubemap environment must have shape [6*N, N, C], got H={height}, W={width}."
+            )
         return _cubemap_solid_angles(width, device, dtype)
     return _equirect_solid_angles(height, width, device, dtype)
 
@@ -186,14 +221,18 @@ def environment_importance_weights(
 
     normalized_type = str(environment_type).lower()
     if normalized_type not in ("2d", "cube"):
-        raise ValueError(f"environment_type must be one of ['2d', 'cube'], got '{environment_type}'.")
+        raise ValueError(
+            f"environment_type must be one of ['2d', 'cube'], got '{environment_type}'."
+        )
 
     weights = _environment_luminance(environment, luminance_weights)
     if not include_solid_angle:
         return weights.contiguous()
 
     height, width = weights.shape
-    solid_angles = _environment_solid_angles(height, width, normalized_type, weights.device, weights.dtype)
+    solid_angles = _environment_solid_angles(
+        height, width, normalized_type, weights.device, weights.dtype
+    )
     return (weights * solid_angles).contiguous()
 
 
@@ -212,7 +251,9 @@ def build_environment_alias_table(
 
     normalized_type = str(environment_type).lower()
     if normalized_type not in ("2d", "cube"):
-        raise ValueError(f"environment_type must be one of ['2d', 'cube'], got '{environment_type}'.")
+        raise ValueError(
+            f"environment_type must be one of ['2d', 'cube'], got '{environment_type}'."
+        )
 
     if normalized_type == "2d":
         environment = _resize_2d_environment_for_alias_table(environment, target_size)
@@ -222,7 +263,9 @@ def build_environment_alias_table(
         luminance = luminance + eps
 
     height, width = luminance.shape
-    solid_angles = _environment_solid_angles(height, width, normalized_type, luminance.device, luminance.dtype)
+    solid_angles = _environment_solid_angles(
+        height, width, normalized_type, luminance.device, luminance.dtype
+    )
     sample_weights = (luminance * solid_angles).contiguous()
 
     total_weight = sample_weights.sum()
@@ -232,7 +275,10 @@ def build_environment_alias_table(
 
     pdf = torch.where(
         solid_angles > 0.0,
-        sample_weights / torch.clamp(total_weight * solid_angles, min=torch.finfo(sample_weights.dtype).tiny),
+        sample_weights
+        / torch.clamp(
+            total_weight * solid_angles, min=torch.finfo(sample_weights.dtype).tiny
+        ),
         torch.zeros_like(sample_weights),
     )
     prob, alias = build_alias_table(sample_weights)
@@ -249,14 +295,18 @@ def build_environment_alias_table(
 def environment_tensor_to_rgb_numpy(environment: torch.Tensor) -> np.ndarray:
     environment = environment.detach()
     if environment.ndim != 3 or environment.shape[-1] < 3:
-        raise ValueError(f"Environment must have shape [H, W, C>=3], got {tuple(environment.shape)}")
+        raise ValueError(
+            f"Environment must have shape [H, W, C>=3], got {tuple(environment.shape)}"
+        )
 
     rgb = environment[..., :3].detach().cpu().numpy()
     rgb = np.nan_to_num(rgb, nan=0.0, posinf=0.0, neginf=0.0)
     return rgb.astype(np.float32, copy=False)
 
 
-def save_environment_exr(environment: Optional[torch.Tensor], output_path: str) -> Optional[str]:
+def save_environment_exr(
+    environment: Optional[torch.Tensor], output_path: str
+) -> Optional[str]:
     if environment is None:
         return None
 
@@ -306,7 +356,9 @@ class Environment:
         self.path = path
         self.folder = None
         self.environment_type = self._normalize_environment_type(environment_type)
-        self.environment_parameterization = self._normalize_environment_parameterization(parameterization)
+        self.environment_parameterization = (
+            self._normalize_environment_parameterization(parameterization)
+        )
         self.optimize_environment = bool(optimize_environment)
         self.intensity = 1.0
 
@@ -315,7 +367,9 @@ class Environment:
         self._hdr_data = None
         self.environment_offset = [0.0, 0.0]
 
-        self.available_environments = [option for option in self.FIXED_ENVIRONMENT_OPTIONS]
+        self.available_environments = [
+            option for option in self.FIXED_ENVIRONMENT_OPTIONS
+        ]
         if path is None:
             self.init_environment()
         else:
@@ -330,20 +384,32 @@ class Environment:
         return torch.exp(environment)
 
     def _uses_log_parameterization(self) -> bool:
-        return self.environment_parameterization == self.LOG_ENVIRONMENT_PARAMETERIZATION
+        return (
+            self.environment_parameterization == self.LOG_ENVIRONMENT_PARAMETERIZATION
+        )
 
     def _as_environment_tensor(self, environment: torch.Tensor) -> torch.Tensor:
-        tensor = torch.as_tensor(environment, dtype=torch.float32, device=self.device).contiguous()
+        tensor = torch.as_tensor(
+            environment, dtype=torch.float32, device=self.device
+        ).contiguous()
         if tensor.dim() != 3 or tensor.size(-1) != 4:
-            raise ValueError(f"environment must have shape [H, W, 4], got {tuple(tensor.shape)}")
+            raise ValueError(
+                f"environment must have shape [H, W, 4], got {tuple(tensor.shape)}"
+            )
         return tensor
 
-    def _set_environment_parameter(self, environment: torch.Tensor, parameterization: Optional[str] = None) -> None:
+    def _set_environment_parameter(
+        self, environment: torch.Tensor, parameterization: Optional[str] = None
+    ) -> None:
         if parameterization is not None:
-            self.environment_parameterization = self._normalize_environment_parameterization(parameterization)
+            self.environment_parameterization = (
+                self._normalize_environment_parameterization(parameterization)
+            )
         tensor = self._as_environment_tensor(environment)
         if self.optimize_environment:
-            self.environment = torch.nn.Parameter(tensor.detach().clone(), requires_grad=True)
+            self.environment = torch.nn.Parameter(
+                tensor.detach().clone(), requires_grad=True
+            )
         elif self._uses_log_parameterization():
             self.environment = self._internal_to_actual(tensor).detach()
         else:
@@ -357,9 +423,13 @@ class Environment:
         tensor = self._as_environment_tensor(environment)
         if self.optimize_environment and self._uses_log_parameterization():
             tensor = self._actual_to_internal(tensor)
-            self.environment = torch.nn.Parameter(tensor.detach().clone(), requires_grad=True)
+            self.environment = torch.nn.Parameter(
+                tensor.detach().clone(), requires_grad=True
+            )
         elif self.optimize_environment:
-            self.environment = torch.nn.Parameter(tensor.detach().clone(), requires_grad=True)
+            self.environment = torch.nn.Parameter(
+                tensor.detach().clone(), requires_grad=True
+            )
         else:
             self.environment = tensor.detach()
 
@@ -381,9 +451,14 @@ class Environment:
     @classmethod
     def _normalize_environment_parameterization(cls, parameterization: str) -> str:
         normalized = str(parameterization).lower()
-        options = (cls.LINEAR_ENVIRONMENT_PARAMETERIZATION, cls.LOG_ENVIRONMENT_PARAMETERIZATION)
+        options = (
+            cls.LINEAR_ENVIRONMENT_PARAMETERIZATION,
+            cls.LOG_ENVIRONMENT_PARAMETERIZATION,
+        )
         if normalized not in options:
-            raise ValueError(f"environment.parameterization must be one of {options}, got '{parameterization}'.")
+            raise ValueError(
+                f"environment.parameterization must be one of {options}, got '{parameterization}'."
+            )
         return normalized
 
     @classmethod
@@ -391,7 +466,8 @@ class Environment:
         return [
             name
             for name in os.listdir(folder)
-            if os.path.isdir(os.path.join(folder, name)) or name.lower().endswith(cls.ENVIRONMENT_EXTENSIONS)
+            if os.path.isdir(os.path.join(folder, name))
+            or name.lower().endswith(cls.ENVIRONMENT_EXTENSIONS)
         ]
 
     def _read_environment_file(self, environment_path: str) -> np.ndarray:
@@ -411,13 +487,17 @@ class Environment:
         if rgb.ndim == 2:
             rgb = np.repeat(rgb[..., None], 3, axis=-1)
         if rgb.ndim != 3:
-            raise ValueError(f"Environment map must have shape HxW or HxWxC, got {rgb.shape}.")
+            raise ValueError(
+                f"Environment map must have shape HxW or HxWxC, got {rgb.shape}."
+            )
         if rgb.shape[-1] == 1:
             rgb = np.repeat(rgb, 3, axis=-1)
         elif rgb.shape[-1] > 3:
             rgb = rgb[..., :3]
         elif rgb.shape[-1] != 3:
-            raise ValueError(f"Environment map must have 1, 3, or 4 channels, got {rgb.shape[-1]}.")
+            raise ValueError(
+                f"Environment map must have 1, 3, or 4 channels, got {rgb.shape[-1]}."
+            )
 
         if np.issubdtype(rgb.dtype, np.integer):
             rgb = rgb.astype(np.float32) / np.iinfo(rgb.dtype).max
@@ -430,14 +510,19 @@ class Environment:
     def _prepare_cubemap(cls, rgb: np.ndarray) -> np.ndarray:
         if rgb.ndim == 4:
             if rgb.shape[0] != 6 or rgb.shape[1] != rgb.shape[2]:
-                raise ValueError(f"Cubemap array must have shape 6xNxNxC, got {rgb.shape}.")
+                raise ValueError(
+                    f"Cubemap array must have shape 6xNxNxC, got {rgb.shape}."
+                )
             return np.concatenate([rgb[face] for face in range(6)], axis=0)
 
         height, width, _ = rgb.shape
         if height == 6 * width:
             return rgb
         if width == 6 * height:
-            return np.concatenate([rgb[:, face * height : (face + 1) * height] for face in range(6)], axis=0)
+            return np.concatenate(
+                [rgb[:, face * height : (face + 1) * height] for face in range(6)],
+                axis=0,
+            )
 
         raise ValueError(
             "Cubemap must be a vertical strip [6*N, N, C], a horizontal strip [N, 6*N, C], "
@@ -455,7 +540,8 @@ class Environment:
         files = [
             name
             for name in os.listdir(folder)
-            if os.path.isfile(os.path.join(folder, name)) and name.lower().endswith(cls.ENVIRONMENT_EXTENSIONS)
+            if os.path.isfile(os.path.join(folder, name))
+            and name.lower().endswith(cls.ENVIRONMENT_EXTENSIONS)
         ]
         lowered = {os.path.splitext(name)[0].lower(): name for name in files}
 
@@ -475,18 +561,26 @@ class Environment:
 
         return face_paths
 
-    def load_cubemap_files(self, face_paths: Sequence[str] | Mapping[str, str]) -> torch.Tensor:
+    def load_cubemap_files(
+        self, face_paths: Sequence[str] | Mapping[str, str]
+    ) -> torch.Tensor:
         """Load six square cubemap face files in +X, -X, +Y, -Y, +Z, -Z order."""
         if isinstance(face_paths, Mapping):
             face_paths = [face_paths[name] for name in self.CUBEMAP_FACE_NAMES]
         if len(face_paths) != 6:
-            raise ValueError(f"Cubemap loading requires six face files, got {len(face_paths)}.")
+            raise ValueError(
+                f"Cubemap loading requires six face files, got {len(face_paths)}."
+            )
 
-        faces = [self._prepare_rgb(self._read_environment_file(path)) for path in face_paths]
+        faces = [
+            self._prepare_rgb(self._read_environment_file(path)) for path in face_paths
+        ]
         face_size = faces[0].shape[0]
         for face_name, face in zip(self.CUBEMAP_FACE_NAMES, faces):
             if face.shape[0] != face.shape[1]:
-                raise ValueError(f"Cubemap face {face_name} must be square, got {face.shape}.")
+                raise ValueError(
+                    f"Cubemap face {face_name} must be square, got {face.shape}."
+                )
             if face.shape[:2] != (face_size, face_size):
                 raise ValueError(
                     f"Cubemap face {face_name} shape {face.shape[:2]} does not match {face_size}x{face_size}."
@@ -494,7 +588,9 @@ class Environment:
 
         self.environment_type = "cube"
         self.path = None
-        self.folder = os.path.commonpath([os.path.dirname(os.path.abspath(path)) for path in face_paths])
+        self.folder = os.path.commonpath(
+            [os.path.dirname(os.path.abspath(path)) for path in face_paths]
+        )
         self.current_name = "Cubemap-Faces"
         self._hdr_data = self._prepare_cubemap(np.stack(faces, axis=0))
         self._update()
@@ -505,7 +601,9 @@ class Environment:
         if os.path.isdir(environment_path):
             if self.environment_type != "cube":
                 raise ValueError("Directory loading is only supported for cubemaps.")
-            environment = self.load_cubemap_files(self._find_cubemap_face_paths(environment_path))
+            environment = self.load_cubemap_files(
+                self._find_cubemap_face_paths(environment_path)
+            )
             self.path = environment_path
             self.current_name = os.path.basename(os.path.normpath(environment_path))
             return environment
@@ -516,28 +614,39 @@ class Environment:
         self.path = environment_path
         self.folder = os.path.dirname(environment_path)
         self.current_name = os.path.basename(environment_path)
-        self._hdr_data = self._prepare_environment_data(self._read_environment_file(environment_path))
+        self._hdr_data = self._prepare_environment_data(
+            self._read_environment_file(environment_path)
+        )
         self._update()
         return self.get_environment()
 
     def load_file(self, environment_path: str) -> torch.Tensor:
         return self.load_path(environment_path)
 
-    def _load_hdr(self, environment_name: Optional[str] = None) -> Optional[torch.Tensor]:
+    def _load_hdr(
+        self, environment_name: Optional[str] = None
+    ) -> Optional[torch.Tensor]:
         """Load an environment map by name from ``self.folder``."""
-        if not self.available_environments or environment_name in self.FIXED_ENVIRONMENT_OPTIONS:
+        if (
+            not self.available_environments
+            or environment_name in self.FIXED_ENVIRONMENT_OPTIONS
+        ):
             self.environment = None
             return None
 
         if environment_name not in self.available_environments:
-            raise ValueError(f"Environment map {self.folder}{os.path.sep}{environment_name} not found.")
+            raise ValueError(
+                f"Environment map {self.folder}{os.path.sep}{environment_name} not found."
+            )
 
         if environment_name != self.current_name:
             environment_path = os.path.join(self.folder, environment_name)
             if os.path.isdir(environment_path):
                 self.load_path(environment_path)
             else:
-                self._hdr_data = self._prepare_environment_data(self._read_environment_file(environment_path))
+                self._hdr_data = self._prepare_environment_data(
+                    self._read_environment_file(environment_path)
+                )
                 self._update()
 
         return self.get_environment()
@@ -548,7 +657,12 @@ class Environment:
             width = self.DEFAULT_CUBEMAP_FACE_SIZE
         else:
             height, width = self.DEFAULT_ENVIRONMENT_SIZE
-        environment = torch.full([height, width, 4], value * self.intensity, dtype=torch.float32, device=self.device)
+        environment = torch.full(
+            [height, width, 4],
+            value * self.intensity,
+            dtype=torch.float32,
+            device=self.device,
+        )
         environment[..., 3] = 1.0
         return environment
 
@@ -574,7 +688,9 @@ class Environment:
     def _update(self) -> None:
         if self._hdr_data is None:
             return
-        environment = torch.as_tensor(self._hdr_data, dtype=torch.float32, device=self.device).contiguous()
+        environment = torch.as_tensor(
+            self._hdr_data, dtype=torch.float32, device=self.device
+        ).contiguous()
         environment = environment * self.intensity
         pad = environment.new_ones(environment.shape[0], environment.shape[1], 1)
         self._set_environment_tensor(torch.cat([environment, pad], dim=-1))
@@ -590,7 +706,9 @@ class Environment:
         return self.environment
 
     def get_environment_offset(self) -> torch.Tensor:
-        return torch.tensor(self.environment_offset, dtype=torch.float32, device=self.device)
+        return torch.tensor(
+            self.environment_offset, dtype=torch.float32, device=self.device
+        )
 
     def build_alias_table(
         self,
@@ -615,7 +733,9 @@ class Environment:
             "current_name": self.current_name,
             "path": self.path,
             "environment_offset": list(self.environment_offset),
-            "environment": None if self.environment is None else self.environment.detach().clone(),
+            "environment": None
+            if self.environment is None
+            else self.environment.detach().clone(),
             "environment_parameterization": (
                 self.environment_parameterization
                 if self.optimize_environment
@@ -629,16 +749,24 @@ class Environment:
     def load_state_dict(self, state_dict: dict) -> None:
         self.current_name = state_dict.get("current_name", self.current_name)
         self.path = state_dict.get("path", self.path)
-        self.environment_offset = list(state_dict.get("environment_offset", self.environment_offset))
+        self.environment_offset = list(
+            state_dict.get("environment_offset", self.environment_offset)
+        )
         self.environment_type = self._normalize_environment_type(
             state_dict.get("environment_type", self.environment_type)
         )
-        self.optimize_environment = bool(state_dict.get("optimize_environment", self.optimize_environment))
+        self.optimize_environment = bool(
+            state_dict.get("optimize_environment", self.optimize_environment)
+        )
         self.intensity = float(state_dict.get("intensity", self.intensity))
         environment = state_dict.get("environment")
-        parameterization = state_dict.get("environment_parameterization", self.LINEAR_ENVIRONMENT_PARAMETERIZATION)
+        parameterization = state_dict.get(
+            "environment_parameterization", self.LINEAR_ENVIRONMENT_PARAMETERIZATION
+        )
         if environment is None:
-            self.environment_parameterization = self._normalize_environment_parameterization(parameterization)
+            self.environment_parameterization = (
+                self._normalize_environment_parameterization(parameterization)
+            )
             self.environment = None
         else:
             self._set_environment_parameter(environment, parameterization)

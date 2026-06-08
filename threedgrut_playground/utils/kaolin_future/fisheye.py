@@ -32,7 +32,9 @@ def _to_ndc_coords(pixel_x, pixel_y, camera):
 
 
 def generate_fisheye_rays(
-    camera: Camera, coords_grid: Optional[Tuple[torch.Tensor, torch.Tensor]] = None, eps: float = 1e-9
+    camera: Camera,
+    coords_grid: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+    eps: float = 1e-9,
 ):
     r"""Default ray generation function for perfect wide-angle fisheye cameras.
 
@@ -66,9 +68,13 @@ def generate_fisheye_rays(
             (rays outside the fov region shouldn't be rendered), of shape
             :math:`(\text{HxW, 1})`.
     """
-    assert len(camera) == 1, "generate_fisheye_rays() supports only camera input of batch size 1"
+    assert len(camera) == 1, (
+        "generate_fisheye_rays() supports only camera input of batch size 1"
+    )
     if coords_grid is None:
-        coords_grid = generate_centered_pixel_coords(camera.width, camera.height, device=camera.device)
+        coords_grid = generate_centered_pixel_coords(
+            camera.width, camera.height, device=camera.device
+        )
     else:
         assert camera.device == coords_grid[0].device, (
             f"Expected camera and coords_grid[0] to be on the same device, "
@@ -101,7 +107,12 @@ def generate_fisheye_rays(
     theta = r * camera.fov(in_degrees=False) * 0.5
 
     rays_dir = torch.stack(
-        [torch.cos(phi) * torch.sin(theta), torch.sin(phi) * torch.sin(theta), torch.cos(theta)], dim=2
+        [
+            torch.cos(phi) * torch.sin(theta),
+            torch.sin(phi) * torch.sin(theta),
+            torch.cos(theta),
+        ],
+        dim=2,
     )
     mock_dir = torch.zeros_like(rays_dir)
     mock_dir[:, :, 0] = -1.0

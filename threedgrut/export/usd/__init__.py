@@ -40,4 +40,6 @@ except ModuleNotFoundError as e:
         raise
     import warnings
 
-    warnings.warn(f"USD export functionality unavailable: {e}", ImportWarning, stacklevel=2)
+    warnings.warn(
+        f"USD export functionality unavailable: {e}", ImportWarning, stacklevel=2
+    )

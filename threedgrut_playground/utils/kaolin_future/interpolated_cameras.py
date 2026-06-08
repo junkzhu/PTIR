@@ -96,7 +96,10 @@ def _catmull_rom(
         For tensors, the interpolation is applied element-wise.
     """
     q_t = 0.5 * (
-        (2.0 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t**2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t**3
+        (2.0 * p1)
+        + (-p0 + p2) * t
+        + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t**2
+        + (-p0 + 3 * p1 - 3 * p2 + p3) * t**3
     )
     return q_t
 
@@ -250,7 +253,10 @@ def _lerp_q(a: torch.Tensor, b: torch.Tensor, t: float):
 
 
 def interpolate_camera_on_polynomial_path(
-    trajectory: List[Camera], timestep: int, frames_between_cameras: int = 60, N: int = 3
+    trajectory: List[Camera],
+    timestep: int,
+    frames_between_cameras: int = 60,
+    N: int = 3,
 ) -> Camera:
     """Interpolates a camera from a smoothed path formed by a trajectory of cameras.
     The trajectory is assumed to have a list of at least 2 cameras, where the first and last cameras form a
@@ -297,11 +303,20 @@ def interpolate_camera_on_polynomial_path(
         intrinsics["fov"] = (cam1.fov(in_degrees=False), cam2.fov(in_degrees=False))
     elif cam1.lens_type == "ortho" and cam2.lens_type == "ortho":
         intrinsics["fov_distance"] = (cam1.fov_distance(), cam2.fov_distance())
-    intrinsics = {intr_name: _lerp(intr_val[0], intr_val[1], x) for intr_name, intr_val in intrinsics.items()}
+    intrinsics = {
+        intr_name: _lerp(intr_val[0], intr_val[1], x)
+        for intr_name, intr_val in intrinsics.items()
+    }
     width = round(_lerp(cam1.width, cam2.width, x))
     height = round(_lerp(cam1.height, cam2.height, x))
 
-    cam = Camera.from_args(view_matrix=view_matrix, width=width, height=height, device=cam1.device, **intrinsics)
+    cam = Camera.from_args(
+        view_matrix=view_matrix,
+        width=width,
+        height=height,
+        device=cam1.device,
+        **intrinsics,
+    )
 
     return cam
 
@@ -378,7 +393,13 @@ def interpolate_camera_on_spline_path(
     height = round(_catmull_rom(cam1.height, cam2.height, cam3.height, cam4.height, x))
 
     # Create camera from view matrix
-    cam = Camera.from_args(view_matrix=view_matrix, width=width, height=height, device=cam1.device, **intrinsics)
+    cam = Camera.from_args(
+        view_matrix=view_matrix,
+        width=width,
+        height=height,
+        device=cam1.device,
+        **intrinsics,
+    )
 
     return cam
 
@@ -396,13 +417,19 @@ def get_interpolator(interpolation: str, trajectory: List[Camera]) -> Callable:
     if interpolation == "polynomial":
         interpolator = interpolate_camera_on_polynomial_path
         if len(trajectory) < 2:
-            raise ValueError("For polynomial interpolation, cameras trajectory must have at least 2 cameras.")
+            raise ValueError(
+                "For polynomial interpolation, cameras trajectory must have at least 2 cameras."
+            )
     elif interpolation == "catmull_rom":
         interpolator = interpolate_camera_on_spline_path
         if len(trajectory) < 4:
-            raise ValueError("For catmull_rom interpolation, cameras trajectory must have at least 4 cameras.")
+            raise ValueError(
+                "For catmull_rom interpolation, cameras trajectory must have at least 4 cameras."
+            )
     else:
-        raise ValueError("Unknown interpolation function specified. Valid options: 'polynomial', 'catmull_rom'.")
+        raise ValueError(
+            "Unknown interpolation function specified. Valid options: 'polynomial', 'catmull_rom'."
+        )
     return interpolator
 
 
@@ -437,11 +464,16 @@ def infinite_loop_camera_path_generator(
 
     while True:
         yield interpolator(_trajectory, timestep, frames_between_cameras)
-        timestep = max((timestep + 1) % ((len(trajectory) + 1) * frames_between_cameras), frames_between_cameras)
+        timestep = max(
+            (timestep + 1) % ((len(trajectory) + 1) * frames_between_cameras),
+            frames_between_cameras,
+        )
 
 
 def camera_path_generator(
-    trajectory: List[Camera], frames_between_cameras: int = 60, interpolation: str = "catmull_rom"
+    trajectory: List[Camera],
+    frames_between_cameras: int = 60,
+    interpolation: str = "catmull_rom",
 ) -> Iterator[Camera]:
     """A finite generator function for returning continuous camera objects an o path interpolated
     from a trajectory of cameras.

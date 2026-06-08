@@ -94,7 +94,9 @@ ALL_NCORE_CONFIG_KEYS = list(NCORE_CONFIGS.keys())
 class BenchmarkResult:
     name: str
     samples: list[float] = field(default_factory=list)
-    event_pairs: list[tuple[torch.cuda.Event, torch.cuda.Event]] = field(default_factory=list)
+    event_pairs: list[tuple[torch.cuda.Event, torch.cuda.Event]] = field(
+        default_factory=list
+    )
 
     @property
     def median_its(self) -> float:
@@ -109,7 +111,9 @@ def _make_dataloader(conf: DictConfig):
         configure_dataloader_for_platform,
     )
 
-    train_dataset, _ = datasets.make(name=conf.dataset.type, config=conf, ray_jitter=None)
+    train_dataset, _ = datasets.make(
+        name=conf.dataset.type, config=conf, ray_jitter=None
+    )
 
     dataloader_kwargs = configure_dataloader_for_platform(
         {
@@ -240,7 +244,9 @@ def _print_summary(results: list[BenchmarkResult]) -> None:
 @hydra.main(config_path="../configs", version_base=None)
 def main(conf: DictConfig) -> None:
     # Extract benchmark parameters (passed via +benchmark.* overrides)
-    bench_conf = OmegaConf.to_container(OmegaConf.create(conf.get("benchmark", {})), resolve=True)
+    bench_conf = OmegaConf.to_container(
+        OmegaConf.create(conf.get("benchmark", {})), resolve=True
+    )
     warmup_iters: int = bench_conf.get("warmup_iters", 1000)
     measure_iters: int = bench_conf.get("measure_iters", 10000)
     sample_n: int = bench_conf.get("sample_n", 1000)
@@ -264,15 +270,24 @@ def main(conf: DictConfig) -> None:
 
     # Determine which configurations to benchmark
     if dataset_type == "ncore":
-        config_keys = requested_configs if requested_configs is not None else ALL_NCORE_CONFIG_KEYS
+        config_keys = (
+            requested_configs
+            if requested_configs is not None
+            else ALL_NCORE_CONFIG_KEYS
+        )
         # Validate requested config keys
         for key in config_keys:
             if key not in NCORE_CONFIGS:
-                raise ValueError(f"Unknown ncore benchmark config: '{key}'. " f"Available: {ALL_NCORE_CONFIG_KEYS}")
+                raise ValueError(
+                    f"Unknown ncore benchmark config: '{key}'. "
+                    f"Available: {ALL_NCORE_CONFIG_KEYS}"
+                )
         configs_to_run: list[tuple[str, DictConfig]] = []
         for key in config_keys:
             display_name, overrides = NCORE_CONFIGS[key]
-            configs_to_run.append((display_name, _apply_dataset_overrides(conf, overrides)))
+            configs_to_run.append(
+                (display_name, _apply_dataset_overrides(conf, overrides))
+            )
     else:
         # Non-ncore datasets: single baseline run with the config as-is
         configs_to_run = [("baseline", conf)]
@@ -288,9 +303,13 @@ def main(conf: DictConfig) -> None:
         _, dataloader = _make_dataloader(run_conf)
 
         # Enable profiler only on last config
-        active_profiler = profiler if (profiler and i == len(configs_to_run) - 1) else None
+        active_profiler = (
+            profiler if (profiler and i == len(configs_to_run) - 1) else None
+        )
 
-        result = _run_benchmark(dataloader, warmup_iters, measure_iters, sample_n, active_profiler)
+        result = _run_benchmark(
+            dataloader, warmup_iters, measure_iters, sample_n, active_profiler
+        )
         result.name = name
 
         print(f"  Median: {result.median_its:.1f} it/s")

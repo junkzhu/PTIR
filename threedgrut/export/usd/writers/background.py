@@ -85,18 +85,24 @@ def get_background_color(
             return _tensor_to_tuple(background.color)
 
     # Unknown background type - log warning and return None
-    logger.warning(f"Unknown background type: {type(background).__name__}, cannot extract color")
+    logger.warning(
+        f"Unknown background type: {type(background).__name__}, cannot extract color"
+    )
     return None
 
 
-def is_black_background(color: Optional[Tuple[float, float, float]], threshold: float = 1e-6) -> bool:
+def is_black_background(
+    color: Optional[Tuple[float, float, float]], threshold: float = 1e-6
+) -> bool:
     """Check if the background color is effectively black."""
     if color is None:
         return True
     return all(c < threshold for c in color)
 
 
-def create_1x1_envmap_bytes(color: Tuple[float, float, float], format: str = "PNG") -> bytes:
+def create_1x1_envmap_bytes(
+    color: Tuple[float, float, float], format: str = "PNG"
+) -> bytes:
     """
     Create a 1x1 environment map texture as bytes.
 

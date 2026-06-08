@@ -25,7 +25,11 @@ from torchmetrics.image import StructuralSimilarityIndexMeasure
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 
 import threedgrut.datasets as datasets
-from threedgrut.metric import Metric, create_psnr_criterion, write_relight_summary_to_metrics
+from threedgrut.metric import (
+    Metric,
+    create_psnr_criterion,
+    write_relight_summary_to_metrics,
+)
 from threedgrut.model.environment import Environment
 from threedgrut.model.model import MixtureOfGaussians
 from threedgrut.model.ptir_helper import (
@@ -80,7 +84,9 @@ class Renderer:
         elif conf.model.background.color == "white":
             self.bg_color = torch.ones((3,), dtype=torch.float32, device="cuda")
         else:
-            assert False, f"{conf.model.background.color} is not a supported background color."
+            assert False, (
+                f"{conf.model.background.color} is not a supported background color."
+            )
 
     @staticmethod
     def _linear_to_srgb(image: torch.Tensor) -> torch.Tensor:
@@ -92,7 +98,9 @@ class Renderer:
         )
 
     @staticmethod
-    def _save_nhwc_image(image: torch.Tensor, path: str, linear_to_srgb: bool = False) -> None:
+    def _save_nhwc_image(
+        image: torch.Tensor, path: str, linear_to_srgb: bool = False
+    ) -> None:
         if linear_to_srgb:
             image = Renderer._linear_to_srgb(image)
         else:
@@ -101,20 +109,31 @@ class Renderer:
 
     @staticmethod
     def _restore_environment_from_checkpoint(model, conf, checkpoint: dict) -> None:
-        if conf.render.method != "3dgptir" and OmegaConf.select(conf, "environment", default=None) is None:
+        if (
+            conf.render.method != "3dgptir"
+            and OmegaConf.select(conf, "environment", default=None) is None
+        ):
             return
 
         environment = Environment(
             path=OmegaConf.select(conf, "environment.path", default=None),
             device=model.device,
             environment_type=OmegaConf.select(conf, "environment.type", default="2d"),
-            optimize_environment=bool(OmegaConf.select(conf, "model.optimize_environment", default=False)),
-            parameterization=OmegaConf.select(conf, "environment.parameterization", default="linear"),
+            optimize_environment=bool(
+                OmegaConf.select(conf, "model.optimize_environment", default=False)
+            ),
+            parameterization=OmegaConf.select(
+                conf, "environment.parameterization", default="linear"
+            ),
         )
         environment_state = checkpoint.get("environment_state")
         if environment_state is not None:
             environment.load_state_dict(environment_state)
-            environment.configure_optimization(bool(OmegaConf.select(conf, "model.optimize_environment", default=False)))
+            environment.configure_optimization(
+                bool(
+                    OmegaConf.select(conf, "model.optimize_environment", default=False)
+                )
+            )
 
         model.optimize_environment = environment.optimize_environment
         model.environment_parameterization = environment.environment_parameterization
@@ -124,15 +143,19 @@ class Renderer:
             model.environment_alias_table = environment.build_alias_table()
 
     @staticmethod
-    def _set_model_environment(model, environment_parameter: torch.Tensor | torch.nn.Parameter | None) -> None:
-        if (
-            isinstance(getattr(model, "environment", None), torch.nn.Parameter)
-            and not isinstance(environment_parameter, torch.nn.Parameter)
-        ):
+    def _set_model_environment(
+        model, environment_parameter: torch.Tensor | torch.nn.Parameter | None
+    ) -> None:
+        if isinstance(
+            getattr(model, "environment", None), torch.nn.Parameter
+        ) and not isinstance(environment_parameter, torch.nn.Parameter):
             delattr(model, "environment")
 
         model.environment = environment_parameter
-        if isinstance(model.environment, torch.nn.Parameter) and not model.optimize_environment:
+        if (
+            isinstance(model.environment, torch.nn.Parameter)
+            and not model.optimize_environment
+        ):
             model.environment.requires_grad_(False)
 
     def create_test_dataloader(self, conf):
@@ -206,7 +229,9 @@ class Renderer:
 
             # Derive config from training settings to match trainer.py
             use_controller = conf.post_processing.get("use_controller", True)
-            n_distillation_steps = conf.post_processing.get("n_distillation_steps", 5000)
+            n_distillation_steps = conf.post_processing.get(
+                "n_distillation_steps", 5000
+            )
             if use_controller and n_distillation_steps > 0:
                 main_training_steps = conf.n_iterations - n_distillation_steps
                 controller_activation_ratio = main_training_steps / conf.n_iterations
@@ -224,11 +249,15 @@ class Renderer:
                 controller_activation_ratio=controller_activation_ratio,
             )
 
-            post_processing = PPISP.from_state_dict(checkpoint["post_processing"]["module"], config=ppisp_config)
+            post_processing = PPISP.from_state_dict(
+                checkpoint["post_processing"]["module"], config=ppisp_config
+            )
             post_processing = post_processing.to("cuda")
             num_cameras = post_processing.crf_params.shape[0]
             num_frames = post_processing.exposure_params.shape[0]
-            logger.info(f"📷 {method.upper()} loaded from checkpoint: {num_cameras} cameras, {num_frames} frames")
+            logger.info(
+                f"📷 {method.upper()} loaded from checkpoint: {num_cameras} cameras, {num_frames} frames"
+            )
 
         return Renderer(
             model=model,
@@ -245,20 +274,35 @@ class Renderer:
 
     @staticmethod
     def _environment_output_name(environment_path: Path) -> str:
-        name = environment_path.name if environment_path.is_dir() else environment_path.stem
-        safe_name = "".join(ch if ch.isalnum() or ch in ("-", "_", ".") else "_" for ch in name)
+        name = (
+            environment_path.name
+            if environment_path.is_dir()
+            else environment_path.stem
+        )
+        safe_name = "".join(
+            ch if ch.isalnum() or ch in ("-", "_", ".") else "_" for ch in name
+        )
         return safe_name or "environment"
 
     @staticmethod
-    def list_environment_maps(environment_dir: str, environment_type: str = "2d") -> list[Path]:
+    def list_environment_maps(
+        environment_dir: str, environment_type: str = "2d"
+    ) -> list[Path]:
         environment_root = Path(environment_dir)
         if not environment_root.is_dir():
-            raise NotADirectoryError(f"Environment directory not found: {environment_dir}")
+            raise NotADirectoryError(
+                f"Environment directory not found: {environment_dir}"
+            )
 
         environment_type = str(environment_type).lower()
         environment_paths = []
-        for path in sorted(environment_root.iterdir(), key=lambda item: item.name.lower()):
-            if path.is_file() and path.suffix.lower() in Environment.ENVIRONMENT_EXTENSIONS:
+        for path in sorted(
+            environment_root.iterdir(), key=lambda item: item.name.lower()
+        ):
+            if (
+                path.is_file()
+                and path.suffix.lower() in Environment.ENVIRONMENT_EXTENSIONS
+            ):
                 environment_paths.append(path)
             elif path.is_dir() and environment_type == "cube":
                 environment_paths.append(path)
@@ -281,26 +325,40 @@ class Renderer:
         )
 
         self.model.optimize_environment = False
-        self.model.environment_parameterization = Environment.LINEAR_ENVIRONMENT_PARAMETERIZATION
+        self.model.environment_parameterization = (
+            Environment.LINEAR_ENVIRONMENT_PARAMETERIZATION
+        )
         self._set_model_environment(self.model, environment.get_environment_parameter())
         self.model.environment_alias_table = None
-        if self.conf.render.method == "3dgptir" and self.conf.render.get("enable_mis", False):
+        if self.conf.render.method == "3dgptir" and self.conf.render.get(
+            "enable_mis", False
+        ):
             self.model.environment_alias_table = environment.build_alias_table()
 
-        OmegaConf.update(self.conf, "environment.path", str(environment_path), force_add=True)
-        OmegaConf.update(self.conf, "environment.type", environment.environment_type, force_add=True)
+        OmegaConf.update(
+            self.conf, "environment.path", str(environment_path), force_add=True
+        )
+        OmegaConf.update(
+            self.conf, "environment.type", environment.environment_type, force_add=True
+        )
         OmegaConf.update(
             self.conf,
             "environment.parameterization",
             Environment.LINEAR_ENVIRONMENT_PARAMETERIZATION,
             force_add=True,
         )
-        logger.info(f'Relight environment loaded: "{os.path.abspath(environment_path)}"')
+        logger.info(
+            f'Relight environment loaded: "{os.path.abspath(environment_path)}"'
+        )
 
     @torch.no_grad()
-    def render_relight_environment(self, environment_path: str | Path, output_dir: str | Path) -> Path:
+    def render_relight_environment(
+        self, environment_path: str | Path, output_dir: str | Path
+    ) -> Path:
         if self.conf.render.method != "3dgptir":
-            raise ValueError("Relighting requires the PTIR renderer (conf.render.method == '3dgptir').")
+            raise ValueError(
+                "Relighting requires the PTIR renderer (conf.render.method == '3dgptir')."
+            )
 
         environment_path = Path(environment_path)
         output_dir = Path(output_dir)
@@ -324,7 +382,9 @@ class Renderer:
             outputs = self.model(gpu_batch)
 
             if self.post_processing is not None:
-                outputs = apply_post_processing(self.post_processing, outputs, gpu_batch, training=False)
+                outputs = apply_post_processing(
+                    self.post_processing, outputs, gpu_batch, training=False
+                )
 
             frame_metrics = metric.update_relight_pbr(
                 pred_pbr_linear=outputs["pred_pbr"],
@@ -359,7 +419,9 @@ class Renderer:
                 psnr=frame_metrics["psnr_relight_pbr"],
             )
 
-        logger.end_progress(task_name=f"Relighting {self._environment_output_name(environment_path)}")
+        logger.end_progress(
+            task_name=f"Relighting {self._environment_output_name(environment_path)}"
+        )
         _, metrics_path, metrics_details_path = metric.write_relight(output_dir)
         logger.info(f"📄 Relight metrics saved to: {metrics_path}")
         logger.info(f"📄 Relight metrics details saved to: {metrics_details_path}")
@@ -370,7 +432,9 @@ class Renderer:
                 {
                     "environment": str(environment_path.resolve()),
                     "checkpoint": (
-                        None if self.checkpoint_path is None else str(Path(self.checkpoint_path).resolve())
+                        None
+                        if self.checkpoint_path is None
+                        else str(Path(self.checkpoint_path).resolve())
                     ),
                     "renderer": "3dgptir",
                 },
@@ -379,17 +443,25 @@ class Renderer:
             )
         return output_dir
 
-    def render_relight_all(self, environment_dir: str, output_root: str | Path | None = None) -> list[Path]:
+    def render_relight_all(
+        self, environment_dir: str, output_root: str | Path | None = None
+    ) -> list[Path]:
         self.conf["render"]["render_spp"] = self.conf["render"]["relight_spp"]
-        logger.info(f"Relight render_spp set to render.relight_spp={self.conf['render']['relight_spp']}")
+        logger.info(
+            f"Relight render_spp set to render.relight_spp={self.conf['render']['relight_spp']}"
+        )
 
         environment_type = OmegaConf.select(self.conf, "environment.type", default="2d")
-        environment_paths = self.list_environment_maps(environment_dir, environment_type=environment_type)
+        environment_paths = self.list_environment_maps(
+            environment_dir, environment_type=environment_type
+        )
         relight_env = OmegaConf.select(self.conf, "dataset.relight_env", default=None)
         if relight_env:
             relight_env = {str(name) for name in relight_env}
             environment_paths = [
-                path for path in environment_paths if self._environment_output_name(path) in relight_env
+                path
+                for path in environment_paths
+                if self._environment_output_name(path) in relight_env
             ]
         if not environment_paths:
             raise FileNotFoundError(f"No environment maps found in: {environment_dir}")
@@ -399,16 +471,28 @@ class Renderer:
         output_root = Path(output_root)
         output_root.mkdir(parents=True, exist_ok=True)
 
-        logger.info(f"Found {len(environment_paths)} environment map(s) for relighting in: {environment_dir}")
+        logger.info(
+            f"Found {len(environment_paths)} environment map(s) for relighting in: {environment_dir}"
+        )
         output_dirs = []
         used_names = {}
         for environment_path in environment_paths:
             base_name = self._environment_output_name(environment_path)
             used_names[base_name] = used_names.get(base_name, 0) + 1
-            output_name = base_name if used_names[base_name] == 1 else f"{base_name}_{used_names[base_name]}"
-            output_dirs.append(self.render_relight_environment(environment_path, output_root / output_name))
+            output_name = (
+                base_name
+                if used_names[base_name] == 1
+                else f"{base_name}_{used_names[base_name]}"
+            )
+            output_dirs.append(
+                self.render_relight_environment(
+                    environment_path, output_root / output_name
+                )
+            )
 
-        _, metrics_path = write_relight_summary_to_metrics(Path(self.out_dir) / "metrics.json", output_root)
+        _, metrics_path = write_relight_summary_to_metrics(
+            Path(self.out_dir) / "metrics.json", output_root
+        )
         logger.info(f"📄 Relight summary saved to: {metrics_path}")
         return output_dirs
 
@@ -443,7 +527,9 @@ class Renderer:
             computes_extra_metrics=False,
             create_run_dir=False,
         )
-        return relight_renderer.render_relight_all(environment_dir, output_root=output_root)
+        return relight_renderer.render_relight_all(
+            environment_dir, output_root=output_root
+        )
 
     @classmethod
     def from_preloaded_model(
@@ -487,22 +573,36 @@ class Renderer:
         if self.compute_extra_metrics:
             criterions |= {
                 "ssim": StructuralSimilarityIndexMeasure(data_range=1.0).to("cuda"),
-                "lpips": LearnedPerceptualImagePatchSimilarity(net_type="vgg", normalize=True).to("cuda"),
+                "lpips": LearnedPerceptualImagePatchSimilarity(
+                    net_type="vgg", normalize=True
+                ).to("cuda"),
             }
 
         is_ptir = self.conf.render.method == "3dgptir"
         save_renders = not is_ptir
         output_path_renders = None
         if save_renders:
-            output_path_renders = os.path.join(self.out_dir, f"ours_{int(self.global_step)}", "renders")
+            output_path_renders = os.path.join(
+                self.out_dir, f"ours_{int(self.global_step)}", "renders"
+            )
             os.makedirs(output_path_renders, exist_ok=True)
 
-        output_path_normals = os.path.join(self.out_dir, f"ours_{int(self.global_step)}", "normals")
+        output_path_normals = os.path.join(
+            self.out_dir, f"ours_{int(self.global_step)}", "normals"
+        )
         os.makedirs(output_path_normals, exist_ok=True)
 
         output_path_ptir_aovs = {}
         if is_ptir:
-            for aov_name in ("direct", "indirect", "light", "pbr", "albedo", "albedo_gt", "roughness"):
+            for aov_name in (
+                "direct",
+                "indirect",
+                "light",
+                "pbr",
+                "albedo",
+                "albedo_gt",
+                "roughness",
+            ):
                 output_path_ptir_aovs[aov_name] = os.path.join(
                     self.out_dir, f"ours_{int(self.global_step)}", aov_name
                 )
@@ -516,7 +616,9 @@ class Renderer:
         ptir_metric_lists = {}
 
         if self.save_gt:
-            output_path_gt = os.path.join(self.out_dir, f"ours_{int(self.global_step)}", "gt")
+            output_path_gt = os.path.join(
+                self.out_dir, f"ours_{int(self.global_step)}", "gt"
+            )
             os.makedirs(output_path_gt, exist_ok=True)
 
         psnr = []
@@ -538,7 +640,9 @@ class Renderer:
         worst_psnr_img = None
         worst_psnr_img_gt = None
 
-        logger.start_progress(task_name="Rendering", total_steps=len(self.dataloader), color="orange1")
+        logger.start_progress(
+            task_name="Rendering", total_steps=len(self.dataloader), color="orange1"
+        )
 
         for iteration, batch in enumerate(self.dataloader):
             frame_name = "{0:05d}.png".format(iteration)
@@ -551,15 +655,21 @@ class Renderer:
 
             # Apply post-processing
             if self.post_processing is not None:
-                outputs = apply_post_processing(self.post_processing, outputs, gpu_batch, training=False)
+                outputs = apply_post_processing(
+                    self.post_processing, outputs, gpu_batch, training=False
+                )
 
             pred_rgb_full = outputs["pred_rgb"]
             rgb_gt_full = gpu_batch.rgb_gt
             normal_gt = getattr(gpu_batch, "normal_gt", None)
             material_albedo_gt = getattr(gpu_batch, "material_albedo_gt", None)
-            material_albedo_gt = apply_gt_mask_to_tensor(material_albedo_gt, getattr(gpu_batch, "mask", None))
+            material_albedo_gt = apply_gt_mask_to_tensor(
+                material_albedo_gt, getattr(gpu_batch, "mask", None)
+            )
             material_roughness_gt = getattr(gpu_batch, "material_roughness_gt", None)
-            material_roughness_gt = apply_gt_mask_to_tensor(material_roughness_gt, getattr(gpu_batch, "mask", None))
+            material_roughness_gt = apply_gt_mask_to_tensor(
+                material_roughness_gt, getattr(gpu_batch, "mask", None)
+            )
             if is_ptir:
                 metric_rgb_full = self._linear_to_srgb(outputs["pred_pbr"])
             else:
@@ -567,12 +677,20 @@ class Renderer:
 
             # The values are already alpha composited with the background
             if output_path_renders is not None:
-                self._save_nhwc_image(pred_rgb_full, os.path.join(output_path_renders, frame_name))
+                self._save_nhwc_image(
+                    pred_rgb_full, os.path.join(output_path_renders, frame_name)
+                )
             pred_shadingnormal = outputs.get("pred_shadingnormal")
-            pred_normals_full = pred_shadingnormal if pred_shadingnormal is not None else outputs.get("pred_normals")
+            pred_normals_full = (
+                pred_shadingnormal
+                if pred_shadingnormal is not None
+                else outputs.get("pred_normals")
+            )
             if pred_normals_full is not None:
                 normals_to_write = (0.5 * (pred_normals_full + 1.0)).clip(0, 1.0)
-                self._save_nhwc_image(normals_to_write, os.path.join(output_path_normals, frame_name))
+                self._save_nhwc_image(
+                    normals_to_write, os.path.join(output_path_normals, frame_name)
+                )
 
             pred_material = outputs.get("pred_material")
             pred_roughness = None
@@ -597,10 +715,21 @@ class Renderer:
                 if pred_material is not None:
                     albedo = pred_material[..., 0:3]
                     roughness = pred_roughness.repeat(1, 1, 1, 3)
-                    self._save_nhwc_image(albedo, os.path.join(output_path_ptir_aovs["albedo"], frame_name))
-                    self._save_nhwc_image(roughness, os.path.join(output_path_ptir_aovs["roughness"], frame_name))
+                    self._save_nhwc_image(
+                        albedo,
+                        os.path.join(output_path_ptir_aovs["albedo"], frame_name),
+                    )
+                    self._save_nhwc_image(
+                        roughness,
+                        os.path.join(output_path_ptir_aovs["roughness"], frame_name),
+                    )
                     if material_albedo_gt is not None:
-                        self._save_nhwc_image(material_albedo_gt, os.path.join(output_path_ptir_aovs["albedo_gt"], frame_name))
+                        self._save_nhwc_image(
+                            material_albedo_gt,
+                            os.path.join(
+                                output_path_ptir_aovs["albedo_gt"], frame_name
+                            ),
+                        )
                         albedo_frame_names.append(frame_name)
                         albedo_gt_list.append(material_albedo_gt.detach().cpu())
                         albedo_list.append(albedo.detach().cpu())
@@ -609,7 +738,9 @@ class Renderer:
             gt_img_to_write = rgb_gt_full[-1].clip(0, 1.0)
 
             if self.save_gt:
-                self._save_nhwc_image(rgb_gt_full, os.path.join(output_path_gt, frame_name))
+                self._save_nhwc_image(
+                    rgb_gt_full, os.path.join(output_path_gt, frame_name)
+                )
 
             # Compute the loss
             ptir_frame_metrics = {}
@@ -625,7 +756,9 @@ class Renderer:
                     criterions=criterions,
                     pred_pbr=metric_rgb_full,
                     rgb_gt=rgb_gt_full,
-                    roughness=pred_roughness if material_roughness_gt is not None else None,
+                    roughness=pred_roughness
+                    if material_roughness_gt is not None
+                    else None,
                     roughness_gt=material_roughness_gt,
                     normal=pred_shadingnormal if normal_gt is not None else None,
                     normal_gt=normal_gt,
@@ -634,7 +767,9 @@ class Renderer:
                 append_ptir_metrics(ptir_metric_lists, ptir_frame_metrics)
                 psnr_single_img = ptir_frame_metrics["psnr_pbr"]
             else:
-                psnr_single_img = criterions["psnr"](metric_rgb_full, rgb_gt_full).item()
+                psnr_single_img = criterions["psnr"](
+                    metric_rgb_full, rgb_gt_full
+                ).item()
             psnr.append(psnr_single_img)  # evaluation on valid rays only
             normal_mae_single_img = None
 
@@ -713,29 +848,42 @@ class Renderer:
 
         if output_path_ptir_aovs:
             if albedo_list:
-                albedo_rescale_single, albedo_rescale_rgb, albedo_rescale_ratio = compute_albedo_rescale_ratio(
-                    albedo_gt_list,
-                    albedo_list,
-                    selection_context=(
-                        self.out_dir,
-                        self.conf.get("path", ""),
-                        self.conf.get("experiment_name", ""),
-                    ),
+                albedo_rescale_single, albedo_rescale_rgb, albedo_rescale_ratio = (
+                    compute_albedo_rescale_ratio(
+                        albedo_gt_list,
+                        albedo_list,
+                        selection_context=(
+                            self.out_dir,
+                            self.conf.get("path", ""),
+                            self.conf.get("experiment_name", ""),
+                        ),
+                    )
                 )
                 output_path_albedo_scaled = os.path.join(
                     self.out_dir, f"ours_{int(self.global_step)}", "albedo_scaled"
                 )
                 os.makedirs(output_path_albedo_scaled, exist_ok=True)
-                selected_values = torch.as_tensor(albedo_rescale_ratio).detach().cpu().reshape(-1).tolist()
+                selected_values = (
+                    torch.as_tensor(albedo_rescale_ratio)
+                    .detach()
+                    .cpu()
+                    .reshape(-1)
+                    .tolist()
+                )
                 logger.info(
                     "PTIR albedo rescale ratio: "
                     f"single={albedo_rescale_single.item():.6f}, "
                     f"rgb={[round(v, 6) for v in albedo_rescale_rgb.tolist()]}, "
                     f"selected={[round(v, 6) for v in selected_values]}"
                 )
-                for frame_name, albedo, albedo_gt in zip(albedo_frame_names, albedo_list, albedo_gt_list):
+                for frame_name, albedo, albedo_gt in zip(
+                    albedo_frame_names, albedo_list, albedo_gt_list
+                ):
                     albedo_scaled = rescale_albedo(albedo, albedo_rescale_ratio)
-                    self._save_nhwc_image(albedo_scaled, os.path.join(output_path_albedo_scaled, frame_name))
+                    self._save_nhwc_image(
+                        albedo_scaled,
+                        os.path.join(output_path_albedo_scaled, frame_name),
+                    )
                     albedo_scaled_metrics = compute_ptir_full_image_metrics(
                         criterions=criterions,
                         albedo_scaled=albedo_scaled,
@@ -750,9 +898,13 @@ class Renderer:
                     source_checkpoint_path=self.checkpoint_path,
                 )
                 self.last_scaled_checkpoint_path = scaled_ckpt_path
-                logger.info(f'Scaled albedo checkpoint saved to: "{os.path.abspath(scaled_ckpt_path)}"')
+                logger.info(
+                    f'Scaled albedo checkpoint saved to: "{os.path.abspath(scaled_ckpt_path)}"'
+                )
             else:
-                logger.info("PTIR albedo scaling skipped: no material_albedo_gt was found in the test batches.")
+                logger.info(
+                    "PTIR albedo scaling skipped: no material_albedo_gt was found in the test batches."
+                )
 
         ptir_metrics = summarize_ptir_metrics(ptir_metric_lists, include_values=False)
         mean_psnr = np.mean(psnr)
@@ -779,9 +931,15 @@ class Renderer:
             )
             if mean_normal_mae is not None:
                 table["normal_mae"] = mean_normal_mae
-        if not is_ptir and albedo_rescale_single is not None and albedo_rescale_rgb is not None:
+        if (
+            not is_ptir
+            and albedo_rescale_single is not None
+            and albedo_rescale_rgb is not None
+        ):
             table["albedo_rescale_single"] = float(albedo_rescale_single.item())
-            table["albedo_rescale_rgb"] = str([round(value, 6) for value in albedo_rescale_rgb.tolist()])
+            table["albedo_rescale_rgb"] = str(
+                [round(value, 6) for value in albedo_rescale_rgb.tolist()]
+            )
         if is_ptir:
             for key in (
                 "psnr_pbr_mean",
@@ -801,7 +959,9 @@ class Renderer:
                     table[key] = value
 
         if self.conf.render.enable_kernel_timings:
-            table["mean_inference_time"] = f"{'{:.2f}'.format(mean_inference_time)}" + " ms/frame"
+            table["mean_inference_time"] = (
+                f"{'{:.2f}'.format(mean_inference_time)}" + " ms/frame"
+            )
 
         # Save metrics to JSON file
         if is_ptir:
@@ -819,7 +979,9 @@ class Renderer:
                 metrics_json["normal_mae"] = float(mean_normal_mae)
         if albedo_rescale_single is not None and albedo_rescale_rgb is not None:
             metrics_json["albedo_rescale_single"] = float(albedo_rescale_single.item())
-            metrics_json["albedo_rescale_rgb"] = [float(value) for value in albedo_rescale_rgb.tolist()]
+            metrics_json["albedo_rescale_rgb"] = [
+                float(value) for value in albedo_rescale_rgb.tolist()
+            ]
         if is_ptir:
             for key in (
                 "psnr_pbr_mean",
@@ -848,7 +1010,9 @@ class Renderer:
                 ("mse_roughness", "mse_roughness"),
             ):
                 if metric_key in ptir_metric_lists:
-                    metrics_details_json[output_key] = [float(value) for value in ptir_metric_lists[metric_key]]
+                    metrics_details_json[output_key] = [
+                        float(value) for value in ptir_metric_lists[metric_key]
+                    ]
 
             metrics_details_path = os.path.join(self.out_dir, "metrics_details.json")
             with open(metrics_details_path, "w") as f:
@@ -865,8 +1029,12 @@ class Renderer:
             self.writer.add_scalar("cc_ssim/test", mean_cc_ssim, self.global_step)
             self.writer.add_scalar("cc_lpips/test", mean_cc_lpips, self.global_step)
             if mean_normal_mae is not None:
-                self.writer.add_scalar("normal_mae/test", mean_normal_mae, self.global_step)
-            self.writer.add_scalar("time/inference/test", mean_inference_time, self.global_step)
+                self.writer.add_scalar(
+                    "normal_mae/test", mean_normal_mae, self.global_step
+                )
+            self.writer.add_scalar(
+                "time/inference/test", mean_inference_time, self.global_step
+            )
 
             if best_psnr_img is not None:
                 self.writer.add_images(

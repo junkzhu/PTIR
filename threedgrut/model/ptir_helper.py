@@ -57,7 +57,9 @@ PBR_GT_MASK_OUTPUT_KEYS = (
 )
 
 
-def apply_gt_mask_to_tensor(tensor: torch.Tensor | None, mask: torch.Tensor | None) -> torch.Tensor | None:
+def apply_gt_mask_to_tensor(
+    tensor: torch.Tensor | None, mask: torch.Tensor | None
+) -> torch.Tensor | None:
     """Apply an NHWC foreground GT mask to an image-like tensor."""
     if tensor is None:
         return None
@@ -84,7 +86,9 @@ def apply_gt_mask_to_tensor(tensor: torch.Tensor | None, mask: torch.Tensor | No
         mask = mask.expand(tensor.shape[0], -1, -1, -1)
 
     if mask.shape[:3] != tensor.shape[:3]:
-        raise ValueError(f"GT mask shape {tuple(mask.shape)} is not compatible with {tuple(tensor.shape)}")
+        raise ValueError(
+            f"GT mask shape {tuple(mask.shape)} is not compatible with {tuple(tensor.shape)}"
+        )
 
     return tensor * mask
 
@@ -116,7 +120,9 @@ def pbr_gt_mask_was_applied(outputs: dict) -> bool:
     return bool(outputs.get(PBR_GT_MASK_APPLIED_KEY, False))
 
 
-def _first_tensor_options(*sequences: Sequence[Any]) -> tuple[torch.device, torch.dtype]:
+def _first_tensor_options(
+    *sequences: Sequence[Any],
+) -> tuple[torch.device, torch.dtype]:
     for sequence in sequences:
         for value in sequence:
             if isinstance(value, torch.Tensor):
@@ -125,7 +131,9 @@ def _first_tensor_options(*sequences: Sequence[Any]) -> tuple[torch.device, torc
     return torch.device("cpu"), torch.float32
 
 
-def _flatten_albedo(albedo: Any, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+def _flatten_albedo(
+    albedo: Any, device: torch.device, dtype: torch.dtype
+) -> torch.Tensor:
     if isinstance(albedo, torch.Tensor):
         tensor = albedo.detach()
     else:
@@ -166,7 +174,9 @@ def compute_albedo_rescale_ratio(
             f"Expected the same number of GT and predicted albedos, got {len(gt_albedo_list)} and {len(albedo_list)}"
         )
     if len(gt_albedo_list) == 0:
-        raise ValueError("At least one albedo pair is required to compute a rescale ratio.")
+        raise ValueError(
+            "At least one albedo pair is required to compute a rescale ratio."
+        )
 
     device, dtype = _first_tensor_options(gt_albedo_list, albedo_list)
     gt_albedo_flat_list = []
@@ -193,7 +203,9 @@ def compute_albedo_rescale_ratio(
         albedo_flat_list.append(albedo_flat[valid])
 
     if not gt_albedo_flat_list:
-        raise ValueError("No valid positive GT albedo pixels were found for rescale ratio computation.")
+        raise ValueError(
+            "No valid positive GT albedo pixels were found for rescale ratio computation."
+        )
 
     gt_all = torch.cat(gt_albedo_flat_list, dim=0)
     albedo_all = torch.cat(albedo_flat_list, dim=0)
@@ -202,7 +214,7 @@ def compute_albedo_rescale_ratio(
     single_channel_ratio = ratios[..., 0].median()
     three_channel_ratio = ratios.median(dim=0).values
     selected_ratio = three_channel_ratio
-    #selected_ratio = single_channel_ratio if _use_single_channel_albedo_rescale(selection_context) else three_channel_ratio
+    # selected_ratio = single_channel_ratio if _use_single_channel_albedo_rescale(selection_context) else three_channel_ratio
     return single_channel_ratio, three_channel_ratio, selected_ratio
 
 
@@ -248,13 +260,17 @@ def save_scaled_albedo_checkpoint(
         source_path = Path(source_checkpoint_path)
 
     if source_path.is_file():
-        checkpoint = torch.load(source_path, map_location=getattr(model, "device", None), weights_only=False)
+        checkpoint = torch.load(
+            source_path, map_location=getattr(model, "device", None), weights_only=False
+        )
     else:
         checkpoint = model.get_model_parameters()
         checkpoint |= {"global_step": None, "epoch": None}
 
     checkpoint["material_albedo"] = scaled_material_albedo_preactivation(model, ratio)
-    checkpoint["albedo_rescale_rgb"] = [float(value) for value in torch.as_tensor(ratio).detach().cpu().reshape(-1)]
+    checkpoint["albedo_rescale_rgb"] = [
+        float(value) for value in torch.as_tensor(ratio).detach().cpu().reshape(-1)
+    ]
     torch.save(checkpoint, output_path)
     return output_path
 
@@ -276,17 +292,29 @@ def _to_nhwc_batch(image: torch.Tensor, channels: int | None = None) -> torch.Te
     image = image.detach()
 
     if image.ndim == 3:
-        if channels is not None and image.shape[0] == channels and image.shape[-1] != channels:
+        if (
+            channels is not None
+            and image.shape[0] == channels
+            and image.shape[-1] != channels
+        ):
             image = image.permute(1, 2, 0)
         image = image.unsqueeze(0)
     elif image.ndim == 4:
-        if channels is not None and image.shape[1] == channels and image.shape[-1] != channels:
+        if (
+            channels is not None
+            and image.shape[1] == channels
+            and image.shape[-1] != channels
+        ):
             image = image.permute(0, 2, 3, 1)
     else:
-        raise ValueError(f"Expected image with shape [H, W, C] or [B, H, W, C], got {tuple(image.shape)}")
+        raise ValueError(
+            f"Expected image with shape [H, W, C] or [B, H, W, C], got {tuple(image.shape)}"
+        )
 
     if channels is not None and image.shape[-1] != channels:
-        raise ValueError(f"Expected image with {channels} channels, got shape {tuple(image.shape)}")
+        raise ValueError(
+            f"Expected image with {channels} channels, got shape {tuple(image.shape)}"
+        )
 
     return image.float()
 
@@ -299,7 +327,9 @@ def _to_metric_device(
     device = _criterion_device(criterions) if criterions is not None else None
     if device is None:
         device = pred.device
-    return pred.to(device=device, dtype=torch.float32), gt.to(device=device, dtype=torch.float32)
+    return pred.to(device=device, dtype=torch.float32), gt.to(
+        device=device, dtype=torch.float32
+    )
 
 
 @torch.no_grad()
@@ -314,7 +344,9 @@ def compute_ptir_image_quality_metrics(
     pred = _to_nhwc_batch(pred, channels=3).clip(0.0, 1.0)
     gt = _to_nhwc_batch(gt, channels=3).clip(0.0, 1.0)
     if pred.shape != gt.shape:
-        raise ValueError(f"Metric image shapes must match, got {tuple(pred.shape)} and {tuple(gt.shape)}")
+        raise ValueError(
+            f"Metric image shapes must match, got {tuple(pred.shape)} and {tuple(gt.shape)}"
+        )
 
     pred, gt = _to_metric_device(pred, gt, criterions)
     pred_nchw = pred.permute(0, 3, 1, 2)
@@ -333,7 +365,9 @@ def _to_roughness(roughness: torch.Tensor) -> torch.Tensor:
     if roughness.shape[-1] == 3:
         roughness = roughness[..., :1]
     if roughness.shape[-1] != 1:
-        raise ValueError(f"Expected roughness with 1 or 3 channels, got shape {tuple(roughness.shape)}")
+        raise ValueError(
+            f"Expected roughness with 1 or 3 channels, got shape {tuple(roughness.shape)}"
+        )
     return roughness
 
 
@@ -362,11 +396,15 @@ def compute_ptir_full_image_metrics(
     metrics: dict[str, float] = {}
 
     if pred_pbr is not None and rgb_gt is not None:
-        metrics.update(compute_ptir_image_quality_metrics(criterions, pred_pbr, rgb_gt, "pbr"))
+        metrics.update(
+            compute_ptir_image_quality_metrics(criterions, pred_pbr, rgb_gt, "pbr")
+        )
 
     if albedo_scaled is not None and albedo_gt is not None:
         metrics.update(
-            compute_ptir_image_quality_metrics(criterions, albedo_scaled, albedo_gt, "albedo_scaled")
+            compute_ptir_image_quality_metrics(
+                criterions, albedo_scaled, albedo_gt, "albedo_scaled"
+            )
         )
 
     if roughness is not None and roughness_gt is not None:
@@ -377,13 +415,17 @@ def compute_ptir_full_image_metrics(
                 f"Roughness metric shapes must match, got {tuple(roughness.shape)} and {tuple(roughness_gt.shape)}"
             )
         roughness, roughness_gt = _to_metric_device(roughness, roughness_gt, criterions)
-        metrics["mse_roughness"] = float(torch.mean((roughness - roughness_gt) ** 2).item())
+        metrics["mse_roughness"] = float(
+            torch.mean((roughness - roughness_gt) ** 2).item()
+        )
 
     if normal is not None and normal_gt is not None:
         normal = _to_nhwc_batch(normal, channels=3)
         normal_gt = _to_nhwc_batch(normal_gt, channels=3)
         if normal.shape != normal_gt.shape:
-            raise ValueError(f"Normal metric shapes must match, got {tuple(normal.shape)} and {tuple(normal_gt.shape)}")
+            raise ValueError(
+                f"Normal metric shapes must match, got {tuple(normal.shape)} and {tuple(normal_gt.shape)}"
+            )
         normal, normal_gt = _to_metric_device(normal, normal_gt, criterions)
         if normal_valid_mask is not None:
             normal_valid_mask = normal_valid_mask.detach().to(device=normal.device)
@@ -437,8 +479,12 @@ def init_model_from_training_checkpoint(
     if not checkpoint_path.is_file():
         raise FileNotFoundError(f"Training checkpoint not found: {checkpoint_path}")
 
-    load_location = map_location if map_location is not None else getattr(model, "device", None)
+    load_location = (
+        map_location if map_location is not None else getattr(model, "device", None)
+    )
     logger.info(f"🤸 Loading training checkpoint from {checkpoint_path}")
-    checkpoint = torch.load(checkpoint_path, map_location=load_location, weights_only=False)
+    checkpoint = torch.load(
+        checkpoint_path, map_location=load_location, weights_only=False
+    )
     model.init_from_checkpoint(checkpoint, setup_optimizer=setup_optimizer)
     return checkpoint

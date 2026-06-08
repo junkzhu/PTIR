@@ -125,7 +125,9 @@ def hash_combine(seed: UInt32Buffer, v: int) -> UInt32Buffer:
     return seed ^ (v + (seed << 6) + (seed >> 2))
 
 
-def shuffled_scrambled_sobol2d(index: UInt32Buffer, seed: UInt32Buffer) -> List[UInt32Buffer]:
+def shuffled_scrambled_sobol2d(
+    index: UInt32Buffer, seed: UInt32Buffer
+) -> List[UInt32Buffer]:
     index = nested_uniform_scramble_base2(index, seed)
     X = sobol2d(index)
     X[0] = nested_uniform_scramble_base2(X[0], hash_combine(seed, 0)) & UINT32_MASK
@@ -133,7 +135,9 @@ def shuffled_scrambled_sobol2d(index: UInt32Buffer, seed: UInt32Buffer) -> List[
     return X
 
 
-def ld_random_val_2d(index: UInt32Buffer, seed: UInt32Buffer) -> List[torch.FloatTensor]:
+def ld_random_val_2d(
+    index: UInt32Buffer, seed: UInt32Buffer
+) -> List[torch.FloatTensor]:
     S = float(1.0 / (1 << 32))
     x = shuffled_scrambled_sobol2d(index, seed)
     return [x[0] * S, x[1] * S]  # Implicitly converted to float here

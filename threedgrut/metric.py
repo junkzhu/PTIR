@@ -27,32 +27,40 @@ from threedgrut.model.ptir_helper import (
 # compute PSNR separately for each RGB channel, then average the channel results.
 IRGS_PSNR = True
 
+
 def mse(img1: torch.Tensor, img2: torch.Tensor) -> torch.Tensor:
-    return (((img1 - img2)) ** 2).view(img1.shape[0], -1).mean(1, keepdim=True)
+    return ((img1 - img2) ** 2).view(img1.shape[0], -1).mean(1, keepdim=True)
+
 
 def psnr(
     img1: torch.Tensor,
     img2: torch.Tensor,
 ) -> torch.Tensor:
-    mse = (((img1 - img2)) ** 2).view(img1.shape[0], -1).mean(1, keepdim=True)
+    mse = ((img1 - img2) ** 2).view(img1.shape[0], -1).mean(1, keepdim=True)
     return 20 * torch.log10(1.0 / torch.sqrt(mse))
 
 
 def _to_chw_image(image: torch.Tensor) -> torch.Tensor:
     if image.ndim == 4:
         if image.shape[0] != 1:
-            raise ValueError(f"IRGS PSNR expects a single image batch, got shape {tuple(image.shape)}")
+            raise ValueError(
+                f"IRGS PSNR expects a single image batch, got shape {tuple(image.shape)}"
+            )
         image = image.squeeze(0)
 
     if image.ndim != 3:
-        raise ValueError(f"IRGS PSNR expects CHW or HWC image shape, got {tuple(image.shape)}")
+        raise ValueError(
+            f"IRGS PSNR expects CHW or HWC image shape, got {tuple(image.shape)}"
+        )
 
     if image.shape[0] == 3:
         return image
     if image.shape[-1] == 3:
         return image.permute(2, 0, 1)
 
-    raise ValueError(f"IRGS PSNR expects 3 RGB channels, got shape {tuple(image.shape)}")
+    raise ValueError(
+        f"IRGS PSNR expects 3 RGB channels, got shape {tuple(image.shape)}"
+    )
 
 
 class IRGSPeakSignalNoiseRatio(torch.nn.Module):
@@ -78,7 +86,9 @@ def create_image_quality_criterions(
     return {
         "psnr": create_psnr_criterion().to(device),
         "ssim": StructuralSimilarityIndexMeasure(data_range=1.0).to(device),
-        "lpips": LearnedPerceptualImagePatchSimilarity(net_type="vgg", normalize=True).to(device),
+        "lpips": LearnedPerceptualImagePatchSimilarity(
+            net_type="vgg", normalize=True
+        ).to(device),
     }
 
 
@@ -183,10 +193,14 @@ def compute_relight_pbr_metrics(
     prefix: str = "relight_pbr",
 ) -> tuple[dict[str, float], Path, torch.Tensor]:
     if not hasattr(dataset, "image_paths"):
-        raise AttributeError("Relight metrics require dataset.image_paths to resolve GT paths.")
+        raise AttributeError(
+            "Relight metrics require dataset.image_paths to resolve GT paths."
+        )
 
     source_image_path = Path(str(dataset.image_paths[frame_index]))
-    gt_path = resolve_relight_gt_path(dataset.root_dir, source_image_path, environment_path)
+    gt_path = resolve_relight_gt_path(
+        dataset.root_dir, source_image_path, environment_path
+    )
 
     pred_pbr_srgb = linear_to_srgb(pred_pbr_linear.clip(0.0, 1.0)).clip(0.0, 1.0)
     image_size = tuple(int(value) for value in pred_pbr_srgb.shape[1:3])
@@ -201,7 +215,9 @@ def compute_relight_pbr_metrics(
 
 
 class Metric:
-    def __init__(self, device: str | torch.device = "cuda", prefix: str = "relight_pbr") -> None:
+    def __init__(
+        self, device: str | torch.device = "cuda", prefix: str = "relight_pbr"
+    ) -> None:
         self.criterions = create_image_quality_criterions(device=device)
         self.prefix = prefix
         self.metric_lists: dict[str, list[float]] = {}
@@ -236,7 +252,9 @@ class Metric:
     def summarize_relight(self) -> dict[str, Any]:
         return summarize_ptir_metrics(self.metric_lists, include_values=False)
 
-    def write_relight(self, output_dir: str | Path) -> tuple[dict[str, Any], Path, Path]:
+    def write_relight(
+        self, output_dir: str | Path
+    ) -> tuple[dict[str, Any], Path, Path]:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -249,7 +267,10 @@ class Metric:
         with open(metrics_details_path, "w") as f:
             json.dump(
                 {
-                    **{key: [float(value) for value in values] for key, values in self.metric_lists.items()},
+                    **{
+                        key: [float(value) for value in values]
+                        for key, values in self.metric_lists.items()
+                    },
                     "relight_gt": self.gt_paths,
                 },
                 f,
@@ -267,7 +288,9 @@ def summarize_relight_directory(relight_dir: str | Path) -> dict[str, Any]:
     metric_lists: dict[str, list[float]] = {}
     found_metrics = False
 
-    for environment_dir in sorted(path for path in relight_dir.iterdir() if path.is_dir()):
+    for environment_dir in sorted(
+        path for path in relight_dir.iterdir() if path.is_dir()
+    ):
         metrics_details_path = environment_dir / "metrics_details.json"
         if not metrics_details_path.is_file():
             continue
@@ -294,7 +317,11 @@ def write_relight_summary_to_metrics(
     metrics_path = Path(metrics_path)
     existing_metrics = _load_json(metrics_path) if metrics_path.is_file() else {}
     relight_metrics = summarize_relight_directory(relight_dir)
-    for stale_key in ("relight_num_environments", "relight_num_frames", "relight_per_environment"):
+    for stale_key in (
+        "relight_num_environments",
+        "relight_num_frames",
+        "relight_per_environment",
+    ):
         existing_metrics.pop(stale_key, None)
 
     merged_metrics = {

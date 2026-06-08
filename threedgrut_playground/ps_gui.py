@@ -43,9 +43,16 @@ class Playground:
     AVAILABLE_CONTROLLERS = ["Turntable", "First Person", "Free"]
 
     def __init__(
-        self, gs_object, mesh_assets_folder, default_config, envmap_assets_folder=None, buffer_mode="device2device"
+        self,
+        gs_object,
+        mesh_assets_folder,
+        default_config,
+        envmap_assets_folder=None,
+        buffer_mode="device2device",
     ):
-        self.engine = Engine3DGRUT(gs_object, mesh_assets_folder, default_config, envmap_assets_folder)
+        self.engine = Engine3DGRUT(
+            gs_object, mesh_assets_folder, default_config, envmap_assets_folder
+        )
         self.scene_mog = self.engine.scene_mog
         self.primitives = self.engine.primitives
         self.video_recorder = self.engine.video_recorder
@@ -57,7 +64,9 @@ class Playground:
         self.is_force_canvas_dirty = False
         self.controller_type = "Turntable"
         self.gui_aux_fields = dict()
-        self.density_buffer = copy.deepcopy(self.scene_mog.density)  # For slicing planes
+        self.density_buffer = copy.deepcopy(
+            self.scene_mog.density
+        )  # For slicing planes
         self.ps_buffer_mode = buffer_mode
         self.viz_do_train = False
         self.viz_bbox = False
@@ -71,7 +80,9 @@ class Playground:
         self.viz_render_name = "render"
         self.viz_render_enabled = True
 
-        self.slice_planes = self.slice_plane_enabled = self.slice_plane_pos = self.slice_plane_normal = None
+        self.slice_planes = self.slice_plane_enabled = self.slice_plane_pos = (
+            self.slice_plane_normal
+        ) = None
         self.init_polyscope(buffer_mode)
 
     def run(self):
@@ -144,7 +155,9 @@ class Playground:
 
         # Update polyscope camera with params from gui
         view_params = ps.CameraParameters(
-            ps.CameraIntrinsics(fov_vertical_deg=self.engine.camera_fov, aspect=window_w / window_h),
+            ps.CameraIntrinsics(
+                fov_vertical_deg=self.engine.camera_fov, aspect=window_w / window_h
+            ),
             ps.get_view_camera_parameters().get_extrinsics(),
         )
         ps.set_view_camera_parameters(view_params)
@@ -156,7 +169,9 @@ class Playground:
             if (last_window_size[0] != window_h) or (last_window_size[1] != window_w):
                 self.is_force_canvas_dirty = True
 
-        camera = polyscope_to_kaolin_camera(view_params, window_w, window_h, device=self.engine.device)
+        camera = polyscope_to_kaolin_camera(
+            view_params, window_w, window_h, device=self.engine.device
+        )
         is_first_pass = self.is_dirty(camera)
         if not is_first_pass and not self.engine.has_progressive_effects_to_render():
             return self.engine.last_state["rgb"], self.engine.last_state["opacity"]
@@ -192,7 +207,6 @@ class Playground:
             self.viz_curr_render_size = (window_w, window_h)
 
             if style in ("color",):
-
                 dummy_image = np.ones((window_h, window_w, 4), dtype=np.float32)
 
                 ps.add_color_alpha_image_quantity(
@@ -203,13 +217,16 @@ class Playground:
                     show_fullscreen=True,
                     show_in_imgui_window=False,
                 )
-                self.viz_render_color_buffer = ps.get_quantity_buffer(self.viz_render_name, "colors")
+                self.viz_render_color_buffer = ps.get_quantity_buffer(
+                    self.viz_render_name, "colors"
+                )
                 self.viz_render_scalar_buffer = None
 
             elif style == "density":
-
                 dummy_vals = np.zeros((window_h, window_w), dtype=np.float32)
-                dummy_vals[0] = 1.0  # hack so the default polyscope scale gets set more nicely
+                dummy_vals[0] = (
+                    1.0  # hack so the default polyscope scale gets set more nicely
+                )
 
                 ps.add_scalar_image_quantity(
                     self.viz_render_name,
@@ -222,7 +239,9 @@ class Playground:
                     vminmax=(0, 1),
                 )
                 self.viz_render_color_buffer = None
-                self.viz_render_scalar_buffer = ps.get_quantity_buffer(self.viz_render_name, "values")
+                self.viz_render_scalar_buffer = ps.get_quantity_buffer(
+                    self.viz_render_name, "values"
+                )
 
         # do the actual rendering
         try:
@@ -237,7 +256,9 @@ class Playground:
         # update the data
         if style in ("color",):
             # append 1s for alpha
-            sple_orad = torch.cat((sple_orad, torch.ones_like(sple_orad[:, :, 0:1])), dim=-1)
+            sple_orad = torch.cat(
+                (sple_orad, torch.ones_like(sple_orad[:, :, 0:1])), dim=-1
+            )
             self.update_data_on_device(self.viz_render_color_buffer, sple_orad)
 
         elif style == "density":
@@ -296,18 +317,26 @@ class Playground:
 
             psim.PushItemWidth(110)
             cam_idx = Engine3DGRUT.AVAILABLE_CAMERAS.index(self.engine.camera_type)
-            is_cam_changed, new_cam_idx = psim.Combo("Camera", cam_idx, Engine3DGRUT.AVAILABLE_CAMERAS)
+            is_cam_changed, new_cam_idx = psim.Combo(
+                "Camera", cam_idx, Engine3DGRUT.AVAILABLE_CAMERAS
+            )
             if is_cam_changed:
                 self.engine.camera_type = Engine3DGRUT.AVAILABLE_CAMERAS[new_cam_idx]
-                self.is_force_canvas_dirty = self.is_force_canvas_dirty or is_cam_changed
-                self.engine.camera_fov = 120.0 if self.engine.camera_type == "Fisheye" else 60.0
+                self.is_force_canvas_dirty = (
+                    self.is_force_canvas_dirty or is_cam_changed
+                )
+                self.engine.camera_fov = (
+                    120.0 if self.engine.camera_type == "Fisheye" else 60.0
+                )
 
             if self.engine.camera_type == "Fisheye":
                 psim.SameLine()
                 is_fov_changed, self.engine.camera_fov = psim.SliderFloat(
                     "FoV", self.engine.camera_fov, v_min=60.0, v_max=180.0
                 )
-                self.is_force_canvas_dirty = self.is_force_canvas_dirty or is_fov_changed
+                self.is_force_canvas_dirty = (
+                    self.is_force_canvas_dirty or is_fov_changed
+                )
             elif self.engine.camera_type == "Pinhole":
                 psim.SameLine()
                 is_fov_changed, self.engine.camera_fov = psim.SliderFloat(
@@ -315,12 +344,16 @@ class Playground:
                 )
                 new_cam = ps.CameraParameters(
                     ps.CameraIntrinsics(
-                        fov_vertical_deg=self.engine.camera_fov, fov_horizontal_deg=None, aspect=window_w / window_h
+                        fov_vertical_deg=self.engine.camera_fov,
+                        fov_horizontal_deg=None,
+                        aspect=window_w / window_h,
                     ),
                     ps.get_view_camera_parameters().get_extrinsics(),
                 )
                 ps.set_view_camera_parameters(new_cam)
-                self.is_force_canvas_dirty = self.is_force_canvas_dirty or is_fov_changed
+                self.is_force_canvas_dirty = (
+                    self.is_force_canvas_dirty or is_fov_changed
+                )
             psim.PopItemWidth()
 
             psim.SameLine()
@@ -331,30 +364,49 @@ class Playground:
                 psim.Begin("Reset View", psim.ImGuiWindowFlags_NoTitleBar)
                 psim.TextUnformatted("View Navigation:")
                 psim.TextUnformatted("      Rotate: [left click drag]")
-                psim.TextUnformatted("   Translate: [shift] + [left click drag] OR [right click drag]")
-                psim.TextUnformatted("        Zoom: [scroll] OR [ctrl] + [shift] + [left click drag]")
-                psim.TextUnformatted("   Use [ctrl-c] and [ctrl-v] to save and restore camera poses")
+                psim.TextUnformatted(
+                    "   Translate: [shift] + [left click drag] OR [right click drag]"
+                )
+                psim.TextUnformatted(
+                    "        Zoom: [scroll] OR [ctrl] + [shift] + [left click drag]"
+                )
+                psim.TextUnformatted(
+                    "   Use [ctrl-c] and [ctrl-v] to save and restore camera poses"
+                )
                 psim.TextUnformatted("     via the clipboard.")
                 psim.TextUnformatted("\nMenu Navigation:")
-                psim.TextUnformatted("   Menu headers with a '>' can be clicked to collapse and expand.")
-                psim.TextUnformatted("   Use [ctrl] + [left click] to manually enter any numeric value")
+                psim.TextUnformatted(
+                    "   Menu headers with a '>' can be clicked to collapse and expand."
+                )
+                psim.TextUnformatted(
+                    "   Use [ctrl] + [left click] to manually enter any numeric value"
+                )
                 psim.TextUnformatted("     via the keyboard.")
                 psim.TextUnformatted("   Press [space] to dismiss popup dialogs.")
                 psim.End()
 
             psim.PushItemWidth(115)
 
-            controller_idx = Playground.AVAILABLE_CONTROLLERS.index(self.controller_type)
+            controller_idx = Playground.AVAILABLE_CONTROLLERS.index(
+                self.controller_type
+            )
             is_controller_changed, new_controller_idx = psim.Combo(
                 "Nav.", controller_idx, Playground.AVAILABLE_CONTROLLERS
             )
             if is_controller_changed:
-                self.controller_type = Playground.AVAILABLE_CONTROLLERS[new_controller_idx]
-                self.is_force_canvas_dirty = self.is_force_canvas_dirty or is_controller_changed
+                self.controller_type = Playground.AVAILABLE_CONTROLLERS[
+                    new_controller_idx
+                ]
+                self.is_force_canvas_dirty = (
+                    self.is_force_canvas_dirty or is_controller_changed
+                )
 
                 if Playground.AVAILABLE_CONTROLLERS[new_controller_idx] == "Turntable":
                     ps.set_navigation_style("turntable")
-                elif Playground.AVAILABLE_CONTROLLERS[new_controller_idx] == "First Person":
+                elif (
+                    Playground.AVAILABLE_CONTROLLERS[new_controller_idx]
+                    == "First Person"
+                ):
                     ps.set_navigation_style("first_person")
                 elif Playground.AVAILABLE_CONTROLLERS[new_controller_idx] == "Free":
                     ps.set_navigation_style("free")
@@ -362,19 +414,32 @@ class Playground:
             psim.SameLine()
 
             up_dirs = ["x_up", "neg_x_up", "y_up", "neg_y_up", "z_up", "neg_z_up"]
-            front_dirs = ["x_front", "neg_x_front", "y_front", "neg_y_front", "z_front", "neg_z_front"]
+            front_dirs = [
+                "x_front",
+                "neg_x_front",
+                "y_front",
+                "neg_y_front",
+                "z_front",
+                "neg_z_front",
+            ]
 
             up_dir_idx = up_dirs.index(ps.get_up_dir())
             is_cam_up_changed, new_up_idx = psim.Combo("Up", up_dir_idx, up_dirs)
             if is_cam_up_changed:
                 ps.set_up_dir(up_dirs[new_up_idx])
-                self.is_force_canvas_dirty = self.is_force_canvas_dirty or is_cam_up_changed
+                self.is_force_canvas_dirty = (
+                    self.is_force_canvas_dirty or is_cam_up_changed
+                )
             psim.SameLine()
             front_dir_idx = front_dirs.index(ps.get_front_dir())
-            is_cam_front_changed, new_front_idx = psim.Combo("Front", front_dir_idx, front_dirs)
+            is_cam_front_changed, new_front_idx = psim.Combo(
+                "Front", front_dir_idx, front_dirs
+            )
             if is_cam_front_changed:
                 ps.set_front_dir(front_dirs[new_front_idx])
-                self.is_force_canvas_dirty = self.is_force_canvas_dirty or is_cam_front_changed
+                self.is_force_canvas_dirty = (
+                    self.is_force_canvas_dirty or is_cam_front_changed
+                )
             psim.PopItemWidth()
 
             psim.PushItemWidth(100)
@@ -409,26 +474,41 @@ class Playground:
                 else 0
             )
 
-            map_changed, new_map_idx = psim.Combo("Env Map", current_map_idx, available_maps)
+            map_changed, new_map_idx = psim.Combo(
+                "Env Map", current_map_idx, available_maps
+            )
             if map_changed:
                 self.engine.environment.set_env(available_maps[new_map_idx])
                 self.is_force_canvas_dirty = True
 
             # Only show tonemapping controls if we have an HDR environment map loaded
-            if self.engine.environment.current_name not in self.engine.environment.FIXED_ENVMAP_OPTIONS:
+            if (
+                self.engine.environment.current_name
+                not in self.engine.environment.FIXED_ENVMAP_OPTIONS
+            ):
                 psim.SameLine()
                 # Tonemapper selection
-                tonemapper_idx = self.engine.environment.TONEMAPPER_OPTIONS.index(self.engine.environment.tonemapper)
+                tonemapper_idx = self.engine.environment.TONEMAPPER_OPTIONS.index(
+                    self.engine.environment.tonemapper
+                )
                 tonemapper_changed, new_tonemapper_idx = psim.Combo(
-                    "Tonemapper", tonemapper_idx, self.engine.environment.TONEMAPPER_OPTIONS
+                    "Tonemapper",
+                    tonemapper_idx,
+                    self.engine.environment.TONEMAPPER_OPTIONS,
                 )
                 if tonemapper_changed:
-                    self.engine.environment.tonemapper = self.engine.environment.TONEMAPPER_OPTIONS[new_tonemapper_idx]
+                    self.engine.environment.tonemapper = (
+                        self.engine.environment.TONEMAPPER_OPTIONS[new_tonemapper_idx]
+                    )
                     self.is_force_canvas_dirty = True
 
                 psim.PushItemWidth(100)
                 env_offset_changed, env_offset = psim.SliderFloat2(
-                    "Offset", self.engine.environment.envmap_offset, v_min=-0.5, v_max=+0.5, format="%.2f"
+                    "Offset",
+                    self.engine.environment.envmap_offset,
+                    v_min=-0.5,
+                    v_max=+0.5,
+                    format="%.2f",
                 )
                 if env_offset_changed:
                     self.engine.environment.envmap_offset[0] = env_offset[0]
@@ -439,12 +519,14 @@ class Playground:
                 psim.PushItemWidth(120)
 
                 # IBL intensity control
-                ibl_intensity_changed, self.engine.environment.ibl_intensity = psim.SliderFloat(
-                    "IBL Intensity",
-                    self.engine.environment.ibl_intensity,
-                    v_min=0.1,
-                    v_max=10.0,
-                    format="%.3f",
+                ibl_intensity_changed, self.engine.environment.ibl_intensity = (
+                    psim.SliderFloat(
+                        "IBL Intensity",
+                        self.engine.environment.ibl_intensity,
+                        v_min=0.1,
+                        v_max=10.0,
+                        format="%.3f",
+                    )
                 )
                 if ibl_intensity_changed:
                     self.is_force_canvas_dirty = True
@@ -475,7 +557,9 @@ class Playground:
             )
             if psim.Button("Add Camera"):
                 camera = polyscope_to_kaolin_camera(
-                    ps.get_view_camera_parameters(), width=self.video_w, height=self.video_h
+                    ps.get_view_camera_parameters(),
+                    width=self.video_w,
+                    height=self.video_h,
                 )
                 self.video_recorder.add_camera(camera)
             psim.SameLine()
@@ -485,7 +569,9 @@ class Playground:
             if psim.Button("Render Video"):
                 try:
                     self.video_recorder.render_video()
-                except ValueError as e:  # Catch and display any warnings for incorrect input
+                except (
+                    ValueError
+                ) as e:  # Catch and display any warnings for incorrect input
                     ps.warning(f"{e}")
 
             psim.PushItemWidth(150)
@@ -507,13 +593,20 @@ class Playground:
 
             psim.PushItemWidth(75)
             _, self.video_recorder.frames_between_cameras = psim.SliderInt(
-                "Frames Between", self.video_recorder.frames_between_cameras, v_min=1, v_max=120
+                "Frames Between",
+                self.video_recorder.frames_between_cameras,
+                v_min=1,
+                v_max=120,
             )
             psim.SameLine()
-            _, self.video_recorder.video_fps = psim.SliderInt("FPS", self.video_recorder.video_fps, v_min=1, v_max=120)
+            _, self.video_recorder.video_fps = psim.SliderInt(
+                "FPS", self.video_recorder.video_fps, v_min=1, v_max=120
+            )
             _, self.video_w = psim.SliderInt("Width", self.video_w, v_min=1, v_max=8192)
             psim.SameLine()
-            _, self.video_h = psim.SliderInt("Height", self.video_h, v_min=1, v_max=8192)
+            _, self.video_h = psim.SliderInt(
+                "Height", self.video_h, v_min=1, v_max=8192
+            )
             psim.PopItemWidth()
 
             trajectory = self.video_recorder.trajectory
@@ -524,7 +617,9 @@ class Playground:
                 for i, cam in enumerate(trajectory):
                     is_not_removed = self._draw_single_trajectory_camera(i, cam)
                     remained_cameras.append(is_not_removed)
-                self.video_recorder.trajectory = [trajectory[i] for i in range(len(trajectory)) if remained_cameras[i]]
+                self.video_recorder.trajectory = [
+                    trajectory[i] for i in range(len(trajectory)) if remained_cameras[i]
+                ]
 
                 psim.TreePop()
 
@@ -551,18 +646,26 @@ class Playground:
             for sp_idx, slice_plane in enumerate(self.slice_planes):
                 self.slice_planes[sp_idx].set_draw_widget(False)
 
-                changed, is_enabled = psim.Checkbox(f"Slice Plane {sp_idx}", self.slice_plane_enabled[sp_idx])
+                changed, is_enabled = psim.Checkbox(
+                    f"Slice Plane {sp_idx}", self.slice_plane_enabled[sp_idx]
+                )
                 if changed:
                     # self.slice_planes[sp_idx].set_draw_plane(is_enabled)
                     self.slice_plane_enabled[sp_idx] = is_enabled
                     self.slice_planes[sp_idx].set_draw_plane(False)
-                    self.slice_planes[sp_idx].set_pose(self.slice_plane_pos[sp_idx], self.slice_plane_normal[sp_idx])
+                    self.slice_planes[sp_idx].set_pose(
+                        self.slice_plane_pos[sp_idx], self.slice_plane_normal[sp_idx]
+                    )
                 any_plane_changed |= changed
 
                 psim.PushItemWidth(350)
                 changed, values = psim.SliderFloat3(
                     f"SPPos{sp_idx}",
-                    [self.slice_plane_pos[sp_idx][0], self.slice_plane_pos[sp_idx][1], self.slice_plane_pos[sp_idx][2]],
+                    [
+                        self.slice_plane_pos[sp_idx][0],
+                        self.slice_plane_pos[sp_idx][1],
+                        self.slice_plane_pos[sp_idx][2],
+                    ],
                     v_min=-10.0,
                     v_max=10.0,
                     format="%.2f",
@@ -570,7 +673,9 @@ class Playground:
                 any_plane_changed |= changed
                 if changed:
                     self.slice_plane_pos[sp_idx] = values
-                    self.slice_planes[sp_idx].set_pose(self.slice_plane_pos[sp_idx], self.slice_plane_normal[sp_idx])
+                    self.slice_planes[sp_idx].set_pose(
+                        self.slice_plane_pos[sp_idx], self.slice_plane_normal[sp_idx]
+                    )
 
                 changed, values = psim.SliderFloat3(
                     f"SPNorm{sp_idx}",
@@ -586,7 +691,9 @@ class Playground:
                 any_plane_changed |= changed
                 if changed:
                     self.slice_plane_normal[sp_idx] = values
-                    self.slice_planes[sp_idx].set_pose(self.slice_plane_pos[sp_idx], self.slice_plane_normal[sp_idx])
+                    self.slice_planes[sp_idx].set_pose(
+                        self.slice_plane_pos[sp_idx], self.slice_plane_normal[sp_idx]
+                    )
 
                 psim.PopItemWidth()
 
@@ -611,16 +718,24 @@ class Playground:
         psim.SetNextItemOpen(True, psim.ImGuiCond_FirstUseEver)
         if psim.TreeNode("Antialiasing"):
             psim.PushItemWidth(150)
-            settings_changed, self.engine.use_spp = psim.Checkbox("Enable", self.engine.use_spp)
+            settings_changed, self.engine.use_spp = psim.Checkbox(
+                "Enable", self.engine.use_spp
+            )
             self.is_force_canvas_dirty = self.is_force_canvas_dirty or settings_changed
 
             psim.SameLine()
-            aa_index = Engine3DGRUT.ANTIALIASING_MODES.index(self.engine.antialiasing_mode)
+            aa_index = Engine3DGRUT.ANTIALIASING_MODES.index(
+                self.engine.antialiasing_mode
+            )
             psim.PushItemWidth(200)
-            is_antialiasing_changed, aa_index = psim.Combo("Mode", aa_index, Engine3DGRUT.ANTIALIASING_MODES)
+            is_antialiasing_changed, aa_index = psim.Combo(
+                "Mode", aa_index, Engine3DGRUT.ANTIALIASING_MODES
+            )
             psim.PopItemWidth()
             if is_antialiasing_changed:
-                self.engine.antialiasing_mode = Engine3DGRUT.ANTIALIASING_MODES[aa_index]
+                self.engine.antialiasing_mode = Engine3DGRUT.ANTIALIASING_MODES[
+                    aa_index
+                ]
                 # '4x MSAA', '8x MSAA', '16x MSAA', 'Quasi-Random (Sobol)'
                 if self.engine.antialiasing_mode == "4x MSAA":
                     self.engine.spp.mode = "msaa"
@@ -635,7 +750,9 @@ class Playground:
                     self.engine.spp.mode = "low_discrepancy_seq"
                     self.engine.spp.spp = 64
                 self.engine.spp.reset_accumulation()
-            self.is_force_canvas_dirty = self.is_force_canvas_dirty or is_antialiasing_changed
+            self.is_force_canvas_dirty = (
+                self.is_force_canvas_dirty or is_antialiasing_changed
+            )
 
             psim.SameLine()
             psim.PushItemWidth(75)
@@ -653,7 +770,10 @@ class Playground:
             self.is_force_canvas_dirty = self.is_force_canvas_dirty or settings_changed
 
             settings_changed, self.engine.spp.batch_size = psim.SliderInt(
-                "Batch Size (#Frames)", self.engine.spp.batch_size, v_min=1, v_max=min(1024, self.engine.spp.spp)
+                "Batch Size (#Frames)",
+                self.engine.spp.batch_size,
+                v_min=1,
+                v_max=min(1024, self.engine.spp.spp),
             )
             self.is_force_canvas_dirty = self.is_force_canvas_dirty or settings_changed
 
@@ -662,7 +782,8 @@ class Playground:
                 progress_width = round(panel_width / 1.2)
                 progress_label = f"{str(self.engine.spp.spp_accumulated_for_frame)}/{str(self.engine.spp.spp)}"
                 psim.ProgressBar(
-                    fraction=self.engine.spp.spp_accumulated_for_frame / self.engine.spp.spp,
+                    fraction=self.engine.spp.spp_accumulated_for_frame
+                    / self.engine.spp.spp,
                     size_arg=(progress_width, 0),
                 )
 
@@ -671,7 +792,9 @@ class Playground:
     def _draw_depth_of_field_widget(self):
         psim.SetNextItemOpen(True, psim.ImGuiCond_FirstUseEver)
         if psim.TreeNode("Depth of Field"):
-            settings_changed, self.engine.use_depth_of_field = psim.Checkbox("Enable", self.engine.use_depth_of_field)
+            settings_changed, self.engine.use_depth_of_field = psim.Checkbox(
+                "Enable", self.engine.use_depth_of_field
+            )
             self.is_force_canvas_dirty = self.is_force_canvas_dirty or settings_changed
 
             psim.SameLine()
@@ -686,23 +809,24 @@ class Playground:
             self.is_force_canvas_dirty = self.is_force_canvas_dirty or settings_changed
 
             psim.SameLine()
-            settings_changed, self.engine.depth_of_field.aperture_size = psim.SliderFloat(
-                "Aperture Size",
-                self.engine.depth_of_field.aperture_size,
-                v_min=1e-5,
-                v_max=1e-1,
-                flags=psim.ImGuiSliderFlags_Logarithmic,
+            settings_changed, self.engine.depth_of_field.aperture_size = (
+                psim.SliderFloat(
+                    "Aperture Size",
+                    self.engine.depth_of_field.aperture_size,
+                    v_min=1e-5,
+                    v_max=1e-1,
+                    flags=psim.ImGuiSliderFlags_Logarithmic,
+                )
             )
             self.is_force_canvas_dirty = self.is_force_canvas_dirty or settings_changed
 
             if self.engine.use_depth_of_field:
                 panel_width = psim.GetContentRegionAvail()[0]
                 progress_width = round(panel_width / 1.2)
-                progress_label = (
-                    f"{str(self.engine.depth_of_field.spp_accumulated_for_frame)}/{str(self.engine.depth_of_field.spp)}"
-                )
+                progress_label = f"{str(self.engine.depth_of_field.spp_accumulated_for_frame)}/{str(self.engine.depth_of_field.spp)}"
                 psim.ProgressBar(
-                    fraction=self.engine.depth_of_field.spp_accumulated_for_frame / self.engine.depth_of_field.spp,
+                    fraction=self.engine.depth_of_field.spp_accumulated_for_frame
+                    / self.engine.depth_of_field.spp,
                     size_arg=(progress_width, 0),
                 )
 
@@ -715,11 +839,11 @@ class Playground:
         if psim.TreeNode("Primitives"):
             self._draw_general_primitive_settings_widget()
             for obj_name, obj in self.primitives.objects.items():
-
                 psim.SetNextItemOpen(True, psim.ImGuiCond_FirstUseEver)
                 if psim.TreeNode(obj_name):
-
-                    is_retained, is_duplicated = self._draw_single_primitive_main_settings_widget(obj_name, obj)
+                    is_retained, is_duplicated = (
+                        self._draw_single_primitive_main_settings_widget(obj_name, obj)
+                    )
                     if not is_retained:
                         removed_objs.append(obj_name)
                     if is_duplicated:
@@ -727,8 +851,10 @@ class Playground:
 
                     psim.SetNextItemOpen(True, psim.ImGuiCond_FirstUseEver)
                     if psim.TreeNode("Properties"):
-
-                        if obj.primitive_type in (OptixPrimitiveTypes.DIFFUSE, OptixPrimitiveTypes.PBR):
+                        if obj.primitive_type in (
+                            OptixPrimitiveTypes.DIFFUSE,
+                            OptixPrimitiveTypes.PBR,
+                        ):
                             self._draw_diffuse_pbr_settings_widget(obj)
                         if obj.primitive_type == OptixPrimitiveTypes.GLASS:
                             self._draw_glass_settings_widget(obj)
@@ -754,13 +880,16 @@ class Playground:
         material_changed = False
         psim.SetNextItemOpen(False, psim.ImGuiCond_FirstUseEver)
         if psim.TreeNode("Materials"):
-
             for mat_name, material in self.primitives.registered_materials.items():
                 psim.SetNextItemOpen(False, psim.ImGuiCond_FirstUseEver)
                 if psim.TreeNode(mat_name + f" [ID #{material.material_id}]"):
                     changed, values = psim.SliderFloat3(
                         "Diffuse Factor",
-                        [material.diffuse_factor[0], material.diffuse_factor[1], material.diffuse_factor[2]],
+                        [
+                            material.diffuse_factor[0],
+                            material.diffuse_factor[1],
+                            material.diffuse_factor[2],
+                        ],
                         v_min=0.0,
                         v_max=1.4,
                         format="%.3f",
@@ -773,7 +902,11 @@ class Playground:
 
                     changed, values = psim.SliderFloat3(
                         "Emissive Factor",
-                        [material.emissive_factor[0], material.emissive_factor[1], material.emissive_factor[2]],
+                        [
+                            material.emissive_factor[0],
+                            material.emissive_factor[1],
+                            material.emissive_factor[2],
+                        ],
                         v_min=0.0,
                         v_max=1.0,
                         format="%.3f",
@@ -784,32 +917,47 @@ class Playground:
                         material.emissive_factor[2] = values[2]
                         material_changed = True
 
-                    changed, value = psim.SliderFloat("Metallic Factor", material.metallic_factor, v_min=0.0, v_max=1.0)
+                    changed, value = psim.SliderFloat(
+                        "Metallic Factor",
+                        material.metallic_factor,
+                        v_min=0.0,
+                        v_max=1.0,
+                    )
                     if changed:
                         material.metallic_factor = value
                         material_changed = True
 
                     changed, value = psim.SliderFloat(
-                        "Roughness Factor", material.roughness_factor, v_min=0.0, v_max=1.0
+                        "Roughness Factor",
+                        material.roughness_factor,
+                        v_min=0.0,
+                        v_max=1.0,
                     )
                     if changed:
                         material.roughness_factor = value
                         material_changed = True
 
                     changed, value = psim.SliderFloat(
-                        "Transmission Factor", material.transmission_factor, v_min=0.0, v_max=1.0
+                        "Transmission Factor",
+                        material.transmission_factor,
+                        v_min=0.0,
+                        v_max=1.0,
                     )
                     if changed:
                         material.transmission_factor = value
                         material_changed = True
 
-                    changed, value = psim.SliderFloat("IOR", material.ior, v_min=0.2, v_max=2.0)
+                    changed, value = psim.SliderFloat(
+                        "IOR", material.ior, v_min=0.2, v_max=2.0
+                    )
                     if changed:
                         material.ior = value
                         material_changed = True
 
                     if material.diffuse_map is not None:
-                        psim.Text(f"Diffuse Texture: {material.diffuse_map.shape[0]}x{material.diffuse_map.shape[1]}")
+                        psim.Text(
+                            f"Diffuse Texture: {material.diffuse_map.shape[0]}x{material.diffuse_map.shape[1]}"
+                        )
                     else:
                         psim.Text(f"Diffuse Texture: No")
 
@@ -828,7 +976,9 @@ class Playground:
                         psim.Text(f"Metal-Rough Texture: No")
 
                     if material.normal_map is not None:
-                        psim.Text(f"Normal Texture: {material.normal_map.shape[0]}x{material.normal_map.shape[1]}")
+                        psim.Text(
+                            f"Normal Texture: {material.normal_map.shape[0]}x{material.normal_map.shape[1]}"
+                        )
                     else:
                         psim.Text(f"Normal Texture: No")
 
@@ -841,7 +991,9 @@ class Playground:
 
     def _draw_general_primitive_settings_widget(self):
         primitives_disabled = not self.primitives.enabled
-        settings_changed, primitives_disabled = psim.Checkbox("Disable Path Tracer", primitives_disabled)
+        settings_changed, primitives_disabled = psim.Checkbox(
+            "Disable Path Tracer", primitives_disabled
+        )
         self.primitives.enabled = not primitives_disabled
 
         self.is_force_canvas_dirty = self.is_force_canvas_dirty or settings_changed
@@ -872,7 +1024,9 @@ class Playground:
             self.gui_aux_fields["add_geom_select_type"] = 0
         available_geometries = sorted(list(self.primitives.assets.keys()))
         _, new_geom_select_type_idx = psim.Combo(
-            "Geometry", self.gui_aux_fields["add_geom_select_type"], available_geometries
+            "Geometry",
+            self.gui_aux_fields["add_geom_select_type"],
+            available_geometries,
         )
         self.gui_aux_fields["add_geom_select_type"] = new_geom_select_type_idx
 
@@ -924,11 +1078,15 @@ class Playground:
 
     def _draw_single_primitive_main_settings_widget(self, obj_name, obj):
         available_primitive_modes = OptixPrimitiveTypes.names()
-        settings_changed, new_prim_type_idx = psim.Combo("Type", obj.primitive_type.value, available_primitive_modes)
+        settings_changed, new_prim_type_idx = psim.Combo(
+            "Type", obj.primitive_type.value, available_primitive_modes
+        )
         if settings_changed:
             obj.primitive_type = OptixPrimitiveTypes(new_prim_type_idx)
             self.primitives.recompute_stacked_buffers()
-            self.primitives.rebuild_bvh_if_needed(True, True)  # Rebuild so None types are truly ignored in BVH
+            self.primitives.rebuild_bvh_if_needed(
+                True, True
+            )  # Rebuild so None types are truly ignored in BVH
         self.is_force_canvas_dirty = self.is_force_canvas_dirty or settings_changed
 
         psim.SameLine()
@@ -1010,17 +1168,27 @@ class Playground:
         else:
             current_mat_id = obj.material_id[0].item()
             mat_id_to_mat_idx = {
-                m.material_id: idx for idx, (m_name, m) in enumerate(self.primitives.registered_materials.items())
+                m.material_id: idx
+                for idx, (m_name, m) in enumerate(
+                    self.primitives.registered_materials.items()
+                )
             }
             mat_name_to_mat_idx = {
-                m_name: idx for idx, (m_name, m) in enumerate(self.primitives.registered_materials.items())
+                m_name: idx
+                for idx, (m_name, m) in enumerate(
+                    self.primitives.registered_materials.items()
+                )
             }
             mat_idx_to_mat_id = {v: k for k, v in mat_id_to_mat_idx.items()}
-            settings_changed, new_mat_idx = psim.Combo("Material", current_mat_id, list(mat_name_to_mat_idx.keys()))
+            settings_changed, new_mat_idx = psim.Combo(
+                "Material", current_mat_id, list(mat_name_to_mat_idx.keys())
+            )
             if settings_changed:
                 obj.material_id[:] = mat_idx_to_mat_id[new_mat_idx]
                 self.primitives.recompute_stacked_buffers()
-                self.primitives.rebuild_bvh_if_needed(True, True)  # Rebuild so None types are truly ignored in BVH
+                self.primitives.rebuild_bvh_if_needed(
+                    True, True
+                )  # Rebuild so None types are truly ignored in BVH
             self.is_force_canvas_dirty = self.is_force_canvas_dirty or settings_changed
 
     def _draw_glass_settings_widget(self, obj):

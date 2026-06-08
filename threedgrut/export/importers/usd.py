@@ -87,7 +87,9 @@ class USDImporter(FormatImporter):
 
             return self._load_usd_stage(root_file)
 
-    def _load_usd_stage(self, path: Path) -> Tuple[GaussianAttributes, ModelCapabilities]:
+    def _load_usd_stage(
+        self, path: Path
+    ) -> Tuple[GaussianAttributes, ModelCapabilities]:
         """Load USD stage and extract Gaussian data."""
         stage = Usd.Stage.Open(str(path))
         if not stage:
@@ -104,12 +106,16 @@ class USDImporter(FormatImporter):
                 f"UsdVol::Volume and other formats are not supported for import."
             )
 
-        logger.info(f"Found Gaussian prim: {gaussian_prim.GetPath()} (type: {gaussian_prim.GetTypeName()})")
+        logger.info(
+            f"Found Gaussian prim: {gaussian_prim.GetPath()} (type: {gaussian_prim.GetTypeName()})"
+        )
 
         # Load via UsdVol schema API (ParticleField is base; ParticleField3DGaussianSplat is derived)
         if gaussian_prim.IsA(UsdVol.ParticleField):
             return self._load_lightfield(gaussian_prim)
-        raise ValueError(f"Prim is not a UsdVol ParticleField: {gaussian_prim.GetTypeName()}")
+        raise ValueError(
+            f"Prim is not a UsdVol ParticleField: {gaussian_prim.GetTypeName()}"
+        )
 
     def _find_particlefield_prim(self, stage: Usd.Stage) -> Optional[Usd.Prim]:
         """Find the Gaussian data prim in the stage (UsdVol.ParticleField or derived)."""
@@ -118,16 +124,26 @@ class USDImporter(FormatImporter):
                 return prim
         return None
 
-    def _load_lightfield(self, prim: Usd.Prim) -> Tuple[GaussianAttributes, ModelCapabilities]:
+    def _load_lightfield(
+        self, prim: Usd.Prim
+    ) -> Tuple[GaussianAttributes, ModelCapabilities]:
         """Load from ParticleField3DGaussianSplat or ParticleField via UsdVol schema API."""
         prim_path = str(prim.GetPath())
 
         if prim.IsA(UsdVol.ParticleField3DGaussianSplat):
             schema = UsdVol.ParticleField3DGaussianSplat(prim)
-            positions = _get_vec3_from_schema(schema.GetPositionsAttr(), schema.GetPositionshAttr())
-            rotations = _get_quat_from_schema(schema.GetOrientationsAttr(), schema.GetOrientationshAttr())
-            scales = _get_vec3_from_schema(schema.GetScalesAttr(), schema.GetScaleshAttr())
-            densities = _get_float_from_schema(schema.GetOpacitiesAttr(), schema.GetOpacitieshAttr())
+            positions = _get_vec3_from_schema(
+                schema.GetPositionsAttr(), schema.GetPositionshAttr()
+            )
+            rotations = _get_quat_from_schema(
+                schema.GetOrientationsAttr(), schema.GetOrientationshAttr()
+            )
+            scales = _get_vec3_from_schema(
+                schema.GetScalesAttr(), schema.GetScaleshAttr()
+            )
+            densities = _get_float_from_schema(
+                schema.GetOpacitiesAttr(), schema.GetOpacitieshAttr()
+            )
             sh_degree_attr = schema.GetRadianceSphericalHarmonicsDegreeAttr()
             sh_coeffs = _get_vec3_from_schema(
                 schema.GetRadianceSphericalHarmonicsCoefficientsAttr(),
@@ -141,10 +157,18 @@ class USDImporter(FormatImporter):
             scale_api = UsdVol.ParticleFieldScaleAttributeAPI(prim)
             opacity_api = UsdVol.ParticleFieldOpacityAttributeAPI(prim)
             rad_api = UsdVol.ParticleFieldSphericalHarmonicsAttributeAPI(prim)
-            positions = _get_vec3_from_schema(pos_api.GetPositionsAttr(), pos_api.GetPositionshAttr())
-            rotations = _get_quat_from_schema(orient_api.GetOrientationsAttr(), orient_api.GetOrientationshAttr())
-            scales = _get_vec3_from_schema(scale_api.GetScalesAttr(), scale_api.GetScaleshAttr())
-            densities = _get_float_from_schema(opacity_api.GetOpacitiesAttr(), opacity_api.GetOpacitieshAttr())
+            positions = _get_vec3_from_schema(
+                pos_api.GetPositionsAttr(), pos_api.GetPositionshAttr()
+            )
+            rotations = _get_quat_from_schema(
+                orient_api.GetOrientationsAttr(), orient_api.GetOrientationshAttr()
+            )
+            scales = _get_vec3_from_schema(
+                scale_api.GetScalesAttr(), scale_api.GetScaleshAttr()
+            )
+            densities = _get_float_from_schema(
+                opacity_api.GetOpacitiesAttr(), opacity_api.GetOpacitieshAttr()
+            )
             sh_degree_attr = rad_api.GetRadianceSphericalHarmonicsDegreeAttr()
             sh_coeffs = _get_vec3_from_schema(
                 rad_api.GetRadianceSphericalHarmonicsCoefficientsAttr(),
@@ -156,8 +180,12 @@ class USDImporter(FormatImporter):
         num_gaussians = len(positions)
 
         if rotations is None:
-            logger.warning("No orientations attribute found, using identity quaternions")
-            rotations = np.tile([1.0, 0.0, 0.0, 0.0], (num_gaussians, 1)).astype(np.float32)
+            logger.warning(
+                "No orientations attribute found, using identity quaternions"
+            )
+            rotations = np.tile([1.0, 0.0, 0.0, 0.0], (num_gaussians, 1)).astype(
+                np.float32
+            )
         if scales is None:
             logger.warning("No scales attribute found, using unit scales")
             scales = np.ones((num_gaussians, 3), dtype=np.float32)
@@ -201,7 +229,9 @@ class USDImporter(FormatImporter):
             density_activation="sigmoid",
             scale_activation="exp",
         )
-        logger.info(f"Loaded {num_gaussians} Gaussians from LightField schema, SH degree {caps.sh_degree}")
+        logger.info(
+            f"Loaded {num_gaussians} Gaussians from LightField schema, SH degree {caps.sh_degree}"
+        )
         return attrs, caps
 
 

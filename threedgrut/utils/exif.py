@@ -154,7 +154,9 @@ def load_exif_exposures(image_paths: List[Path]) -> List[Optional[float]]:
     if valid_count > 0:
         mean_exposure = sum(valid_exposures) / valid_count
         # Normalize: subtract mean from valid values
-        normalized: List[Optional[float]] = [(e - mean_exposure) if e is not None else None for e in raw_exposures]
+        normalized: List[Optional[float]] = [
+            (e - mean_exposure) if e is not None else None for e in raw_exposures
+        ]
     else:
         mean_exposure = 0.0
         normalized = raw_exposures  # All None
@@ -163,7 +165,10 @@ def load_exif_exposures(image_paths: List[Path]) -> List[Optional[float]]:
     if valid_count == 0:
         logger.info(f"📷 EXIF: No exposure data found in {total_count} images")
     elif valid_count == total_count:
-        logger.info(f"📷 EXIF: Loaded exposure for all {total_count} images " f"(mean: {mean_exposure:.2f} EV)")
+        logger.info(
+            f"📷 EXIF: Loaded exposure for all {total_count} images "
+            f"(mean: {mean_exposure:.2f} EV)"
+        )
     else:
         logger.info(
             f"📷 EXIF: Loaded exposure for {valid_count}/{total_count} images "

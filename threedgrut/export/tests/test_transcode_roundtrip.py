@@ -33,7 +33,9 @@ from threedgrut.export.importers import PLYImporter, USDImporter
 from threedgrut.export.usd.exporter import USDExporter
 
 
-def create_test_attributes(num_gaussians: int = 100, sh_degree: int = 3) -> GaussianAttributes:
+def create_test_attributes(
+    num_gaussians: int = 100, sh_degree: int = 3
+) -> GaussianAttributes:
     """Create synthetic test Gaussian attributes.
 
     Args:
@@ -53,10 +55,14 @@ def create_test_attributes(num_gaussians: int = 100, sh_degree: int = 3) -> Gaus
     rotations = rotations / np.linalg.norm(rotations, axis=1, keepdims=True)
 
     # Scales: random positive values (log scale for pre-activation)
-    scales = np.random.randn(num_gaussians, 3).astype(np.float32) * 0.5 - 2.0  # log scale around 0.1
+    scales = (
+        np.random.randn(num_gaussians, 3).astype(np.float32) * 0.5 - 2.0
+    )  # log scale around 0.1
 
     # Densities: random values (logit for pre-activation)
-    densities = np.random.randn(num_gaussians, 1).astype(np.float32) * 2.0  # logit values
+    densities = (
+        np.random.randn(num_gaussians, 1).astype(np.float32) * 2.0
+    )  # logit values
 
     # Albedo: SH DC term
     albedo = np.random.randn(num_gaussians, 3).astype(np.float32) * 0.5
@@ -75,7 +81,9 @@ def create_test_attributes(num_gaussians: int = 100, sh_degree: int = 3) -> Gaus
     )
 
 
-def create_test_capabilities(num_gaussians: int = 100, sh_degree: int = 3) -> ModelCapabilities:
+def create_test_capabilities(
+    num_gaussians: int = 100, sh_degree: int = 3
+) -> ModelCapabilities:
     """Create test model capabilities."""
     return ModelCapabilities(
         has_spherical_harmonics=True,
@@ -107,7 +115,14 @@ def compare_attributes(
     results = {}
 
     # Compare each attribute
-    for attr_name in ["positions", "rotations", "scales", "densities", "albedo", "specular"]:
+    for attr_name in [
+        "positions",
+        "rotations",
+        "scales",
+        "densities",
+        "albedo",
+        "specular",
+    ]:
         orig_arr = getattr(original, attr_name)
         load_arr = getattr(loaded, attr_name)
 
@@ -157,7 +172,9 @@ class TestPLYRoundTrip:
             results = compare_attributes(attrs, loaded_attrs, rtol=1e-5, atol=1e-6)
 
             for attr_name, result in results.items():
-                assert result["match"], f"PLY round-trip failed for {attr_name}: {result}"
+                assert result["match"], (
+                    f"PLY round-trip failed for {attr_name}: {result}"
+                )
 
 
 class TestUSDLightFieldRoundTrip:
@@ -172,11 +189,17 @@ class TestUSDLightFieldRoundTrip:
         positions = np.random.randn(num_gaussians, 3).astype(np.float32) * 2.0
         rotations = np.random.randn(num_gaussians, 4).astype(np.float32)
         rotations = rotations / np.linalg.norm(rotations, axis=1, keepdims=True)
-        scales = np.exp(np.random.randn(num_gaussians, 3).astype(np.float32) * 0.5 - 2.0)
-        densities = 1.0 / (1.0 + np.exp(-np.random.randn(num_gaussians, 1).astype(np.float32) * 2.0))
+        scales = np.exp(
+            np.random.randn(num_gaussians, 3).astype(np.float32) * 0.5 - 2.0
+        )
+        densities = 1.0 / (
+            1.0 + np.exp(-np.random.randn(num_gaussians, 1).astype(np.float32) * 2.0)
+        )
         albedo = np.random.randn(num_gaussians, 3).astype(np.float32) * 0.5
         num_specular = (sh_degree + 1) ** 2 - 1
-        specular = np.random.randn(num_gaussians, num_specular * 3).astype(np.float32) * 0.1
+        specular = (
+            np.random.randn(num_gaussians, num_specular * 3).astype(np.float32) * 0.1
+        )
 
         attrs = GaussianAttributes(
             positions=positions,
@@ -209,7 +232,9 @@ class TestUSDLightFieldRoundTrip:
             results = compare_attributes(attrs, loaded_attrs, rtol=1e-4, atol=1e-5)
 
             for attr_name, result in results.items():
-                assert result["match"], f"USD LightField round-trip failed for {attr_name}: {result}"
+                assert result["match"], (
+                    f"USD LightField round-trip failed for {attr_name}: {result}"
+                )
 
 
 class TestCrossFormatTranscode:
@@ -256,7 +281,9 @@ class TestCrossFormatTranscode:
             results = compare_attributes(attrs, attrs4, rtol=1e-2, atol=1e-3)
 
             for attr_name, result in results.items():
-                assert result["match"], f"PLY→USD→PLY transcode failed for {attr_name}: {result}"
+                assert result["match"], (
+                    f"PLY→USD→PLY transcode failed for {attr_name}: {result}"
+                )
 
 
 if __name__ == "__main__":

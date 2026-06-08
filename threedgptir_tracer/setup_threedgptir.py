@@ -26,7 +26,9 @@ def setup_threedgptir(conf):
 
     include_paths = []
     include_paths.append(os.path.join(os.path.dirname(__file__), "include"))
-    include_paths.append(os.path.join(os.path.dirname(__file__), "dependencies", "optix-dev", "include"))
+    include_paths.append(
+        os.path.join(os.path.dirname(__file__), "dependencies", "optix-dev", "include")
+    )
 
     # Compiler options.
     cflags = []
@@ -40,11 +42,13 @@ def setup_threedgptir(conf):
     ]
 
     # Compile slang kernels
-    slang_build_dir = os.path.join(os.path.dirname(__file__), "include", "3dgptir", "kernels", "slang")
+    slang_build_dir = os.path.join(
+        os.path.dirname(__file__), "include", "3dgptir", "kernels", "slang"
+    )
     jit.compile_slang_kernel(
         kernel_files=[
-            f"{os.path.join(slang_build_dir,'models/gaussianParticles.slang')}",
-            f"{os.path.join(slang_build_dir,'models/shRadiativeParticles.slang')}",
+            f"{os.path.join(slang_build_dir, 'models/gaussianParticles.slang')}",
+            f"{os.path.join(slang_build_dir, 'models/shRadiativeParticles.slang')}",
         ],
         output_file=f"{os.path.join(slang_build_dir, 'gaussianParticles.cuh')}",
         defines=[
@@ -54,7 +58,7 @@ def setup_threedgptir(conf):
             f"-DGAUSSIAN_PARTICLE_MIN_ALPHA={conf.render.particle_kernel_min_alpha}",
             f"-DGAUSSIAN_PARTICLE_MAX_ALPHA={conf.render.particle_kernel_max_alpha}",
             f"-DGAUSSIAN_PARTICLE_ENABLE_NORMAL={to_cpp_bool(conf.render.enable_normals)}",
-            f"-DGAUSSIAN_PARTICLE_SURFEL={to_cpp_bool(conf.render.primitive_type=='trisurfel')}",
+            f"-DGAUSSIAN_PARTICLE_SURFEL={to_cpp_bool(conf.render.primitive_type == 'trisurfel')}",
         ],
         include_paths=[
             os.path.join(os.path.dirname(__file__), "include"),

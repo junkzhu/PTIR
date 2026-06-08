@@ -7,12 +7,15 @@ import PIL
 import torch
 from diffusers.configuration_utils import register_to_config
 from diffusers.image_processor import VaeImageProcessor
+
 try:
     from diffusers.loaders import TextualInversionLoaderMixin
 except ImportError:
+
     class TextualInversionLoaderMixin:
         def maybe_convert_prompt(self, prompt, tokenizer):
             return prompt
+
 
 try:
     from diffusers.loaders import LoraLoaderMixin
@@ -20,8 +23,11 @@ except ImportError:
     try:
         from diffusers.loaders.lora_pipeline import LoraLoaderMixin
     except ImportError:
+
         class LoraLoaderMixin:
             pass
+
+
 from diffusers.models import AutoencoderKL, UNet2DConditionModel
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline
 from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion import (
@@ -740,7 +746,7 @@ class StableDiffusionAOVMatEstPipeline(
                 f"Incorrect configuration settings! The config of `pipeline.unet`: {self.unet.config} expects"
                 f" {self.unet.config.in_channels} but received `num_channels_latents`: {num_channels_latents} +"
                 f" `num_channels_image`: {num_channels_image} "
-                f" = {num_channels_latents+num_channels_image}. Please verify the config of"
+                f" = {num_channels_latents + num_channels_image}. Please verify the config of"
                 " `pipeline.unet` or your `image` input."
             )
 

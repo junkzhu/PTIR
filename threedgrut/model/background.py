@@ -33,7 +33,9 @@ def make(name: str, config):
         case "skip-background":
             return SkipBackground(config=config)
         case _:
-            raise ValueError(f"background {name} not supported, choice must be in [background-color, skip-background]")
+            raise ValueError(
+                f"background {name} not supported, choice must be in [background-color, skip-background]"
+            )
 
 
 class BaseBackground(ABC, torch.nn.Module):
@@ -52,7 +54,9 @@ class BaseBackground(ABC, torch.nn.Module):
     def forward(self, ray_to_world, rays_d, rgb, opacity):
         raise NotImplementedError("Must override in the child class")
 
-    def apply_to_attribute(self, attribute: torch.Tensor, opacity: torch.Tensor, background_value=None) -> torch.Tensor:
+    def apply_to_attribute(
+        self, attribute: torch.Tensor, opacity: torch.Tensor, background_value=None
+    ) -> torch.Tensor:
         return attribute
 
     def apply_to_attributes(
@@ -63,7 +67,9 @@ class BaseBackground(ABC, torch.nn.Module):
     ) -> dict[str, torch.Tensor]:
         background_values = background_values or {}
         return {
-            name: self.apply_to_attribute(attribute, opacity, background_value=background_values.get(name))
+            name: self.apply_to_attribute(
+                attribute, opacity, background_value=background_values.get(name)
+            )
             for name, attribute in attributes.items()
         }
 
@@ -95,7 +101,9 @@ class BackgroundColor(BaseBackground):
     @torch.cuda.nvtx.range("background_color.forward")
     def forward(self, ray_to_world, rays_d, rgb, opacity, train: bool):
         color = self.color
-        if self.background_color_type == "random":  # only use random color when training
+        if (
+            self.background_color_type == "random"
+        ):  # only use random color when training
             if train:
                 # NOTE: this uses random color PER PIXEL, other codebases use constant random
                 color = torch.rand_like(rays_d, dtype=torch.float32, device=self.device)
@@ -107,7 +115,9 @@ class BackgroundColor(BaseBackground):
 
         return rgb, opacity
 
-    def apply_to_attribute(self, attribute: torch.Tensor, opacity: torch.Tensor, background_value=None) -> torch.Tensor:
+    def apply_to_attribute(
+        self, attribute: torch.Tensor, opacity: torch.Tensor, background_value=None
+    ) -> torch.Tensor:
         if background_value is None:
             background_value = self.color
 
@@ -115,13 +125,22 @@ class BackgroundColor(BaseBackground):
         return attribute + background_value * (1.0 - opacity)
 
     @staticmethod
-    def _prepare_background_value(background_value, attribute: torch.Tensor) -> torch.Tensor:
+    def _prepare_background_value(
+        background_value, attribute: torch.Tensor
+    ) -> torch.Tensor:
         if not torch.is_tensor(background_value):
-            background_value = torch.as_tensor(background_value, dtype=attribute.dtype, device=attribute.device)
+            background_value = torch.as_tensor(
+                background_value, dtype=attribute.dtype, device=attribute.device
+            )
         else:
-            background_value = background_value.to(dtype=attribute.dtype, device=attribute.device)
+            background_value = background_value.to(
+                dtype=attribute.dtype, device=attribute.device
+            )
 
-        if background_value.ndim > 0 and background_value.shape[-1] not in (1, attribute.shape[-1]):
+        if background_value.ndim > 0 and background_value.shape[-1] not in (
+            1,
+            attribute.shape[-1],
+        ):
             raise ValueError(
                 f"Background value with {background_value.shape[-1]} channels cannot be applied "
                 f"to attribute with {attribute.shape[-1]} channels."

@@ -261,7 +261,9 @@ class ObjectTransform:
             or _scale is not self._scale
             or _permutation is not self._permutation
         ):
-            transform = ObjectTransform(device=_translation.device, dtype=_translation.dtype)
+            transform = ObjectTransform(
+                device=_translation.device, dtype=_translation.dtype
+            )
             transform._translation = _translation
             transform._rotation = _rotation
             transform._scale = _scale

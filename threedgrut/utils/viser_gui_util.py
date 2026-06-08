@@ -57,7 +57,9 @@ class ViserGUI:
         self.show_point_cloud = False
         self.scene_center, self.scene_radius = self._compute_scene_frame()
 
-        self.server.scene.set_up_direction("+z" if self.conf.dataset.type == "nerf" else "-y")
+        self.server.scene.set_up_direction(
+            "+z" if self.conf.dataset.type == "nerf" else "-y"
+        )
         self._configure_initial_camera()
 
         # Initialize UI components
@@ -110,31 +112,49 @@ class ViserGUI:
         with self.server.gui.add_folder("Controls"):
             # Render controls
             self.render_style_dropdown = self.server.gui.add_dropdown(
-                "Render Style", options=self.viz_render_styles, initial_value=self.viz_render_styles[0]
+                "Render Style",
+                options=self.viz_render_styles,
+                initial_value=self.viz_render_styles[0],
             )
 
-            self.show_render_checkbox = self.server.gui.add_checkbox("Show Render", initial_value=True)
+            self.show_render_checkbox = self.server.gui.add_checkbox(
+                "Show Render", initial_value=True
+            )
 
-            self.adjust_resolution_checkbox = self.server.gui.add_checkbox("Adjust Browser Size", initial_value=False)
+            self.adjust_resolution_checkbox = self.server.gui.add_checkbox(
+                "Adjust Browser Size", initial_value=False
+            )
 
             self.resolution_slider = self.server.gui.add_slider(
                 "Resolution", min=384, max=4096, step=2, initial_value=1024
             )
 
-            self.subsample_slider = self.server.gui.add_slider("Subsample", min=1, max=8, step=1, initial_value=1)
+            self.subsample_slider = self.server.gui.add_slider(
+                "Subsample", min=1, max=8, step=1, initial_value=1
+            )
 
             # Training controls
-            self.do_train_checkbox = self.server.gui.add_checkbox("Do Training", initial_value=True)
+            self.do_train_checkbox = self.server.gui.add_checkbox(
+                "Do Training", initial_value=True
+            )
 
-            self.live_update_checkbox = self.server.gui.add_checkbox("Live Update", initial_value=True)
+            self.live_update_checkbox = self.server.gui.add_checkbox(
+                "Live Update", initial_value=True
+            )
 
-            self.terminate_gui_checkbox = self.server.gui.add_checkbox("Terminate GUI", initial_value=False)
+            self.terminate_gui_checkbox = self.server.gui.add_checkbox(
+                "Terminate GUI", initial_value=False
+            )
 
-            self.show_point_cloud_checkbox = self.server.gui.add_checkbox("Show Point Cloud", initial_value=False)
+            self.show_point_cloud_checkbox = self.server.gui.add_checkbox(
+                "Show Point Cloud", initial_value=False
+            )
 
             # Camera controls
             self.camera_type_dropdown = self.server.gui.add_dropdown(
-                "Camera Type", options=["Perspective", "Fisheye"], initial_value="Perspective"
+                "Camera Type",
+                options=["Perspective", "Fisheye"],
+                initial_value="Perspective",
             )
             self.reset_view_button = self.server.gui.add_button("Reset View")
 
@@ -183,7 +203,9 @@ class ViserGUI:
             return np.array([0.0, 1.0, 0.0], dtype=np.float32)
         return np.array([0.0, 0.0, 1.0], dtype=np.float32)
 
-    def _get_initial_camera_pose_from_dataset(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    def _get_initial_camera_pose_from_dataset(
+        self,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray] | None:
         poses = self.train_dataset.get_poses()
         if poses is None or len(poses) == 0:
             return None
@@ -215,14 +237,22 @@ class ViserGUI:
             self.server.initial_camera.up = up
         else:
             distance = max(2.0 * self.scene_radius, 1.0)
-            self.server.initial_camera.position = self.scene_center + self._get_default_view_offset() * distance
+            self.server.initial_camera.position = (
+                self.scene_center + self._get_default_view_offset() * distance
+            )
             self.server.initial_camera.look_at = self.scene_center
             self.server.initial_camera.up = self._get_world_up_direction()
 
     def reset_client_view(self, client: viser.ClientHandle):
-        client.camera.position = np.asarray(self.server.initial_camera.position, dtype=np.float32)
-        client.camera.look_at = np.asarray(self.server.initial_camera.look_at, dtype=np.float32)
-        client.camera.up_direction = np.asarray(self.server.initial_camera.up, dtype=np.float32)
+        client.camera.position = np.asarray(
+            self.server.initial_camera.position, dtype=np.float32
+        )
+        client.camera.look_at = np.asarray(
+            self.server.initial_camera.look_at, dtype=np.float32
+        )
+        client.camera.up_direction = np.asarray(
+            self.server.initial_camera.up, dtype=np.float32
+        )
 
     def get_viser_c2w(self, camera):
         from threedgrut.utils.misc import quaternion_to_so3
@@ -247,7 +277,9 @@ class ViserGUI:
 
     def render_from_current_view(
         self, client
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, np.ndarray]:
+    ) -> Tuple[
+        torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, np.ndarray
+    ]:
         """Render from the current Viser camera using the renderer pose convention."""
         # Get current camera parameters from viser
         camera = client.camera
@@ -270,8 +302,12 @@ class ViserGUI:
 
         # Generate ray directions similar to polyscope version
         interp_x, interp_y = torch.meshgrid(
-            torch.linspace(0.0, window_w - 1, window_w, device=DEFAULT_DEVICE, dtype=torch.float32),
-            torch.linspace(0.0, window_h - 1, window_h, device=DEFAULT_DEVICE, dtype=torch.float32),
+            torch.linspace(
+                0.0, window_w - 1, window_w, device=DEFAULT_DEVICE, dtype=torch.float32
+            ),
+            torch.linspace(
+                0.0, window_h - 1, window_h, device=DEFAULT_DEVICE, dtype=torch.float32
+            ),
             indexing="xy",
         )
         u = interp_x
@@ -279,15 +315,17 @@ class ViserGUI:
 
         xs = ((u + 0.5) - 0.5 * window_w) / FOCAL
         ys = ((v + 0.5) - 0.5 * window_h) / FOCAL
-        rays_dir = torch.nn.functional.normalize(torch.stack((xs, ys, torch.ones_like(xs)), axis=-1), dim=-1).unsqueeze(
-            0
-        )
+        rays_dir = torch.nn.functional.normalize(
+            torch.stack((xs, ys, torch.ones_like(xs)), axis=-1), dim=-1
+        ).unsqueeze(0)
 
         # Create Batch object similar to polyscope version
         inputs = Batch(
             intrinsics=[FOCAL, FOCAL, window_w / 2, window_h / 2],
             T_to_world=torch.from_numpy(render_c2w).unsqueeze(0),
-            rays_ori=torch.zeros((1, window_h, window_w, 3), device=DEFAULT_DEVICE, dtype=torch.float32),
+            rays_ori=torch.zeros(
+                (1, window_h, window_w, 3), device=DEFAULT_DEVICE, dtype=torch.float32
+            ),
             rays_dir=rays_dir.reshape(1, window_h, window_w, 3),
         )
 
@@ -300,7 +338,9 @@ class ViserGUI:
             self.render_height = window_h
 
         points = to_np(self.model.positions)
-        points_h = np.concatenate([points, np.ones((points.shape[0], 1))], axis=1)  # (N,4)
+        points_h = np.concatenate(
+            [points, np.ones((points.shape[0], 1))], axis=1
+        )  # (N,4)
         points_cam = (render_w2c @ points_h.T).T  # (N,4)
 
         X, Y, Z, _ = points_cam.T
@@ -332,7 +372,9 @@ class ViserGUI:
         style = self.viz_render_style
 
         # Render current view
-        sple_orad, sple_odns, sple_odist, sple_onrm, sple_ohit, points_plane = self.render_from_current_view(client)
+        sple_orad, sple_odns, sple_odist, sple_onrm, sple_ohit, points_plane = (
+            self.render_from_current_view(client)
+        )
 
         """Update rendered view - rewritten to match polyscope version"""
         if not self.viz_render_enabled and force:
@@ -352,14 +394,22 @@ class ViserGUI:
         elif style == "density":
             # Convert density to grayscale image
             density_np = to_np(sple_odns)
-            density_255 = 255 * (density_np - density_np.min()) / (density_np.max() - density_np.min() + 1e-8)
+            density_255 = (
+                255
+                * (density_np - density_np.min())
+                / (density_np.max() - density_np.min() + 1e-8)
+            )
             density_255 = density_255.astype(np.uint8)
             img = np.repeat(density_255[0], 3, axis=2)
             client.scene.set_background_image(img)
 
         elif style == "distance":
             distance_np = to_np(sple_odist)
-            distance_255 = 255 * (distance_np - distance_np.min()) / (distance_np.max() - distance_np.min() + 1e-8)
+            distance_255 = (
+                255
+                * (distance_np - distance_np.min())
+                / (distance_np.max() - distance_np.min() + 1e-8)
+            )
             distance_255 = distance_255.astype(np.uint8)
             img = np.repeat(distance_255[0], 3, axis=2)
             img[:, :, 1:] = 0
@@ -368,7 +418,9 @@ class ViserGUI:
         elif style == "hits":
             # Convert hits count to grayscale image
             hits_np = to_np(sple_ohit)
-            hits_255 = 255 * (hits_np - hits_np.min()) / (hits_np.max() - hits_np.min() + 1e-8)
+            hits_255 = (
+                255 * (hits_np - hits_np.min()) / (hits_np.max() - hits_np.min() + 1e-8)
+            )
             hits_255 = hits_255.astype(np.uint8)
             img = np.repeat(hits_255[0], 3, axis=2)
             img[:, :, 2:] = 0
@@ -376,7 +428,11 @@ class ViserGUI:
         elif style == "normals":
             # Convert normals to RGB image
             normals_np = to_np(sple_onrm)
-            normals_255 = 255 * (normals_np - normals_np.min()) / (normals_np.max() - normals_np.min() + 1e-8)
+            normals_255 = (
+                255
+                * (normals_np - normals_np.min())
+                / (normals_np.max() - normals_np.min() + 1e-8)
+            )
             normals_255 = normals_255.astype(np.uint8)
             img = np.repeat(normals_255[0], 3, axis=2)
             # img[:, :, 0] = 0

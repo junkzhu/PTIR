@@ -21,7 +21,9 @@ import os
 from threedgrut_playground.ps_gui import Playground
 
 
-def run_demo(gs_object, mesh_assets_folder, envmap_assets_folder, default_gs_config, buffer_mode):
+def run_demo(
+    gs_object, mesh_assets_folder, envmap_assets_folder, default_gs_config, buffer_mode
+):
     """
     How to run:
     > python playground.py --gs_object <ckpt_path>
@@ -30,19 +32,30 @@ def run_demo(gs_object, mesh_assets_folder, envmap_assets_folder, default_gs_con
                           [--envmap_assets <hdr_folder_path>]
                           [--buffer_mode <host2device | device2device>]
     """
-    playground = Playground(gs_object, mesh_assets_folder, default_gs_config, envmap_assets_folder, buffer_mode)
+    playground = Playground(
+        gs_object,
+        mesh_assets_folder,
+        default_gs_config,
+        envmap_assets_folder,
+        buffer_mode,
+    )
     playground.run()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--gs_object", type=str, required=True, help="Path of pretrained 3dgrt checkpoint, as .pt / .ingp / .ply file."
+        "--gs_object",
+        type=str,
+        required=True,
+        help="Path of pretrained 3dgrt checkpoint, as .pt / .ingp / .ply file.",
     )
     parser.add_argument(
         "--mesh_assets",
         type=str,
-        default=os.path.join(os.path.dirname(__file__), "threedgrut_playground", "assets"),
+        default=os.path.join(
+            os.path.dirname(__file__), "threedgrut_playground", "assets"
+        ),
         help="Path to folder containing mesh assets of .obj or .glb format.",
     )
     parser.add_argument(
@@ -54,7 +67,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--envmap_assets",
         type=str,
-        default=os.path.join(os.path.dirname(__file__), "threedgrut_playground", "assets"),
+        default=os.path.join(
+            os.path.dirname(__file__), "threedgrut_playground", "assets"
+        ),
         help="Optional path to folder containing .hdr environment maps to use for lighting mesh assets.",
     )
     parser.add_argument(

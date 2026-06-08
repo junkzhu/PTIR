@@ -110,7 +110,8 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         if (
             self.environment is not None
             and self.optimize_environment
-            and self.environment_parameterization == Environment.LOG_ENVIRONMENT_PARAMETERIZATION
+            and self.environment_parameterization
+            == Environment.LOG_ENVIRONMENT_PARAMETERIZATION
         ):
             return torch.exp(self.environment)
         return self.environment
@@ -144,7 +145,9 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
     def get_covariance(self) -> torch.Tensor:
         scales = self.get_scale()
 
-        S = torch.zeros((self.num_gaussians, 3, 3), dtype=scales.dtype, device=self.device)
+        S = torch.zeros(
+            (self.num_gaussians, 3, 3), dtype=scales.dtype, device=self.device
+        )
         R = quaternion_to_so3(self.get_rotation())
 
         S[:, 0, 0] = scales[:, 0]
@@ -154,7 +157,9 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         return R @ S @ S.transpose(1, 2) @ R.transpose(1, 2)
 
     def get_model_parameters(self) -> dict:
-        assert self.optimizer is not None, "Optimizer need to be initialized when storing the checkpoint"
+        assert self.optimizer is not None, (
+            "Optimizer need to be initialized when storing the checkpoint"
+        )
 
         model_params = {
             "positions": self.positions,
@@ -177,7 +182,9 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         }
 
         if self.progressive_training:
-            model_params["feature_dim_increase_interval"] = self.feature_dim_increase_interval
+            model_params["feature_dim_increase_interval"] = (
+                self.feature_dim_increase_interval
+            )
             model_params["feature_dim_increase_step"] = self.feature_dim_increase_step
 
         if self.feature_type == "sh":
@@ -205,8 +212,12 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         self.rotation = torch.nn.Parameter(
             torch.empty([0, 4])
         )  # Rotation of each Gaussian represented as a unit quaternion [n_gaussians, 4]
-        self.scale = torch.nn.Parameter(torch.empty([0, 3]))  # Anisotropic scale of each Gaussian [n_gaussians, 3]
-        self.density = torch.nn.Parameter(torch.empty([0, 1]))  # Density of each Gaussian [n_gaussians, 1]
+        self.scale = torch.nn.Parameter(
+            torch.empty([0, 3])
+        )  # Anisotropic scale of each Gaussian [n_gaussians, 3]
+        self.density = torch.nn.Parameter(
+            torch.empty([0, 1])
+        )  # Density of each Gaussian [n_gaussians, 1]
         self.features_albedo = torch.nn.Parameter(
             torch.empty([0, 3])
         )  # Feature vector of the 0th order SH coefficients [n_gaussians, 3] (We split it into two due to different learning rates)
@@ -233,35 +244,59 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
 
         self.device = "cuda"
         self.optimizer = None
-        self.density_activation = get_activation_function(self.conf.model.density_activation)
-        self.density_activation_inv = get_activation_function(self.conf.model.density_activation, inverse=True)
-        self.scale_activation = get_activation_function(self.conf.model.scale_activation)
-        self.scale_activation_inv = get_activation_function(self.conf.model.scale_activation, inverse=True)
-        self.rotation_activation = get_activation_function("normalize")  # The default value of the dim parameter is 1
+        self.density_activation = get_activation_function(
+            self.conf.model.density_activation
+        )
+        self.density_activation_inv = get_activation_function(
+            self.conf.model.density_activation, inverse=True
+        )
+        self.scale_activation = get_activation_function(
+            self.conf.model.scale_activation
+        )
+        self.scale_activation_inv = get_activation_function(
+            self.conf.model.scale_activation, inverse=True
+        )
+        self.rotation_activation = get_activation_function(
+            "normalize"
+        )  # The default value of the dim parameter is 1
         self.shading_normal_activation = get_activation_function("normalize")
         self.material_albedo_activation = get_activation_function("sigmoid")
-        self.material_albedo_activation_inv = get_activation_function("sigmoid", inverse=True)
+        self.material_albedo_activation_inv = get_activation_function(
+            "sigmoid", inverse=True
+        )
         self.material_roughness_activation = _bounded_material_roughness_activation
-        self.material_roughness_activation_inv = _bounded_material_roughness_activation_inv
+        self.material_roughness_activation_inv = (
+            _bounded_material_roughness_activation_inv
+        )
         self.material_metallic_activation = get_activation_function("sigmoid")
-        self.material_metallic_activation_inv = get_activation_function("sigmoid", inverse=True)
+        self.material_metallic_activation_inv = get_activation_function(
+            "sigmoid", inverse=True
+        )
 
-        self.background = background.make(self.conf.model.background.name, self.conf.model.background)
+        self.background = background.make(
+            self.conf.model.background.name, self.conf.model.background
+        )
         self.environment = None
         self.environment_alias_table = None
         self.optimize_environment = False
-        self.environment_parameterization = Environment.LINEAR_ENVIRONMENT_PARAMETERIZATION
+        self.environment_parameterization = (
+            Environment.LINEAR_ENVIRONMENT_PARAMETERIZATION
+        )
 
         # Check if we would like to do progressive training
         self.feature_type = self.conf.model.progressive_training.feature_type
-        self.n_active_features = min(self.conf.model.progressive_training.init_n_features, sh_degree)
-        self.max_n_features = (
-            sh_degree  # For SH, this is the SH degree (clamped if > render.particle_radiance_sph_degree)
+        self.n_active_features = min(
+            self.conf.model.progressive_training.init_n_features, sh_degree
         )
+        self.max_n_features = sh_degree  # For SH, this is the SH degree (clamped if > render.particle_radiance_sph_degree)
         self.progressive_training = False
         if self.n_active_features < self.max_n_features:
-            self.feature_dim_increase_interval = self.conf.model.progressive_training.increase_frequency
-            self.feature_dim_increase_step = self.conf.model.progressive_training.increase_step
+            self.feature_dim_increase_interval = (
+                self.conf.model.progressive_training.increase_frequency
+            )
+            self.feature_dim_increase_step = (
+                self.conf.model.progressive_training.increase_step
+            )
             self.progressive_training = True
 
         # Rendering method
@@ -362,13 +397,21 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
                         # NOTE: error stored in last element of file, currently not used
 
                         # skip the track data
-                        t_len = read_next_bytes(file, num_bytes=8, format_char_sequence="Q")[0]
-                        read_next_bytes(file, num_bytes=8 * t_len, format_char_sequence="ii" * t_len)
+                        t_len = read_next_bytes(
+                            file, num_bytes=8, format_char_sequence="Q"
+                        )[0]
+                        read_next_bytes(
+                            file, num_bytes=8 * t_len, format_char_sequence="ii" * t_len
+                        )
 
-                file_pts = torch.tensor(file_pts, dtype=torch.float32, device=self.device)
+                file_pts = torch.tensor(
+                    file_pts, dtype=torch.float32, device=self.device
+                )
                 file_rgb = torch.tensor(file_rgb, dtype=torch.uint8, device=self.device)
 
-        assert file_rgb.dtype == torch.uint8, "Expecting RGB values to be in [0, 255] range"
+        assert file_rgb.dtype == torch.uint8, (
+            "Expecting RGB values to be in [0, 255] range"
+        )
         self.default_initialize_from_points(
             file_pts,
             observer_pts,
@@ -392,11 +435,15 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         vertices = plydata["vertex"]
 
         # Extract XYZ coordinates
-        xyz = np.stack([vertices["x"], vertices["y"], vertices["z"]], axis=1).astype(np.float32)
+        xyz = np.stack([vertices["x"], vertices["y"], vertices["z"]], axis=1).astype(
+            np.float32
+        )
 
         # Extract RGB colors (check if they exist)
         if "red" in vertices and "green" in vertices and "blue" in vertices:
-            rgb = np.stack([vertices["red"], vertices["green"], vertices["blue"]], axis=1).astype(np.uint8)
+            rgb = np.stack(
+                [vertices["red"], vertices["green"], vertices["blue"]], axis=1
+            ).astype(np.uint8)
         else:
             # If no colors, initialize with random colors
             logger.warning("No RGB data found in point cloud, using random colors")
@@ -409,7 +456,9 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         logger.info(f"Loaded {len(file_pts)} points from accumulated point cloud")
 
         # Initialize using the same method as COLMAP
-        assert file_rgb.dtype == torch.uint8, "Expecting RGB values to be in [0, 255] range"
+        assert file_rgb.dtype == torch.uint8, (
+            "Expecting RGB values to be in [0, 255] range"
+        )
         self.default_initialize_from_points(
             file_pts,
             observer_pts,
@@ -417,7 +466,9 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
             use_observer_pts=self.conf.initialization.use_observation_points,
         )
 
-    def init_from_pretrained_point_cloud(self, pc_path: str, set_optimizable_parameters: bool = True):
+    def init_from_pretrained_point_cloud(
+        self, pc_path: str, set_optimizable_parameters: bool = True
+    ):
         data = PlyData.read(pc_path)
         num_gaussians = len(data["vertex"])
         self.positions = torch.nn.Parameter(
@@ -541,11 +592,19 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         )
 
         # reinterpret from C-style to F-style layout
-        feats_sph = feats_sph.reshape(num_gaussians, 3, -1).transpose(-1, -2).reshape(num_gaussians, -1)
+        feats_sph = (
+            feats_sph.reshape(num_gaussians, 3, -1)
+            .transpose(-1, -2)
+            .reshape(num_gaussians, -1)
+        )
 
         self.features_specular = torch.nn.Parameter(feats_sph)
-        self.shading_normal = torch.nn.Parameter(self._default_shading_normal(self.rotation))
-        self._initialize_default_material_parameters(num_gaussians, dtype=self.features_albedo.dtype)
+        self.shading_normal = torch.nn.Parameter(
+            self._default_shading_normal(self.rotation)
+        )
+        self._initialize_default_material_parameters(
+            num_gaussians, dtype=self.features_albedo.dtype
+        )
 
         if set_optimizable_parameters:
             self.set_optimizable_parameters()
@@ -565,10 +624,14 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         # We create random points inside the bounds of the synthetic Blender scenes
         # xyz in [-1.5, 1.5] -> standard NeRF convention, people often scale with 0.33 to get it to [-0.5, 0.5]
         fused_point_cloud = (
-            torch.rand((num_gaussians, 3), dtype=dtype, device=self.device) * (xyz_max - xyz_min) + xyz_min
+            torch.rand((num_gaussians, 3), dtype=dtype, device=self.device)
+            * (xyz_max - xyz_min)
+            + xyz_min
         )
         # sh albedo in [0, 0.0039]
-        fused_color = torch.rand((num_gaussians, 3), dtype=dtype, device=self.device) / 255.0
+        fused_color = (
+            torch.rand((num_gaussians, 3), dtype=dtype, device=self.device) / 255.0
+        )
         features_albedo = features_specular = None
         if self.feature_type == "sh":
             features_albedo = fused_color.contiguous()
@@ -579,22 +642,31 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
             ).contiguous()
 
         dist = torch.clamp_min(nearest_neighbor_dist_cpuKD(fused_point_cloud), 1e-3)
-        scales = torch.log(dist * self.conf.model.default_scale_factor)[..., None].repeat(1, 3)
+        scales = torch.log(dist * self.conf.model.default_scale_factor)[
+            ..., None
+        ].repeat(1, 3)
 
         rots = torch.rand((num_gaussians, 4), device=self.device)
         rots[:, 0] = 1
 
         opacities = self.density_activation_inv(
-            self.conf.model.default_density * torch.ones((num_gaussians, 1), dtype=dtype, device=self.device)
+            self.conf.model.default_density
+            * torch.ones((num_gaussians, 1), dtype=dtype, device=self.device)
         )
 
         self.positions = torch.nn.Parameter(fused_point_cloud)  # type: ignore
         self.rotation = torch.nn.Parameter(rots.to(dtype=dtype, device=self.device))
         self.scale = torch.nn.Parameter(scales.to(dtype=dtype, device=self.device))
         self.density = torch.nn.Parameter(opacities.to(dtype=dtype, device=self.device))
-        self.features_albedo = torch.nn.Parameter(features_albedo.to(dtype=dtype, device=self.device))
-        self.features_specular = torch.nn.Parameter(features_specular.to(dtype=dtype, device=self.device))
-        self.shading_normal = torch.nn.Parameter(self._default_shading_normal(self.rotation))
+        self.features_albedo = torch.nn.Parameter(
+            features_albedo.to(dtype=dtype, device=self.device)
+        )
+        self.features_specular = torch.nn.Parameter(
+            features_specular.to(dtype=dtype, device=self.device)
+        )
+        self.shading_normal = torch.nn.Parameter(
+            self._default_shading_normal(self.rotation)
+        )
         self._initialize_default_material_parameters(num_gaussians, dtype=dtype)
 
         if set_optimizable_parameters:
@@ -647,20 +719,26 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
             checkpoint,
             "material_roughness",
             (num_gaussians, 1),
-            lambda: self._default_material_roughness(num_gaussians, self.positions.dtype),
+            lambda: self._default_material_roughness(
+                num_gaussians, self.positions.dtype
+            ),
         )
         self.material_metallic = self._checkpoint_parameter_or_default(
             checkpoint,
             "material_metallic",
             (num_gaussians, 1),
-            lambda: self._default_material_metallic(num_gaussians, self.positions.dtype),
+            lambda: self._default_material_metallic(
+                num_gaussians, self.positions.dtype
+            ),
         )
         self.n_active_features = checkpoint["n_active_features"]
         self.max_n_features = checkpoint["max_n_features"]
         self.scene_extent = checkpoint["scene_extent"]
 
         if self.progressive_training:
-            self.feature_dim_increase_interval = checkpoint["feature_dim_increase_interval"]
+            self.feature_dim_increase_interval = checkpoint[
+                "feature_dim_increase_interval"
+            ]
             self.feature_dim_increase_step = checkpoint["feature_dim_increase_step"]
 
         self.background.load_state_dict(checkpoint["background"])
@@ -684,7 +762,9 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
             use_observer_pts=self.conf.initialization.use_observation_points,
         )
 
-    def default_initialize_from_points(self, pts, observer_pts, colors=None, use_observer_pts=True):
+    def default_initialize_from_points(
+        self, pts, observer_pts, colors=None, use_observer_pts=True
+    ):
         """
         Given an Nx3 array of points (and optionally Nx3 rgb colors),
         initialize default values for the other parameters of the model
@@ -693,7 +773,9 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         dtype = torch.float32
 
         # Local generator for deterministic random initialization (does not affect global RNG)
-        rng = torch.Generator(device=self.device).manual_seed(self.conf.seed_initialization)
+        rng = torch.Generator(device=self.device).manual_seed(
+            self.conf.seed_initialization
+        )
 
         N = pts.shape[0]
         positions = pts
@@ -704,8 +786,12 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         if use_observer_pts:
             # NOTE: it seems we get different scales compared to the original 3DGS implementation
             # estimate scales based on distances to observers
-            dist_to_observers = torch.clamp_min(nearest_neighbor_dist_cpuKD(pts, observer_pts), 1e-7)
-            observation_scale = dist_to_observers * self.conf.initialization.observation_scale_factor
+            dist_to_observers = torch.clamp_min(
+                nearest_neighbor_dist_cpuKD(pts, observer_pts), 1e-7
+            )
+            observation_scale = (
+                dist_to_observers * self.conf.initialization.observation_scale_factor
+            )
         else:
             # Initialize the GS size to be the average dist of the 3 nearest neighbors
             dist2_avg = (k_nearest_neighbors(pts, 4)[:, 1:] ** 2).mean(dim=-1)  # [N,]
@@ -727,20 +813,32 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
 
         # set colors, random if they weren't given
         if colors is None:
-            colors = torch.randint(0, 256, (N, 3), dtype=torch.uint8, device=self.device, generator=rng)
+            colors = torch.randint(
+                0, 256, (N, 3), dtype=torch.uint8, device=self.device, generator=rng
+            )
 
-        features_albedo = to_torch(RGB2SH(to_np(colors.float() / 255.0)), device=self.device)
+        features_albedo = to_torch(
+            RGB2SH(to_np(colors.float() / 255.0)), device=self.device
+        )
 
         num_specular_dims = sh_degree_to_specular_dim(self.max_n_features)
         features_specular = torch.zeros((N, num_specular_dims))
 
-        self.positions = torch.nn.Parameter(positions.to(dtype=dtype, device=self.device))
+        self.positions = torch.nn.Parameter(
+            positions.to(dtype=dtype, device=self.device)
+        )
         self.rotation = torch.nn.Parameter(rots.to(dtype=dtype, device=self.device))
         self.scale = torch.nn.Parameter(scales.to(dtype=dtype, device=self.device))
         self.density = torch.nn.Parameter(opacities.to(dtype=dtype, device=self.device))
-        self.features_albedo = torch.nn.Parameter(features_albedo.to(dtype=dtype, device=self.device))
-        self.features_specular = torch.nn.Parameter(features_specular.to(dtype=dtype, device=self.device))
-        self.shading_normal = torch.nn.Parameter(self._default_shading_normal(self.rotation))
+        self.features_albedo = torch.nn.Parameter(
+            features_albedo.to(dtype=dtype, device=self.device)
+        )
+        self.features_specular = torch.nn.Parameter(
+            features_specular.to(dtype=dtype, device=self.device)
+        )
+        self.shading_normal = torch.nn.Parameter(
+            self._default_shading_normal(self.rotation)
+        )
         self._initialize_default_material_parameters(N, dtype=dtype)
 
         self.set_optimizable_parameters()
@@ -762,25 +860,35 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         elif np.isscalar(albedo_value):
             albedo = torch.tensor(float(albedo_value), dtype=dtype, device=self.device)
         else:
-            albedo = torch.as_tensor(list(albedo_value), dtype=dtype, device=self.device)
+            albedo = torch.as_tensor(
+                list(albedo_value), dtype=dtype, device=self.device
+            )
         if albedo.numel() == 1:
             albedo = albedo.expand(3)
         if albedo.shape != (3,):
-            raise ValueError(f"initialization.albedo must be a scalar or RGB triplet, got shape {tuple(albedo.shape)}")
+            raise ValueError(
+                f"initialization.albedo must be a scalar or RGB triplet, got shape {tuple(albedo.shape)}"
+            )
         albedo = albedo.clamp(1.0e-6, 1.0 - 1.0e-6).expand(num_gaussians, 3)
         return torch.nn.Parameter(self.material_albedo_activation_inv(albedo))
 
-    def _default_material_roughness(self, num_gaussians: int, dtype: torch.dtype) -> torch.nn.Parameter:
+    def _default_material_roughness(
+        self, num_gaussians: int, dtype: torch.dtype
+    ) -> torch.nn.Parameter:
         initialization_conf = self.conf.get("initialization", {})
         roughness_value = float(initialization_conf.get("roughness", 0.6))
         roughness_value = min(
             _MATERIAL_ROUGHNESS_MIN + _MATERIAL_ROUGHNESS_RANGE - 1.0e-6,
             max(_MATERIAL_ROUGHNESS_MIN + 1.0e-6, roughness_value),
         )
-        roughness = torch.full((num_gaussians, 1), roughness_value, dtype=dtype, device=self.device)
+        roughness = torch.full(
+            (num_gaussians, 1), roughness_value, dtype=dtype, device=self.device
+        )
         return torch.nn.Parameter(self.material_roughness_activation_inv(roughness))
 
-    def _default_material_metallic(self, num_gaussians: int, dtype: torch.dtype) -> torch.nn.Parameter:
+    def _default_material_metallic(
+        self, num_gaussians: int, dtype: torch.dtype
+    ) -> torch.nn.Parameter:
         metallic = torch.full((num_gaussians, 1), 1e-4, dtype=dtype, device=self.device)
         return torch.nn.Parameter(self.material_metallic_activation_inv(metallic))
 
@@ -800,8 +908,12 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
 
             # If the module is a torch.nn.Module, we can add all of its trainable parameters to the optimizer
             if isinstance(module, torch.nn.Module):
-                module_parameters = filter(lambda p: p.requires_grad and len(p) > 0, module.parameters())
-                n_params = sum([np.prod(p.size(), dtype=int) for p in module_parameters])
+                module_parameters = filter(
+                    lambda p: p.requires_grad and len(p) > 0, module.parameters()
+                )
+                n_params = sum(
+                    [np.prod(p.size(), dtype=int) for p in module_parameters]
+                )
 
                 if n_params > 0:
                     params.append({"params": module.parameters(), "name": name, **args})
@@ -812,17 +924,23 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
                     params.append({"params": [module], "name": name, **args})
 
         if self.conf.optimizer.type == "adam":
-            self.optimizer = torch.optim.Adam(params, lr=self.conf.optimizer.lr, eps=self.conf.optimizer.eps)
+            self.optimizer = torch.optim.Adam(
+                params, lr=self.conf.optimizer.lr, eps=self.conf.optimizer.eps
+            )
             logger.info("🔆 Using Adam optimizer")
         elif self.conf.optimizer.type == "selective_adam":
-            self.optimizer = SelectiveAdam(params, lr=self.conf.optimizer.lr, eps=self.conf.optimizer.eps)
+            self.optimizer = SelectiveAdam(
+                params, lr=self.conf.optimizer.lr, eps=self.conf.optimizer.eps
+            )
             logger.info("🔆 Using Selective Adam optimizer")
         else:
             raise ValueError(f"Unknown optimizer type: {self.conf.optimizer.type}")
 
         for param_group in self.optimizer.param_groups:
             if param_group["name"] == "positions":
-                param_group["lr"] *= self.scene_extent  # Multiply the position lr by the scene scale
+                param_group["lr"] *= (
+                    self.scene_extent
+                )  # Multiply the position lr by the scene scale
 
         self.setup_scheduler()
 
@@ -886,12 +1004,16 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         if environment is not None and not optimize_environment:
             environment.requires_grad_(False)
 
-    def update_optimizable_parameters(self, optimizable_tensors: dict[str, torch.Tensor]):
+    def update_optimizable_parameters(
+        self, optimizable_tensors: dict[str, torch.Tensor]
+    ):
         for name, value in optimizable_tensors.items():
             setattr(self, name, value)
 
     def increase_num_active_features(self) -> None:
-        self.n_active_features = min(self.max_n_features, self.n_active_features + self.feature_dim_increase_step)
+        self.n_active_features = min(
+            self.max_n_features, self.n_active_features + self.feature_dim_increase_step
+        )
 
     def get_active_feature_mask(self) -> torch.Tensor:
         if self.feature_type == "sh":
@@ -902,16 +1024,22 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         else:
             active_features = self.n_active_features
             num_features = self.max_n_features
-        mask = torch.zeros((1, num_features), device=self.device, dtype=self.get_features().dtype)
+        mask = torch.zeros(
+            (1, num_features), device=self.device, dtype=self.get_features().dtype
+        )
         mask[0, :active_features] = 1.0
         return mask
 
     def clamp_density(self):
         updated_densities = torch.clamp(self.get_density(), min=1e-4, max=1.0 - 1e-4)
-        optimizable_tensors = self.replace_tensor_to_optimizer(updated_densities, "density")
+        optimizable_tensors = self.replace_tensor_to_optimizer(
+            updated_densities, "density"
+        )
         self.density = optimizable_tensors["density"]
 
-    def forward(self, batch: Batch, train=False, frame_id=0, sh_indirect: bool = False) -> dict[str, torch.Tensor]:
+    def forward(
+        self, batch: Batch, train=False, frame_id=0, sh_indirect: bool = False
+    ) -> dict[str, torch.Tensor]:
         """
         Args:
             batch: a Batch structure containing the input data
@@ -921,7 +1049,9 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         Returns:
             A dictionary containing the output of the model
         """
-        return self.renderer.render(self, batch, train, frame_id, sh_indirect=sh_indirect)
+        return self.renderer.render(
+            self, batch, train, frame_id, sh_indirect=sh_indirect
+        )
 
     def trace(self, rays_o, rays_d, T_to_world=None):
         """Traces the model with the given rays. This method is a convenience method for ray-traced inference mode.
@@ -961,7 +1091,11 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         mogt_albedo[:, 1] = np.asarray(plydata.elements[0]["f_dc_1"])
         mogt_albedo[:, 2] = np.asarray(plydata.elements[0]["f_dc_2"])
 
-        extra_f_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("f_rest_")]
+        extra_f_names = [
+            p.name
+            for p in plydata.elements[0].properties
+            if p.name.startswith("f_rest_")
+        ]
         extra_f_names = sorted(extra_f_names, key=lambda x: int(x.split("_")[-1]))
         num_speculars = (self.max_n_features + 1) ** 2 - 1
         expected_extra_f_count = 3 * num_speculars
@@ -972,42 +1106,66 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
             for idx, attr_name in enumerate(extra_f_names):
                 mogt_specular[:, idx] = np.asarray(plydata.elements[0][attr_name])
             mogt_specular = mogt_specular.reshape((num_gaussians, 3, num_speculars))
-            mogt_specular = mogt_specular.transpose(0, 2, 1).reshape((num_gaussians, num_speculars * 3))
+            mogt_specular = mogt_specular.transpose(0, 2, 1).reshape(
+                (num_gaussians, num_speculars * 3)
+            )
         elif len(extra_f_names) == 0:
             # Only DC components available, create zero-filled higher-order harmonics
-            logger.info(f"PLY file only contains DC components, initializing higher-order spherical harmonics to zero")
+            logger.info(
+                f"PLY file only contains DC components, initializing higher-order spherical harmonics to zero"
+            )
         else:
             # Partial data - this is unexpected
             raise ValueError(
                 f"Unexpected number of f_rest_ properties: found {len(extra_f_names)}, expected {expected_extra_f_count} or 0"
             )
 
-        scale_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("scale_")]
+        scale_names = [
+            p.name
+            for p in plydata.elements[0].properties
+            if p.name.startswith("scale_")
+        ]
         scale_names = sorted(scale_names, key=lambda x: int(x.split("_")[-1]))
         mogt_scales = np.zeros((num_gaussians, len(scale_names)))
         for idx, attr_name in enumerate(scale_names):
             mogt_scales[:, idx] = np.asarray(plydata.elements[0][attr_name])
 
-        rot_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("rot")]
+        rot_names = [
+            p.name for p in plydata.elements[0].properties if p.name.startswith("rot")
+        ]
         rot_names = sorted(rot_names, key=lambda x: int(x.split("_")[-1]))
         mogt_rotation = np.zeros((num_gaussians, len(rot_names)))
         for idx, attr_name in enumerate(rot_names):
             mogt_rotation[:, idx] = np.asarray(plydata.elements[0][attr_name])
 
-        self.positions = torch.nn.Parameter(torch.tensor(mogt_pos, dtype=self.positions.dtype, device=self.device))
+        self.positions = torch.nn.Parameter(
+            torch.tensor(mogt_pos, dtype=self.positions.dtype, device=self.device)
+        )
         self.features_albedo = torch.nn.Parameter(
-            torch.tensor(mogt_albedo, dtype=self.features_albedo.dtype, device=self.device)
+            torch.tensor(
+                mogt_albedo, dtype=self.features_albedo.dtype, device=self.device
+            )
         )
         self.features_specular = torch.nn.Parameter(
-            torch.tensor(mogt_specular, dtype=self.features_specular.dtype, device=self.device)
+            torch.tensor(
+                mogt_specular, dtype=self.features_specular.dtype, device=self.device
+            )
         )
-        self.density = torch.nn.Parameter(torch.tensor(mogt_densities, dtype=self.density.dtype, device=self.device))
-        self.scale = torch.nn.Parameter(torch.tensor(mogt_scales, dtype=self.scale.dtype, device=self.device))
-        self.rotation = torch.nn.Parameter(torch.tensor(mogt_rotation, dtype=self.rotation.dtype, device=self.device))
+        self.density = torch.nn.Parameter(
+            torch.tensor(mogt_densities, dtype=self.density.dtype, device=self.device)
+        )
+        self.scale = torch.nn.Parameter(
+            torch.tensor(mogt_scales, dtype=self.scale.dtype, device=self.device)
+        )
+        self.rotation = torch.nn.Parameter(
+            torch.tensor(mogt_rotation, dtype=self.rotation.dtype, device=self.device)
+        )
         self.shading_normal = torch.nn.Parameter(
             self._default_shading_normal(self.rotation)
         )
-        self._initialize_default_material_parameters(num_gaussians, dtype=self.material_albedo.dtype)
+        self._initialize_default_material_parameters(
+            num_gaussians, dtype=self.material_albedo.dtype
+        )
 
         self.n_active_features = self.max_n_features
 
@@ -1020,7 +1178,8 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         """Copies fields from other onto self"""
         if self.optimizer is not None:
             raise NotImplementedError(
-                "Operations that create copies of the model during training " "are currently not supported."
+                "Operations that create copies of the model during training "
+                "are currently not supported."
             )
 
         if deepcopy:
@@ -1032,7 +1191,9 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
             self.features_specular = torch.nn.Parameter(other.features_specular.clone())
             self.shading_normal = torch.nn.Parameter(other.shading_normal.clone())
             self.material_albedo = torch.nn.Parameter(other.material_albedo.clone())
-            self.material_roughness = torch.nn.Parameter(other.material_roughness.clone())
+            self.material_roughness = torch.nn.Parameter(
+                other.material_roughness.clone()
+            )
             self.material_metallic = torch.nn.Parameter(other.material_metallic.clone())
         else:  # shared tensors
             self.positions = torch.nn.Parameter(other.positions)

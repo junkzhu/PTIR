@@ -60,7 +60,12 @@ class ScopedTimer:
     enabled: bool = True
     options: TimingOptions
 
-    def __init__(self, name: Optional[str] = None, opts: TimingOptions = timing_options, enabled: bool = True) -> None:
+    def __init__(
+        self,
+        name: Optional[str] = None,
+        opts: TimingOptions = timing_options,
+        enabled: bool = True,
+    ) -> None:
         """Context manager object for a timer
 
         Parameters:
@@ -82,7 +87,9 @@ class ScopedTimer:
             opts.func_print_host("Timings Summary:")
             for key, value in opts.all_results.items():
                 if len(value) > 1:
-                    opts.func_print_host(f" - {key} {sum(value[2:]) / len(value[2:])} (ms)")
+                    opts.func_print_host(
+                        f" - {key} {sum(value[2:]) / len(value[2:])} (ms)"
+                    )
                 else:  # len(value)<=1 (actually ==1)
                     opts.func_print_host(f" - {key} {value[0]} (ms)")
 
@@ -94,11 +101,19 @@ class ScopedTimer:
         if self.options.print_enabled:
             indent = "  " * ScopedTimer.indent
             if self.extra_msg:
-                self.options.func_print_host(f"{indent}{self.name} took {self.elapsed:.2f} ms {self.extra_msg}")
+                self.options.func_print_host(
+                    f"{indent}{self.name} took {self.elapsed:.2f} ms {self.extra_msg}"
+                )
             else:
-                self.options.func_print_host(f"{indent}{self.name} took {self.elapsed:.2f} ms")
+                self.options.func_print_host(
+                    f"{indent}{self.name} took {self.elapsed:.2f} ms"
+                )
 
-        if self.cp is not None and self.options.print_details and self.options.print_enabled:
+        if (
+            self.cp is not None
+            and self.options.print_details
+            and self.options.print_enabled
+        ):
             self.cp.print_stats(sort="tottime")
 
     def __enter__(self) -> Self:
@@ -142,7 +157,9 @@ class ScopedTimer:
         if self.cp is not None:
             self.cp.disable()
 
-        self.elapsed = (time.perf_counter_ns() - self.start) / 1000000.0  # measure in milliseconds
+        self.elapsed = (
+            time.perf_counter_ns() - self.start
+        ) / 1000000.0  # measure in milliseconds
 
         # post-processing
         self._print_local_summary()

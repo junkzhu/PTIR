@@ -67,9 +67,13 @@ def _compute_psnr_tensor(
             device = gt.device
 
         pred_tensor = _as_detached_float_tensor(pred, device=device).clamp(0.0, 1.0)
-        gt_tensor = _as_detached_float_tensor(gt, device=pred_tensor.device).clamp(0.0, 1.0)
+        gt_tensor = _as_detached_float_tensor(gt, device=pred_tensor.device).clamp(
+            0.0, 1.0
+        )
         if pred_tensor.shape != gt_tensor.shape:
-            raise ValueError(f"PSNR expects matching shapes, got {tuple(pred_tensor.shape)} and {tuple(gt_tensor.shape)}")
+            raise ValueError(
+                f"PSNR expects matching shapes, got {tuple(pred_tensor.shape)} and {tuple(gt_tensor.shape)}"
+            )
 
         return _get_psnr_criterion(pred_tensor.device)(pred_tensor, gt_tensor)
 
@@ -97,7 +101,9 @@ class ScalarHistoryTracker:
             return None
 
         device = self.pending_values[0].device
-        pending = torch.stack([value.to(device=device) for value in self.pending_values])
+        pending = torch.stack(
+            [value.to(device=device) for value in self.pending_values]
+        )
         finite = torch.isfinite(pending)
         if not finite.any():
             self.pending_values.clear()
@@ -122,7 +128,9 @@ class PSNRTracker(ScalarHistoryTracker):
         return self.update_value(psnr)
 
 
-def draw_metric_sparkline_on_image(image: np.ndarray, history: list[float], label: str) -> np.ndarray:
+def draw_metric_sparkline_on_image(
+    image: np.ndarray, history: list[float], label: str
+) -> np.ndarray:
     if not history:
         return image
 
@@ -138,7 +146,11 @@ def draw_metric_sparkline_on_image(image: np.ndarray, history: list[float], labe
     output = image_np.copy()
     dtype = output.dtype
     rgb = output[..., :3].astype(np.float32, copy=False)
-    max_value = 255.0 if np.issubdtype(dtype, np.integer) or float(np.nanmax(rgb)) > 1.5 else 1.0
+    max_value = (
+        255.0
+        if np.issubdtype(dtype, np.integer) or float(np.nanmax(rgb)) > 1.5
+        else 1.0
+    )
     canvas = np.clip(rgb, 0.0, max_value)
     if max_value <= 1.0:
         canvas = canvas * 255.0
@@ -165,7 +177,16 @@ def draw_metric_sparkline_on_image(image: np.ndarray, history: list[float], labe
     text_size, baseline = cv2.getTextSize(text, font, font_scale, thickness)
     text_x = x0 + max(6, int(round(box_width * 0.06)))
     text_y = y0 + max(text_size[1] + 5, int(round(box_height * 0.28)))
-    cv2.putText(canvas, text, (text_x, text_y), font, font_scale, (232, 242, 255), thickness, cv2.LINE_AA)
+    cv2.putText(
+        canvas,
+        text,
+        (text_x, text_y),
+        font,
+        font_scale,
+        (232, 242, 255),
+        thickness,
+        cv2.LINE_AA,
+    )
 
     plot_x0 = x0 + max(7, int(round(box_width * 0.08)))
     plot_x1 = x1 - max(7, int(round(box_width * 0.06)))
@@ -188,10 +209,26 @@ def draw_metric_sparkline_on_image(image: np.ndarray, history: list[float], labe
     y_coords = plot_y1 - norm * (plot_y1 - plot_y0)
     points = np.stack([x_coords, y_coords], axis=1).round().astype(np.int32)
 
-    cv2.line(canvas, (plot_x0, plot_y1), (plot_x1, plot_y1), (105, 125, 145), 1, cv2.LINE_AA)
+    cv2.line(
+        canvas, (plot_x0, plot_y1), (plot_x1, plot_y1), (105, 125, 145), 1, cv2.LINE_AA
+    )
     if points.shape[0] > 1:
-        cv2.polylines(canvas, [points.reshape(-1, 1, 2)], False, (176, 231, 255), thickness, cv2.LINE_AA)
-    cv2.circle(canvas, tuple(points[-1]), max(2, thickness + 1), (255, 246, 175), -1, cv2.LINE_AA)
+        cv2.polylines(
+            canvas,
+            [points.reshape(-1, 1, 2)],
+            False,
+            (176, 231, 255),
+            thickness,
+            cv2.LINE_AA,
+        )
+    cv2.circle(
+        canvas,
+        tuple(points[-1]),
+        max(2, thickness + 1),
+        (255, 246, 175),
+        -1,
+        cv2.LINE_AA,
+    )
 
     if max_value <= 1.0:
         output[..., :3] = np.clip(canvas / 255.0, 0.0, 1.0)
@@ -203,7 +240,9 @@ def draw_metric_sparkline_on_image(image: np.ndarray, history: list[float], labe
     return output.astype(dtype, copy=False)
 
 
-def draw_psnr_sparkline_on_image(image: np.ndarray, psnr_history: list[float]) -> np.ndarray:
+def draw_psnr_sparkline_on_image(
+    image: np.ndarray, psnr_history: list[float]
+) -> np.ndarray:
     return draw_metric_sparkline_on_image(image, psnr_history, "PSNR")
 
 
@@ -255,7 +294,9 @@ class TrainingVisualizer:
 
         if self.enabled:
             self.output_dir.mkdir(parents=True, exist_ok=True)
-            logger.info(f"📸 Training visualizations will be saved to: {self.output_dir}")
+            logger.info(
+                f"📸 Training visualizations will be saved to: {self.output_dir}"
+            )
 
     def should_visualize(self, step: int) -> bool:
         return self.enabled and step > 0 and step % self.frequency == 0
@@ -268,9 +309,15 @@ class TrainingVisualizer:
         if not self.should_visualize(step):
             return
 
-        self._draw_pbr_psnr_history = self.pbr_psnr_tracker.finalize_visualization_step() is not None
-        self._draw_albedo_psnr_history = self.albedo_psnr_tracker.finalize_visualization_step() is not None
-        self._draw_roughness_mse_history = self.roughness_mse_tracker.finalize_visualization_step() is not None
+        self._draw_pbr_psnr_history = (
+            self.pbr_psnr_tracker.finalize_visualization_step() is not None
+        )
+        self._draw_albedo_psnr_history = (
+            self.albedo_psnr_tracker.finalize_visualization_step() is not None
+        )
+        self._draw_roughness_mse_history = (
+            self.roughness_mse_tracker.finalize_visualization_step() is not None
+        )
         rows = self._collect_rows(outputs, batch)
         if not rows:
             self._reset_draw_metric_history_flags()
@@ -295,9 +342,15 @@ class TrainingVisualizer:
         except (OSError, json.JSONDecodeError):
             return
 
-        self.pbr_psnr_tracker.history = self._load_metric_history_values(history.get("pbr_psnr"))
-        self.albedo_psnr_tracker.history = self._load_metric_history_values(history.get("albedo_psnr"))
-        self.roughness_mse_tracker.history = self._load_metric_history_values(history.get("roughness_mse"))
+        self.pbr_psnr_tracker.history = self._load_metric_history_values(
+            history.get("pbr_psnr")
+        )
+        self.albedo_psnr_tracker.history = self._load_metric_history_values(
+            history.get("albedo_psnr")
+        )
+        self.roughness_mse_tracker.history = self._load_metric_history_values(
+            history.get("roughness_mse")
+        )
 
     def _save_metric_histories(self) -> None:
         history = {
@@ -308,7 +361,9 @@ class TrainingVisualizer:
         try:
             self.metric_history_path.write_text(json.dumps(history, indent=2) + "\n")
         except OSError:
-            logger.warning(f"Failed to save metric history to: {self.metric_history_path}")
+            logger.warning(
+                f"Failed to save metric history to: {self.metric_history_path}"
+            )
 
     @staticmethod
     def _load_metric_history_values(values: object) -> list[float]:
@@ -336,7 +391,9 @@ class TrainingVisualizer:
         pred_pbr_srgb = self._linear_to_srgb(pred_pbr.detach())
         self.pbr_psnr_tracker.update(pred_pbr_srgb, rgb_gt)
 
-    def _update_material_metric_histories(self, outputs: dict, batch: Optional[object]) -> None:
+    def _update_material_metric_histories(
+        self, outputs: dict, batch: Optional[object]
+    ) -> None:
         if batch is None:
             return
 
@@ -349,19 +406,27 @@ class TrainingVisualizer:
             pred_albedo = material[..., 0:3].clip(0.0, 1.0)
             albedo_gt = self._to_channel_last_batch(albedo_gt)
             if albedo_gt is not None and pred_albedo.shape == albedo_gt.shape:
-                albedo_gt = albedo_gt.to(device=pred_albedo.device, dtype=pred_albedo.dtype).clip(0.0, 1.0)
+                albedo_gt = albedo_gt.to(
+                    device=pred_albedo.device, dtype=pred_albedo.dtype
+                ).clip(0.0, 1.0)
                 pred_albedo = self._scale_albedo_to_gt(pred_albedo, albedo_gt)
                 self.albedo_psnr_tracker.update(pred_albedo, albedo_gt)
 
-        roughness_gt = self._get_material_gt(batch, "material_roughness_gt", slice(3, 4))
+        roughness_gt = self._get_material_gt(
+            batch, "material_roughness_gt", slice(3, 4)
+        )
         if roughness_gt is not None:
             pred_roughness = material[..., 3:4].clip(0.0, 1.0)
             roughness_gt = self._to_channel_last_batch(roughness_gt)
             if roughness_gt is not None and pred_roughness.shape == roughness_gt.shape:
-                roughness_mse = ((pred_roughness - roughness_gt.clip(0.0, 1.0)) ** 2).mean()
+                roughness_mse = (
+                    (pred_roughness - roughness_gt.clip(0.0, 1.0)) ** 2
+                ).mean()
                 self.roughness_mse_tracker.update_value(roughness_mse)
 
-    def _collect_rows(self, outputs: dict, batch: Optional[object]) -> list[torch.Tensor]:
+    def _collect_rows(
+        self, outputs: dict, batch: Optional[object]
+    ) -> list[torch.Tensor]:
         rows = []
         for spec in self.row_specs:
             row = self._build_row(spec, outputs, batch)
@@ -397,7 +462,9 @@ class TrainingVisualizer:
             return None
 
         ours_image = spec.ours_transform(self._to_image_batch(ours))
-        gt_image, err_image = self._build_gt_and_error_images(spec, ours, ours_image, gt)
+        gt_image, err_image = self._build_gt_and_error_images(
+            spec, ours, ours_image, gt
+        )
         if gt_image is None or err_image is None:
             return None
 
@@ -407,10 +474,14 @@ class TrainingVisualizer:
             err_image,
         ]
         if spec.name == "rgb":
-            depth_image = self._build_depth_image(outputs.get("pred_dist"), reference=ours_image)
+            depth_image = self._build_depth_image(
+                outputs.get("pred_dist"), reference=ours_image
+            )
             row_images.insert(1, depth_image)
         elif spec.name == "normal":
-            pseudo_normal_image = self._build_pseudo_normal_image(batch, reference=ours_image)
+            pseudo_normal_image = self._build_pseudo_normal_image(
+                batch, reference=ours_image
+            )
             row_images.insert(1, pseudo_normal_image)
 
         return self._concat_images(row_images, dim=-1)
@@ -432,7 +503,9 @@ class TrainingVisualizer:
         gt_mask = self._gt_image_mask(gt_image) if spec.name == "normal" else None
 
         err_map = spec.error(ours, gt)
-        err_image = self._error_batch_to_image(err_map, gt_mask, fixed_max_error=spec.fixed_max_error)
+        err_image = self._error_batch_to_image(
+            err_map, gt_mask, fixed_max_error=spec.fixed_max_error
+        )
         return gt_image, err_image
 
     @staticmethod
@@ -496,16 +569,25 @@ class TrainingVisualizer:
             curve_fn = lambda x: -np.log(x + eps)
             near, far, depth_item = [curve_fn(x) for x in [near, far, depth_item]]
             depth_item = np.nan_to_num(
-                np.clip((depth_item - np.minimum(near, far)) / np.abs(far - near), 0.0, 1.0)
+                np.clip(
+                    (depth_item - np.minimum(near, far)) / np.abs(far - near), 0.0, 1.0
+                )
             )
             depth_item = (depth_item * 255.0).astype(np.uint8)
             depth_item = cv2.applyColorMap(depth_item, cv2.COLORMAP_TURBO)
-            depth_item = cv2.cvtColor(depth_item, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+            depth_item = (
+                cv2.cvtColor(depth_item, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+            )
             depth_images.append(torch.from_numpy(depth_item).permute(2, 0, 1))
 
         depth_image = torch.stack(depth_images, dim=0).float().cpu()
         if depth_image.shape[-2:] != reference.shape[-2:]:
-            depth_image = F.interpolate(depth_image, size=reference.shape[-2:], mode="bilinear", align_corners=False)
+            depth_image = F.interpolate(
+                depth_image,
+                size=reference.shape[-2:],
+                mode="bilinear",
+                align_corners=False,
+            )
 
         return depth_image
 
@@ -523,11 +605,15 @@ class TrainingVisualizer:
 
         image = (0.5 * (image + 1.0)).clip(0.0, 1.0)
         if image.shape[-2:] != reference.shape[-2:]:
-            image = F.interpolate(image, size=reference.shape[-2:], mode="bilinear", align_corners=False)
+            image = F.interpolate(
+                image, size=reference.shape[-2:], mode="bilinear", align_corners=False
+            )
 
         return image
 
-    def _build_pbr_material_row(self, outputs: dict, batch: Optional[object]) -> Optional[torch.Tensor]:
+    def _build_pbr_material_row(
+        self, outputs: dict, batch: Optional[object]
+    ) -> Optional[torch.Tensor]:
         material = self._to_material_batch(outputs.get("pred_material"))
         pbr_image = self._to_image_batch(outputs.get("pred_pbr"))
         pbr_image_is_linear = pbr_image is not None
@@ -544,7 +630,11 @@ class TrainingVisualizer:
                 dtype=material.dtype,
             )
         else:
-            pbr_image = self._linear_to_srgb(pbr_image) if pbr_image_is_linear else pbr_image.clip(0.0, 1.0)
+            pbr_image = (
+                self._linear_to_srgb(pbr_image)
+                if pbr_image_is_linear
+                else pbr_image.clip(0.0, 1.0)
+            )
 
         if material is None:
             albedo_image = torch.zeros_like(pbr_image)
@@ -552,13 +642,17 @@ class TrainingVisualizer:
         else:
             albedo = material[..., 0:3].clip(0.0, 1.0)
             albedo_image = self._linear_to_srgb(albedo.permute(0, 3, 1, 2))
-            roughness_image = material[..., 3:4].permute(0, 3, 1, 2).repeat(1, 3, 1, 1).clip(0.0, 1.0)
+            roughness_image = (
+                material[..., 3:4].permute(0, 3, 1, 2).repeat(1, 3, 1, 1).clip(0.0, 1.0)
+            )
 
         light_image = self._to_image_batch(outputs.get("pred_light"))
         if light_image is None:
             light_image = torch.zeros_like(pbr_image)
         else:
-            light_image = self._linear_to_srgb(self._resize_like(light_image, pbr_image))
+            light_image = self._linear_to_srgb(
+                self._resize_like(light_image, pbr_image)
+            )
 
         row_images = [
             pbr_image,
@@ -568,7 +662,9 @@ class TrainingVisualizer:
         ]
         return self._concat_images(row_images, dim=-1)
 
-    def _build_pbr_error_row(self, outputs: dict, batch: Optional[object]) -> Optional[torch.Tensor]:
+    def _build_pbr_error_row(
+        self, outputs: dict, batch: Optional[object]
+    ) -> Optional[torch.Tensor]:
         reference = self._to_image_batch(outputs.get("pred_pbr"))
         if reference is None:
             reference = self._to_image_batch(outputs.get("pred_rgb"))
@@ -622,7 +718,9 @@ class TrainingVisualizer:
             label="MSE",
             enabled=self._draw_roughness_mse_history,
         )
-        return self._concat_images([err_image, albedo_err_image, roughness_err_image, blank_image], dim=-1)
+        return self._concat_images(
+            [err_image, albedo_err_image, roughness_err_image, blank_image], dim=-1
+        )
 
     def _build_pbr_error_image(
         self,
@@ -639,8 +737,12 @@ class TrainingVisualizer:
             return torch.zeros_like(reference)
 
         pred_pbr_srgb = self._linear_to_srgb(pred_pbr)
-        err_map = ((pred_pbr_srgb.permute(0, 2, 3, 1) - rgb_gt.permute(0, 2, 3, 1)) ** 2).mean(dim=-1)
-        err_image = self._error_batch_to_image(err_map, fixed_max_error=self.PBR_ALBEDO_ERROR_MAX)
+        err_map = (
+            (pred_pbr_srgb.permute(0, 2, 3, 1) - rgb_gt.permute(0, 2, 3, 1)) ** 2
+        ).mean(dim=-1)
+        err_image = self._error_batch_to_image(
+            err_map, fixed_max_error=self.PBR_ALBEDO_ERROR_MAX
+        )
         return self._resize_like(err_image, reference)
 
     def _build_material_error_image(
@@ -676,7 +778,9 @@ class TrainingVisualizer:
         err_image = self._error_batch_to_image(err_map, fixed_max_error=fixed_max_error)
         return self._resize_like(err_image, reference)
 
-    def _scale_albedo_to_gt(self, albedo: torch.Tensor, albedo_gt: torch.Tensor) -> torch.Tensor:
+    def _scale_albedo_to_gt(
+        self, albedo: torch.Tensor, albedo_gt: torch.Tensor
+    ) -> torch.Tensor:
         try:
             _, _, albedo_rescale_ratio = compute_albedo_rescale_ratio(
                 [albedo_gt],
@@ -701,8 +805,12 @@ class TrainingVisualizer:
         for image in image_batch:
             image_np = image.permute(1, 2, 0).detach().cpu().numpy()
             image_np = draw_metric_sparkline_on_image(image_np, history, label)
-            images.append(torch.from_numpy(np.ascontiguousarray(image_np)).permute(2, 0, 1))
-        return torch.stack(images, dim=0).to(device=image_batch.device, dtype=image_batch.dtype)
+            images.append(
+                torch.from_numpy(np.ascontiguousarray(image_np)).permute(2, 0, 1)
+            )
+        return torch.stack(images, dim=0).to(
+            device=image_batch.device, dtype=image_batch.dtype
+        )
 
     def _build_pbr_component_row(self, outputs: dict) -> Optional[torch.Tensor]:
         direct_image = self._to_image_batch(outputs.get("pred_direct"))
@@ -735,10 +843,21 @@ class TrainingVisualizer:
         target_width = reference.shape[-1] * cell_span
         image = self._environment_to_image(environment)
         if image is None:
-            return torch.zeros(reference.shape[0], 3, target_height, target_width, dtype=reference.dtype)
+            return torch.zeros(
+                reference.shape[0],
+                3,
+                target_height,
+                target_width,
+                dtype=reference.dtype,
+            )
 
         image = self._linear_to_srgb(image)
-        image = F.interpolate(image, size=(target_height, target_width), mode="bilinear", align_corners=False)
+        image = F.interpolate(
+            image,
+            size=(target_height, target_width),
+            mode="bilinear",
+            align_corners=False,
+        )
         if image.shape[0] != reference.shape[0]:
             image = image[:1].expand(reference.shape[0], -1, -1, -1)
         return image
@@ -753,7 +872,9 @@ class TrainingVisualizer:
         )
 
     @staticmethod
-    def _environment_to_image(environment: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
+    def _environment_to_image(
+        environment: Optional[torch.Tensor],
+    ) -> Optional[torch.Tensor]:
         if environment is None:
             return None
 
@@ -779,7 +900,12 @@ class TrainingVisualizer:
 
         for row in rows:
             if row.shape[-1] != width:
-                row = F.interpolate(row, size=(row.shape[-2], width), mode="bilinear", align_corners=False)
+                row = F.interpolate(
+                    row,
+                    size=(row.shape[-2], width),
+                    mode="bilinear",
+                    align_corners=False,
+                )
             resized_rows.append(row)
 
         return torch.cat(resized_rows, dim=-2)
@@ -791,7 +917,9 @@ class TrainingVisualizer:
 
         for image in images:
             if image.shape[-2:] != (height, width):
-                image = F.interpolate(image, size=(height, width), mode="bilinear", align_corners=False)
+                image = F.interpolate(
+                    image, size=(height, width), mode="bilinear", align_corners=False
+                )
             resized_images.append(image)
 
         return torch.cat(resized_images, dim=dim)
@@ -799,7 +927,9 @@ class TrainingVisualizer:
     @staticmethod
     def _resize_like(image: torch.Tensor, reference: torch.Tensor) -> torch.Tensor:
         if image.shape[-2:] != reference.shape[-2:]:
-            image = F.interpolate(image, size=reference.shape[-2:], mode="bilinear", align_corners=False)
+            image = F.interpolate(
+                image, size=reference.shape[-2:], mode="bilinear", align_corners=False
+            )
         if image.shape[0] != reference.shape[0]:
             image = image[:1].expand(reference.shape[0], -1, -1, -1)
         return image
@@ -811,7 +941,12 @@ class TrainingVisualizer:
 
         for image in images:
             if image.shape[-2] != height:
-                image = F.interpolate(image, size=(height, image.shape[-1]), mode="bilinear", align_corners=False)
+                image = F.interpolate(
+                    image,
+                    size=(height, image.shape[-1]),
+                    mode="bilinear",
+                    align_corners=False,
+                )
             resized_images.append(image)
 
         return torch.cat(resized_images, dim=-1)
@@ -836,7 +971,9 @@ class TrainingVisualizer:
         return tensor.float().cpu()
 
     @staticmethod
-    def _to_channel_last_batch(tensor: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
+    def _to_channel_last_batch(
+        tensor: Optional[torch.Tensor],
+    ) -> Optional[torch.Tensor]:
         if tensor is None:
             return None
 
@@ -854,18 +991,24 @@ class TrainingVisualizer:
 
         return None
 
-    def _get_material_gt(self, batch: object, attr: str, material_slice: slice) -> Optional[torch.Tensor]:
+    def _get_material_gt(
+        self, batch: object, attr: str, material_slice: slice
+    ) -> Optional[torch.Tensor]:
         value = getattr(batch, attr, None)
         if value is not None:
             return value
 
-        material_gt = self._to_material_batch(getattr(batch, "material_gt", None), cpu=False)
+        material_gt = self._to_material_batch(
+            getattr(batch, "material_gt", None), cpu=False
+        )
         if material_gt is None:
             return None
         return material_gt[..., material_slice]
 
     @staticmethod
-    def _to_material_batch(tensor: Optional[torch.Tensor], cpu: bool = True) -> Optional[torch.Tensor]:
+    def _to_material_batch(
+        tensor: Optional[torch.Tensor], cpu: bool = True
+    ) -> Optional[torch.Tensor]:
         if tensor is None:
             return None
 

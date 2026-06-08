@@ -65,14 +65,20 @@ def rgb2x_prior_paths(
     except ValueError:
         relative = Path(image.name)
 
-    base_dir = _resolve_project_path(output_root) / _dataset_output_path(root) / relative.parent
+    base_dir = (
+        _resolve_project_path(output_root)
+        / _dataset_output_path(root)
+        / relative.parent
+    )
     stem = relative.stem
     return {aov: base_dir / f"{stem}_prior_{aov}.png" for aov in aovs}
 
 
 def _load_image_as_tensor(image_path: Path) -> tuple[torch.Tensor, torch.Tensor]:
     img = Image.open(image_path)
-    has_alpha = img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info)
+    has_alpha = img.mode in ("RGBA", "LA") or (
+        img.mode == "P" and "transparency" in img.info
+    )
     img = img.convert("RGBA" if has_alpha else "RGB")
 
     tensor = TF.to_tensor(img)
@@ -81,7 +87,9 @@ def _load_image_as_tensor(image_path: Path) -> tuple[torch.Tensor, torch.Tensor]
     return rgb, alpha
 
 
-def _save_tensor_png(img_chw: torch.Tensor, alpha_chw: torch.Tensor, out_path: Path) -> None:
+def _save_tensor_png(
+    img_chw: torch.Tensor, alpha_chw: torch.Tensor, out_path: Path
+) -> None:
     if img_chw.ndim == 4:
         img_chw = img_chw[0]
     if alpha_chw.ndim == 4:
@@ -103,7 +111,9 @@ def _srgb_to_linear(image_chw: torch.Tensor) -> torch.Tensor:
     return image_chw.clamp(0.0, 1.0).pow(2.2)
 
 
-def _camera_normal_to_world(normal_chw: torch.Tensor, c2w: torch.Tensor) -> torch.Tensor:
+def _camera_normal_to_world(
+    normal_chw: torch.Tensor, c2w: torch.Tensor
+) -> torch.Tensor:
     normal_chw = normal_chw * 2.0 - 1.0
     rotation = c2w[:3, :3].to(device=normal_chw.device, dtype=normal_chw.dtype)
     normal_hwc = normal_chw.permute(1, 2, 0)
@@ -150,7 +160,9 @@ def _import_rgb2x_pipeline():
     return DDIMScheduler, StableDiffusionAOVMatEstPipeline
 
 
-def _as_serializable_camera_to_worlds(camera_to_worlds: Iterable[torch.Tensor] | None) -> list | None:
+def _as_serializable_camera_to_worlds(
+    camera_to_worlds: Iterable[torch.Tensor] | None,
+) -> list | None:
     if camera_to_worlds is None:
         return None
 
@@ -161,7 +173,9 @@ def _as_serializable_camera_to_worlds(camera_to_worlds: Iterable[torch.Tensor] |
         elif isinstance(c2w, torch.Tensor):
             serializable.append(c2w.detach().cpu().tolist())
         else:
-            serializable.append(torch.as_tensor(c2w, dtype=torch.float32).cpu().tolist())
+            serializable.append(
+                torch.as_tensor(c2w, dtype=torch.float32).cpu().tolist()
+            )
     return serializable
 
 
@@ -188,18 +202,24 @@ def generate_rgb2x_priors_in_subprocess(
         "dataset_root": str(Path(dataset_root).expanduser().resolve()),
         "camera_to_worlds": _as_serializable_camera_to_worlds(camera_to_worlds),
     }
-    process = ctx.Process(target=_generate_rgb2x_priors_worker, args=(worker_kwargs, queue))
+    process = ctx.Process(
+        target=_generate_rgb2x_priors_worker, args=(worker_kwargs, queue)
+    )
     process.start()
     process.join()
 
     if queue.empty():
-        raise RuntimeError(f"rgb2x prior subprocess exited without a result; exitcode={process.exitcode}")
+        raise RuntimeError(
+            f"rgb2x prior subprocess exited without a result; exitcode={process.exitcode}"
+        )
 
     status, payload = queue.get()
     if status != "ok":
         raise RuntimeError(f"rgb2x prior subprocess failed:\n{payload}")
     if process.exitcode not in (0, None):
-        raise RuntimeError(f"rgb2x prior subprocess exited with code {process.exitcode}")
+        raise RuntimeError(
+            f"rgb2x prior subprocess exited with code {process.exitcode}"
+        )
     return payload
 
 
@@ -222,18 +242,26 @@ def generate_rgb2x_priors(
     aovs = tuple(aovs)
     invalid_aovs = [aov for aov in aovs if aov not in RGB2X_PROMPTS]
     if invalid_aovs:
-        raise ValueError(f"Unsupported rgb2x AOVs: {invalid_aovs}; choose from {sorted(RGB2X_PROMPTS)}")
+        raise ValueError(
+            f"Unsupported rgb2x AOVs: {invalid_aovs}; choose from {sorted(RGB2X_PROMPTS)}"
+        )
 
     image_paths = [Path(path).expanduser().resolve() for path in image_paths]
     raw_nerf_c2ws = _load_nerf_raw_camera_to_worlds(image_paths, dataset_root)
     if camera_to_worlds is None:
         c2w_list = [None] * len(image_paths)
     else:
-        c2w_list = [torch.as_tensor(c2w, dtype=torch.float32) for c2w in camera_to_worlds]
+        c2w_list = [
+            torch.as_tensor(c2w, dtype=torch.float32) for c2w in camera_to_worlds
+        ]
         if len(c2w_list) != len(image_paths):
-            raise ValueError("camera_to_worlds must have the same length as image_paths")
+            raise ValueError(
+                "camera_to_worlds must have the same length as image_paths"
+            )
     if raw_nerf_c2ws is not None:
-        c2w_list = [raw if raw is not None else c2w for raw, c2w in zip(raw_nerf_c2ws, c2w_list)]
+        c2w_list = [
+            raw if raw is not None else c2w for raw, c2w in zip(raw_nerf_c2ws, c2w_list)
+        ]
 
     image_items = list(dict(zip(image_paths, c2w_list)).items())
     if not image_items:
@@ -250,7 +278,9 @@ def generate_rgb2x_priors(
             pending.append((image_path, c2w))
 
     if not pending:
-        logger.info(f"rgb2x priors already exist for {len(image_items)} image(s); output={output_root}")
+        logger.info(
+            f"rgb2x priors already exist for {len(image_items)} image(s); output={output_root}"
+        )
         return {"saved": 0, "skipped": skipped, "failed": 0}
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -281,9 +311,13 @@ def generate_rgb2x_priors(
     saved = 0
     failed = 0
     batch_starts = range(0, len(pending), batch_size)
-    for start in logger.track(batch_starts, description="rgb2x priors", color="salmon1", transient=True):
+    for start in logger.track(
+        batch_starts, description="rgb2x priors", color="salmon1", transient=True
+    ):
         batch_items = pending[start : start + batch_size]
-        valid_items: list[tuple[Path, torch.Tensor | None, torch.Tensor, torch.Tensor, int, int]] = []
+        valid_items: list[
+            tuple[Path, torch.Tensor | None, torch.Tensor, torch.Tensor, int, int]
+        ] = []
         for image_path, c2w in batch_items:
             try:
                 rgb, alpha = _load_image_as_tensor(image_path)
@@ -291,15 +325,24 @@ def generate_rgb2x_priors(
                 logger.warning(f"rgb2x failed to read {image_path}: {exc}")
                 failed += len(aovs)
                 continue
-            valid_items.append((image_path, c2w, rgb, alpha, rgb.shape[1], rgb.shape[2]))
+            valid_items.append(
+                (image_path, c2w, rgb, alpha, rgb.shape[1], rgb.shape[2])
+            )
 
         if not valid_items:
             continue
 
         rgb_in = torch.stack([rgb for _, _, rgb, _, _, _ in valid_items], dim=0)
         alpha_in = torch.stack([alpha for _, _, _, alpha, _, _ in valid_items], dim=0)
-        rgb_in = F.interpolate(rgb_in, size=(input_size, input_size), mode="bilinear", align_corners=False).to(device)
-        alpha_in = F.interpolate(alpha_in, size=(input_size, input_size), mode="bilinear", align_corners=False).to(device)
+        rgb_in = F.interpolate(
+            rgb_in, size=(input_size, input_size), mode="bilinear", align_corners=False
+        ).to(device)
+        alpha_in = F.interpolate(
+            alpha_in,
+            size=(input_size, input_size),
+            mode="bilinear",
+            align_corners=False,
+        ).to(device)
         rgb_in = rgb_in * alpha_in
 
         for aov in aovs:
@@ -308,7 +351,9 @@ def generate_rgb2x_priors(
             batch_sizes_for_aov: list[tuple[int, int]] = []
             batch_indices: list[int] = []
             for idx, (image_path, c2w, _, _, height, width) in enumerate(valid_items):
-                out_path = rgb2x_prior_paths(image_path, dataset_root, output_root, (aov,))[aov]
+                out_path = rgb2x_prior_paths(
+                    image_path, dataset_root, output_root, (aov,)
+                )[aov]
                 if skip_existing and out_path.exists():
                     skipped += 1
                     continue
@@ -332,7 +377,9 @@ def generate_rgb2x_priors(
                     output_type="pt",
                 )
                 aov_batch = result.images[0]
-                for i, (out_path, c2w, (height, width)) in enumerate(zip(batch_out_paths, batch_c2ws, batch_sizes_for_aov)):
+                for i, (out_path, c2w, (height, width)) in enumerate(
+                    zip(batch_out_paths, batch_c2ws, batch_sizes_for_aov)
+                ):
                     img_tensor = aov_batch[i]
                     if (height, width) != (input_size, input_size):
                         img_tensor = TF.resize(img_tensor, [height, width])
@@ -340,7 +387,9 @@ def generate_rgb2x_priors(
                         img_tensor = _camera_normal_to_world(img_tensor, c2w)
                     if aov == "albedo":
                         img_tensor = _srgb_to_linear(img_tensor)
-                    alpha_orig = valid_items[batch_indices[i]][3].unsqueeze(0).to(device)
+                    alpha_orig = (
+                        valid_items[batch_indices[i]][3].unsqueeze(0).to(device)
+                    )
                     _save_tensor_png(img_tensor * alpha_orig, alpha_orig, out_path)
                     saved += 1
             except Exception as exc:

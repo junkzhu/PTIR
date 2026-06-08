@@ -34,13 +34,22 @@ def make(name: str, config):
                 device="cpu",
             )
         case _:
-            raise ValueError(f"Unknown ray jitter type: {config.dataset.train.ray_jittering.type}")
+            raise ValueError(
+                f"Unknown ray jitter type: {config.dataset.train.ray_jittering.type}"
+            )
 
 
 class StratifiedRayJitter:
     """Uses informed stratified sampling which relies on perturbing a fixed anti-aliasing pattern"""
 
-    def __init__(self, enabled=True, apply_every_n_iterations=1, num_samples=16, fixed_pattern=False, device="cuda"):
+    def __init__(
+        self,
+        enabled=True,
+        apply_every_n_iterations=1,
+        num_samples=16,
+        fixed_pattern=False,
+        device="cuda",
+    ):
 
         self.enabled = enabled
         self.apply_every_n_iterations = apply_every_n_iterations
@@ -57,23 +66,40 @@ class StratifiedRayJitter:
             # fmt: off
             s1=[[0.500, 0.500]],
             s2=[[0.250, 0.250], [0.750, 0.750]],
-            s4=[[0.375, 0.125], [0.875, 0.375],
-                [0.625, 0.875], [0.125, 0.625]],
-            s8=[[0.5625, 0.6875], [0.4375, 0.3125],
-                [0.8125, 0.4375], [0.3125, 0.8125],
-                [0.1875, 0.1875], [0.0625, 0.5625],
-                [0.6875, 0.0625], [0.9375, 0.9375]],
-            s16=[[0.5625, 0.4375], [0.4375, 0.6875],
-                 [0.3125, 0.3750], [0.7500, 0.5625],
-                 [0.1875, 0.6250], [0.6250, 0.1875],
-                 [0.1875, 0.3125], [0.6875, 0.8125],
-                 [0.3750, 0.1250], [0.5000, 0.9375],
-                 [0.2500, 0.8750], [0.1250, 0.2500],
-                 [0.0000, 0.5000], [0.9375, 0.7500],
-                 [0.8750, 0.0625], [0.0625, 0.0000]]
+            s4=[[0.375, 0.125], [0.875, 0.375], [0.625, 0.875], [0.125, 0.625]],
+            s8=[
+                [0.5625, 0.6875],
+                [0.4375, 0.3125],
+                [0.8125, 0.4375],
+                [0.3125, 0.8125],
+                [0.1875, 0.1875],
+                [0.0625, 0.5625],
+                [0.6875, 0.0625],
+                [0.9375, 0.9375],
+            ],
+            s16=[
+                [0.5625, 0.4375],
+                [0.4375, 0.6875],
+                [0.3125, 0.3750],
+                [0.7500, 0.5625],
+                [0.1875, 0.6250],
+                [0.6250, 0.1875],
+                [0.1875, 0.3125],
+                [0.6875, 0.8125],
+                [0.3750, 0.1250],
+                [0.5000, 0.9375],
+                [0.2500, 0.8750],
+                [0.1250, 0.2500],
+                [0.0000, 0.5000],
+                [0.9375, 0.7500],
+                [0.8750, 0.0625],
+                [0.0625, 0.0000],
+            ],
             # fmt: on
         )
-        self.subpixel_means = {k: torch.tensor(v, device=self.device) for k, v in subpixel_means.items()}
+        self.subpixel_means = {
+            k: torch.tensor(v, device=self.device) for k, v in subpixel_means.items()
+        }
 
         # Max distance between points in this pattern
         self.subpixel_offset_max = dict(
@@ -82,13 +108,13 @@ class StratifiedRayJitter:
             s2=0.3535533905932738,
             s4=0.2795084971874737,
             s8=0.13975424859373686,
-            s16=0.04419417382415922
+            s16=0.04419417382415922,
             # fmt: on
         )
 
-        assert (
-            f"s{num_samples}" in self.subpixel_means
-        ), f"num_samples={num_samples} not supported. Choose a value in: {list(self.subpixel_means.keys())}"
+        assert f"s{num_samples}" in self.subpixel_means, (
+            f"num_samples={num_samples} not supported. Choose a value in: {list(self.subpixel_means.keys())}"
+        )
         self.pattern = self.subpixel_means[f"s{num_samples}"]
         self.relaxation = self.subpixel_offset_max[f"s{num_samples}"]
         self.fixed_pattern = fixed_pattern
@@ -102,7 +128,9 @@ class StratifiedRayJitter:
         # Permute the order of subpixels in the pattern
         cyclic_order = torch.randperm(self.num_samples, device=self.device)
         # Each pixel starts from a different location in cyclic_order
-        pixel_indices = torch.randint(low=0, high=self.num_samples, size=img_shape, device=self.device)
+        pixel_indices = torch.randint(
+            low=0, high=self.num_samples, size=img_shape, device=self.device
+        )
         return cyclic_order, pixel_indices
 
     def _subsample_gen(self):
@@ -122,7 +150,9 @@ class StratifiedRayJitter:
             # Perturb a bit to introduce randomization
             perturb = 0.0
             if not self.fixed_pattern:
-                perturb = self.relaxation * (torch.rand_like(jittered_pixels) * 2.0 - 1.0)
+                perturb = self.relaxation * (
+                    torch.rand_like(jittered_pixels) * 2.0 - 1.0
+                )
             jittered_pixels = (jittered_pixels + perturb) % 1.0
             # Cache shape for next call, so we know if to continue using the permutation or reshuffle
             prev_shape = img_shape
@@ -133,7 +163,9 @@ class StratifiedRayJitter:
         """Given an image shape, returns a pattern of pixel values to sample"""
 
         should_apply_jitter = self.num_iterations_not_jittered == 0
-        self.num_iterations_not_jittered = (self.num_iterations_not_jittered + 1) % self.apply_every_n_iterations
+        self.num_iterations_not_jittered = (
+            self.num_iterations_not_jittered + 1
+        ) % self.apply_every_n_iterations
 
         if self.enabled and should_apply_jitter:
             next(self.samples_generator)
@@ -153,7 +185,9 @@ class RandomRayJitter:
 
     def __call__(self, img_shape):
         should_apply_jitter = self.num_iterations_not_jittered == 0
-        self.num_iterations_not_jittered = (self.num_iterations_not_jittered + 1) % self.apply_every_n_iterations
+        self.num_iterations_not_jittered = (
+            self.num_iterations_not_jittered + 1
+        ) % self.apply_every_n_iterations
 
         if self.enabled and should_apply_jitter:
             return torch.rand((*img_shape, 2), device=self.device)

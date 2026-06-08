@@ -23,7 +23,12 @@ import torch.utils.cpp_extension
 from torch.utils.cpp_extension import CUDA_HOME
 
 
-def compile_slang_kernel(kernel_files: list[str], output_file: str, defines: list[str], include_paths: list[str]):
+def compile_slang_kernel(
+    kernel_files: list[str],
+    output_file: str,
+    defines: list[str],
+    include_paths: list[str],
+):
     # Compile slang kernels
     # TODO: do not overwrite files, use config hash to register the needed version
     import importlib
@@ -34,7 +39,9 @@ def compile_slang_kernel(kernel_files: list[str], output_file: str, defines: lis
 
     try:
         slang_mod = importlib.import_module("slangtorch")
-        slang_build_env["PATH"] += os.path.join(os.path.dirname(slang_mod.__file__), "bin")
+        slang_build_env["PATH"] += os.path.join(
+            os.path.dirname(slang_mod.__file__), "bin"
+        )
     except ImportError:
         print("Slangtorch not found, assuming slangc is in the path")
 
@@ -75,7 +82,12 @@ def load(
             import glob
 
             for arch in [" (x86)", ""]:
-                for edition in ["Enterprise", "Professional", "BuildTools", "Community"]:
+                for edition in [
+                    "Enterprise",
+                    "Professional",
+                    "BuildTools",
+                    "Community",
+                ]:
                     paths = sorted(
                         glob.glob(
                             r"C:\Program Files\%s\Microsoft Visual Studio\*\%s\VC\Tools\MSVC\*\bin\Hostx64\x64"
@@ -90,7 +102,9 @@ def load(
         if os.system("where cl.exe >nul 2>nul") != 0:
             cl_path = find_cl_path()
             if cl_path is None:
-                raise RuntimeError("Could not locate a supported Microsoft Visual C++ installation")
+                raise RuntimeError(
+                    "Could not locate a supported Microsoft Visual C++ installation"
+                )
             os.environ["PATH"] += ";" + cl_path
 
     elif os.name == "posix":

@@ -33,7 +33,11 @@ import threedgrut.datasets as datasets
 from threedgrut.datasets.protocols import BoundedMultiViewDataset
 from threedgrut.datasets.utils import DEFAULT_DEVICE, MultiEpochsDataLoader, PointCloud
 from threedgrut.metric import create_psnr_criterion
-from threedgrut.model.environment import EnvAliasTable, Environment, save_environment_exr
+from threedgrut.model.environment import (
+    EnvAliasTable,
+    Environment,
+    save_environment_exr,
+)
 from threedgrut.model.losses import (
     depth_distortion_loss,
     edge_aware_smoothness_loss,
@@ -50,7 +54,12 @@ from threedgrut.optimizers import SelectiveAdam
 from threedgrut.render import Renderer
 from threedgrut.strategy.base import BaseStrategy
 from threedgrut.utils.logger import logger
-from threedgrut.utils.misc import check_step_condition, create_summary_writer, get_scheduler, jet_map
+from threedgrut.utils.misc import (
+    check_step_condition,
+    create_summary_writer,
+    get_scheduler,
+    jet_map,
+)
 from threedgrut.utils.normal import NormalUtils
 from threedgrut.utils.render import apply_post_processing
 from threedgrut.utils.timer import CudaTimer
@@ -145,7 +154,10 @@ class Trainer3DGRUT:
         self.init_scene_extents(self.train_dataset)
         logger.log_rule("Initialize Model")
         self.init_model(conf, self.scene_extent)
-        if OmegaConf.select(conf, "environment", default=None) is not None or conf.render.method == "3dgptir":
+        if (
+            OmegaConf.select(conf, "environment", default=None) is not None
+            or conf.render.method == "3dgptir"
+        ):
             self.init_environment(conf)
         self.init_densification_and_pruning_strategy(conf)
         logger.log_rule("Setup Model Weights & Training")
@@ -155,14 +167,20 @@ class Trainer3DGRUT:
         self.init_visualizer(conf)
         self.init_normal_utils()
         self.init_post_processing(conf)
-        self.init_gui(conf, self.model, self.train_dataset, self.val_dataset, self.scene_bbox)
+        self.init_gui(
+            conf, self.model, self.train_dataset, self.val_dataset, self.scene_bbox
+        )
 
     def init_dataloaders(self, conf: DictConfig):
         from threedgrut.datasets.utils import configure_dataloader_for_platform
 
-        train_dataset, val_dataset = datasets.make(name=conf.dataset.type, config=conf, ray_jitter=None)
+        train_dataset, val_dataset = datasets.make(
+            name=conf.dataset.type, config=conf, ray_jitter=None
+        )
         train_shuffle_generator = torch.Generator()
-        train_shuffle_generator.manual_seed(int(conf.get("train_shuffle_seed", conf.seed_initialization)))
+        train_shuffle_generator.manual_seed(
+            int(conf.get("train_shuffle_seed", conf.seed_initialization))
+        )
         train_dataloader_kwargs = configure_dataloader_for_platform(
             {
                 "num_workers": conf.num_workers,
@@ -184,8 +202,12 @@ class Trainer3DGRUT:
             }
         )
 
-        train_dataloader = MultiEpochsDataLoader(train_dataset, **train_dataloader_kwargs)
-        val_dataloader = torch.utils.data.DataLoader(val_dataset, **val_dataloader_kwargs)
+        train_dataloader = MultiEpochsDataLoader(
+            train_dataset, **train_dataloader_kwargs
+        )
+        val_dataloader = torch.utils.data.DataLoader(
+            val_dataset, **val_dataloader_kwargs
+        )
 
         self.train_dataset = train_dataset
         self.train_dataloader = train_dataloader
@@ -220,7 +242,9 @@ class Trainer3DGRUT:
         if lambda_schedulers is not None:
             for name, args in lambda_schedulers.items():
                 if not name.startswith("lambda_"):
-                    raise ValueError(f"loss.lambda_schedulers.{name} must target a lambda_* loss weight")
+                    raise ValueError(
+                        f"loss.lambda_schedulers.{name} must target a lambda_* loss weight"
+                    )
                 schedulers[name] = get_scheduler(args.type)(**args)
 
         loss_conf = OmegaConf.select(conf, "loss", default={})
@@ -242,7 +266,10 @@ class Trainer3DGRUT:
 
     @staticmethod
     def is_scheduler_config(value) -> bool:
-        return isinstance(value, (dict, DictConfig)) and value.get("type", None) is not None
+        return (
+            isinstance(value, (dict, DictConfig))
+            and value.get("type", None) is not None
+        )
 
     def is_loss_enabled(self, name: str) -> bool:
         value = OmegaConf.select(self.conf, f"loss.{name}", default=False)
@@ -267,8 +294,12 @@ class Trainer3DGRUT:
     def init_environment(self, conf: DictConfig) -> None:
         env_path = OmegaConf.select(conf, "environment.path", default=None)
         env_type = OmegaConf.select(conf, "environment.type", default="2d")
-        env_parameterization = OmegaConf.select(conf, "environment.parameterization", default="linear")
-        optimize_environment = bool(OmegaConf.select(conf, "model.optimize_environment", default=False))
+        env_parameterization = OmegaConf.select(
+            conf, "environment.parameterization", default="linear"
+        )
+        optimize_environment = bool(
+            OmegaConf.select(conf, "model.optimize_environment", default=False)
+        )
         self.environment = Environment(
             path=env_path,
             device=self.device,
@@ -277,7 +308,9 @@ class Trainer3DGRUT:
             parameterization=env_parameterization,
         )
         self.model.optimize_environment = self.environment.optimize_environment
-        self.model.environment_parameterization = self.environment.environment_parameterization
+        self.model.environment_parameterization = (
+            self.environment.environment_parameterization
+        )
         self.model.environment = self.environment.get_environment_parameter()
         if self.conf.render.method == "3dgptir" and self.conf.render.enable_mis:
             self.rebuild_environment_alias_table(log=True)
@@ -296,15 +329,21 @@ class Trainer3DGRUT:
                 )
         self.model.environment_alias_table = self.environment_alias_table
 
-    def restore_environment_from_checkpoint(self, checkpoint: dict, conf: DictConfig) -> None:
+    def restore_environment_from_checkpoint(
+        self, checkpoint: dict, conf: DictConfig
+    ) -> None:
         environment_state = checkpoint.get("environment_state")
         if self.environment is None or environment_state is None:
             return
 
         self.environment.load_state_dict(environment_state)
-        self.environment.configure_optimization(bool(OmegaConf.select(conf, "model.optimize_environment", default=False)))
+        self.environment.configure_optimization(
+            bool(OmegaConf.select(conf, "model.optimize_environment", default=False))
+        )
         self.model.optimize_environment = self.environment.optimize_environment
-        self.model.environment_parameterization = self.environment.environment_parameterization
+        self.model.environment_parameterization = (
+            self.environment.environment_parameterization
+        )
         self.model.environment = self.environment.get_environment_parameter()
         if self.conf.render.method == "3dgptir" and self.conf.render.enable_mis:
             self.rebuild_environment_alias_table(log=True)
@@ -355,7 +394,9 @@ class Trainer3DGRUT:
 
             # Restore post-processing state
             if "post_processing" in checkpoint and self.post_processing is not None:
-                self.post_processing.load_state_dict(checkpoint["post_processing"]["module"])
+                self.post_processing.load_state_dict(
+                    checkpoint["post_processing"]["module"]
+                )
                 for opt, opt_state in zip(
                     self.post_processing_optimizers,
                     checkpoint["post_processing"]["optimizers"],
@@ -401,7 +442,9 @@ class Trainer3DGRUT:
                         device=self.device,
                     )
                     ply_path = conf.initialization.fused_point_cloud_path
-                    logger.info(f"Initializing from accumulated point cloud: {ply_path}")
+                    logger.info(
+                        f"Initializing from accumulated point cloud: {ply_path}"
+                    )
                     model.init_from_fused_point_cloud(ply_path, observer_points)
                 case "point_cloud":
                     try:
@@ -411,21 +454,29 @@ class Trainer3DGRUT:
                         logger.error(e)
                         raise e
                 case "checkpoint":
-                    checkpoint = torch.load(conf.initialization.path, weights_only=False)
+                    checkpoint = torch.load(
+                        conf.initialization.path, weights_only=False
+                    )
                     model.init_from_checkpoint(checkpoint, setup_optimizer=False)
                     self.restore_environment_from_checkpoint(checkpoint, conf)
                 case "lidar":
-                    assert isinstance(
-                        train_dataset, datasets.NCoreDataset
-                    ), "can only initialize from lidar with NCoreDataset"
+                    assert isinstance(train_dataset, datasets.NCoreDataset), (
+                        "can only initialize from lidar with NCoreDataset"
+                    )
                     pc = PointCloud.from_sequence(
-                        list(train_dataset.get_point_clouds(step_frame=1, non_dynamic_points_only=True)),
+                        list(
+                            train_dataset.get_point_clouds(
+                                step_frame=1, non_dynamic_points_only=True
+                            )
+                        ),
                         device="cpu",
                     )
                     if conf.initialization.num_points < len(pc.xyz_end):
                         # Deterministically random subsample points if there are more points than the specified number of gaussians
                         rng = torch.Generator().manual_seed(conf.seed_initialization)
-                        idxs = torch.randperm(len(pc.xyz_end), generator=rng)[: conf.initialization.num_points]
+                        idxs = torch.randperm(len(pc.xyz_end), generator=rng)[
+                            : conf.initialization.num_points
+                        ]
                         pc = pc.selected_idxs(idxs)
                     observer_points = torch.tensor(
                         train_dataset.get_observer_points(),
@@ -445,7 +496,9 @@ class Trainer3DGRUT:
             global_step = 0
 
         self.global_step = global_step
-        self.n_epochs = int((conf.n_iterations + len(train_dataset) - 1) / len(train_dataset))
+        self.n_epochs = int(
+            (conf.n_iterations + len(train_dataset) - 1) / len(train_dataset)
+        )
 
     def init_gui(
         self,
@@ -473,7 +526,9 @@ class Trainer3DGRUT:
         self.criterions = Dict(
             psnr=create_psnr_criterion().to(self.device),
             ssim=StructuralSimilarityIndexMeasure(data_range=1.0).to(self.device),
-            lpips=LearnedPerceptualImagePatchSimilarity(net_type="vgg", normalize=True).to(self.device),
+            lpips=LearnedPerceptualImagePatchSimilarity(
+                net_type="vgg", normalize=True
+            ).to(self.device),
         )
 
     def init_experiments_tracking(self, conf: DictConfig):
@@ -525,13 +580,17 @@ class Trainer3DGRUT:
 
             # Distillation mode: controller activates after main training
             # Total iterations = n_iterations, distillation starts at n_iterations - n_distillation_steps
-            n_distillation_steps = conf.post_processing.get("n_distillation_steps", 5000)
+            n_distillation_steps = conf.post_processing.get(
+                "n_distillation_steps", 5000
+            )
             if use_controller and n_distillation_steps > 0:
                 main_training_steps = conf.n_iterations - n_distillation_steps
                 controller_activation_ratio = main_training_steps / conf.n_iterations
                 controller_distillation = True
                 self._distillation_start_step = main_training_steps
-                logger.info(f"📷 PPISP distillation mode: controller activates at step {main_training_steps}")
+                logger.info(
+                    f"📷 PPISP distillation mode: controller activates at step {main_training_steps}"
+                )
             elif use_controller:
                 controller_activation_ratio = 0.8
                 controller_distillation = False
@@ -559,7 +618,9 @@ class Trainer3DGRUT:
                 max_optimization_iters=conf.n_iterations,
             )
 
-            logger.info(f"📷 {method.upper()} initialized: {num_cameras} cameras, {num_frames} frames")
+            logger.info(
+                f"📷 {method.upper()} initialized: {num_cameras} cameras, {num_frames} frames"
+            )
         else:
             raise ValueError(f"Unknown post-processing method: {method}")
 
@@ -596,7 +657,9 @@ class Trainer3DGRUT:
         # Move losses to cpu once
         metrics["losses"] = {k: v.detach().item() for k, v in losses.items()}
 
-        is_compute_train_hit_metrics = (split == "training") and (step % self.conf.writer.hit_stat_frequency == 0)
+        is_compute_train_hit_metrics = (split == "training") and (
+            step % self.conf.writer.hit_stat_frequency == 0
+        )
         is_compute_validation_metrics = split == "validation"
 
         if is_compute_train_hit_metrics or is_compute_validation_metrics:
@@ -619,7 +682,9 @@ class Trainer3DGRUT:
                 metrics["lpips"] = lpips(pred_rgb_full_clipped, rgb_gt_full).item()
 
             if iteration in self.conf.writer.log_image_views:
-                metrics["img_hit_counts"] = jet_map(outputs["hits_count"][-1], self.conf.writer.max_num_hits)
+                metrics["img_hit_counts"] = jet_map(
+                    outputs["hits_count"][-1], self.conf.writer.max_num_hits
+                )
                 metrics["img_gt"] = gpu_batch.rgb_gt[-1].clip(0, 1.0)
                 metrics["img_pred"] = outputs["pred_rgb"][-1].clip(0, 1.0)
                 metrics["img_pred_dist"] = jet_map(outputs["pred_dist"][-1], 100)
@@ -708,14 +773,14 @@ class Trainer3DGRUT:
                 loss_scale = torch.abs(self.model.get_scale()).mean()
                 lambda_scale = self.get_loss_lambda("lambda_scale")
 
-
         # Diffusion prior regularization on shading normals
         loss_priors_regularization = torch.zeros(1, device=self.device)
         lambda_priors_regularization = 0.0
         use_normal_prior_regularization = self.conf.loss.use_normal_prior_regularization
         normal_priors_end_iteration = self.conf.loss.normal_priors_end_iteration
         normal_prior_active = use_normal_prior_regularization and (
-            normal_priors_end_iteration < 0 or self.global_step <= normal_priors_end_iteration
+            normal_priors_end_iteration < 0
+            or self.global_step <= normal_priors_end_iteration
         )
         if normal_prior_active:
             pred_shadingnormal = outputs.get("pred_shadingnormal")
@@ -728,7 +793,9 @@ class Trainer3DGRUT:
                         prior_normal,
                         valid_mask=mask,
                     )
-                    lambda_priors_regularization = self.get_loss_lambda("lambda_normal_priors_regularization")
+                    lambda_priors_regularization = self.get_loss_lambda(
+                        "lambda_normal_priors_regularization"
+                    )
 
         # Shading normal loss
         loss_shading_normal = torch.zeros(1, device=self.device)
@@ -737,7 +804,11 @@ class Trainer3DGRUT:
             pred_shadingnormal = outputs.get("pred_shadingnormal")
             pseudo_normal = getattr(gpu_batch, "pseudo_normal", None)
             pseudo_normal_mask = getattr(gpu_batch, "pseudo_normal_mask", None)
-            if pred_shadingnormal is not None and pseudo_normal is not None and pseudo_normal_mask is not None:
+            if (
+                pred_shadingnormal is not None
+                and pseudo_normal is not None
+                and pseudo_normal_mask is not None
+            ):
                 with torch.cuda.nvtx.range(f"loss-shading-normal"):
                     loss_shading_normal = pseudo_normal_loss(
                         pred_shadingnormal,
@@ -745,7 +816,9 @@ class Trainer3DGRUT:
                         valid_mask=pseudo_normal_mask,
                         detach_pseudo_normal=not normal_prior_active,
                     )
-                    lambda_shading_normal = self.get_loss_lambda("lambda_shading_normal")
+                    lambda_shading_normal = self.get_loss_lambda(
+                        "lambda_shading_normal"
+                    )
 
         # Depth distortion loss
         loss_depth_distortion = torch.zeros(1, device=self.device)
@@ -758,7 +831,9 @@ class Trainer3DGRUT:
             if pred_depth_distortion is not None:
                 with torch.cuda.nvtx.range(f"loss-depth-distortion"):
                     loss_depth_distortion = depth_distortion_loss(pred_depth_distortion)
-                    lambda_depth_distortion = self.get_loss_lambda("lambda_depth_distortion")
+                    lambda_depth_distortion = self.get_loss_lambda(
+                        "lambda_depth_distortion"
+                    )
 
         # Edge aware smoothness loss
         loss_edge_aware_smoothness = torch.zeros(1, device=self.device)
@@ -767,15 +842,21 @@ class Trainer3DGRUT:
             with torch.cuda.nvtx.range(f"loss-edge-aware-smoothness"):
                 edge_aware_smoothness_scale = self.conf.loss.edge_aware_smoothness_scale
                 edge_aware_smoothness_eps = self.conf.loss.edge_aware_smoothness_eps
-                edge_aware_smoothness_outputs = self.conf.loss.edge_aware_smoothness_outputs
+                edge_aware_smoothness_outputs = (
+                    self.conf.loss.edge_aware_smoothness_outputs
+                )
                 if len(edge_aware_smoothness_outputs) == 0:
-                    raise ValueError("loss.edge_aware_smoothness_outputs must contain at least one output key")
+                    raise ValueError(
+                        "loss.edge_aware_smoothness_outputs must contain at least one output key"
+                    )
 
                 edge_aware_terms = []
                 for smoothness_output_key in edge_aware_smoothness_outputs:
                     pred_smoothness_map = outputs.get(smoothness_output_key)
                     if pred_smoothness_map is None:
-                        raise KeyError(f"Configured edge-aware smoothness output '{smoothness_output_key}' was not rendered")
+                        raise KeyError(
+                            f"Configured edge-aware smoothness output '{smoothness_output_key}' was not rendered"
+                        )
                     edge_aware_terms.append(
                         edge_aware_smoothness_loss(
                             pred_smoothness_map,
@@ -787,7 +868,9 @@ class Trainer3DGRUT:
                     )
 
                 loss_edge_aware_smoothness = torch.stack(edge_aware_terms).mean()
-                lambda_edge_aware_smoothness = self.get_loss_lambda("lambda_edge_aware_smoothness")
+                lambda_edge_aware_smoothness = self.get_loss_lambda(
+                    "lambda_edge_aware_smoothness"
+                )
 
         # Total loss
         loss = (
@@ -811,9 +894,11 @@ class Trainer3DGRUT:
             mask_entropy_loss=lambda_mask_entropy * loss_mask_entropy,
             scale_loss=lambda_scale * loss_scale,
             shading_normal_loss=lambda_shading_normal * loss_shading_normal,
-            priors_regularization_loss=lambda_priors_regularization * loss_priors_regularization,
+            priors_regularization_loss=lambda_priors_regularization
+            * loss_priors_regularization,
             depth_distortion_loss=lambda_depth_distortion * loss_depth_distortion,
-            edge_aware_smoothness_loss=lambda_edge_aware_smoothness * loss_edge_aware_smoothness,
+            edge_aware_smoothness_loss=lambda_edge_aware_smoothness
+            * loss_edge_aware_smoothness,
         )
 
     @torch.cuda.nvtx.range("get_pbr_losses")
@@ -874,12 +959,22 @@ class Trainer3DGRUT:
         prior = getattr(gpu_batch, "prior", None)
         material_mask = mask
         if gradient_mask is not None:
-            material_mask = gradient_mask if material_mask is None else material_mask * gradient_mask
+            material_mask = (
+                gradient_mask
+                if material_mask is None
+                else material_mask * gradient_mask
+            )
 
-        use_albedo_prior_regularization = self.is_loss_enabled("use_albedo_prior_regularization")
-        albedo_priors_end_iteration = self.conf.loss.get("albedo_priors_end_iteration", -1)
+        use_albedo_prior_regularization = self.is_loss_enabled(
+            "use_albedo_prior_regularization"
+        )
+        albedo_priors_end_iteration = self.conf.loss.get(
+            "albedo_priors_end_iteration", -1
+        )
         albedo_prior_active = use_albedo_prior_regularization and (
-            self.is_scheduler_config(self.conf.loss.get("use_albedo_prior_regularization", False))
+            self.is_scheduler_config(
+                self.conf.loss.get("use_albedo_prior_regularization", False)
+            )
             or albedo_priors_end_iteration < 0
             or self.global_step <= albedo_priors_end_iteration
         )
@@ -893,17 +988,27 @@ class Trainer3DGRUT:
                         prior_albedo,
                         material_mask,
                     )
-                    lambda_albedo_priors_regularization = self.get_loss_lambda("lambda_albedo_priors_regularization")
+                    lambda_albedo_priors_regularization = self.get_loss_lambda(
+                        "lambda_albedo_priors_regularization"
+                    )
 
-        use_roughness_prior_regularization = self.is_loss_enabled("use_roughness_prior_regularization")
-        roughness_priors_end_iteration = self.conf.loss.get("roughness_priors_end_iteration", -1)
+        use_roughness_prior_regularization = self.is_loss_enabled(
+            "use_roughness_prior_regularization"
+        )
+        roughness_priors_end_iteration = self.conf.loss.get(
+            "roughness_priors_end_iteration", -1
+        )
         roughness_prior_active = use_roughness_prior_regularization and (
-            self.is_scheduler_config(self.conf.loss.get("use_roughness_prior_regularization", False))
+            self.is_scheduler_config(
+                self.conf.loss.get("use_roughness_prior_regularization", False)
+            )
             or roughness_priors_end_iteration < 0
             or self.global_step <= roughness_priors_end_iteration
         )
         if roughness_prior_active and pred_material is not None:
-            prior_roughness = getattr(prior, "roughness", None) if prior is not None else None
+            prior_roughness = (
+                getattr(prior, "roughness", None) if prior is not None else None
+            )
             if prior_roughness is not None:
                 with torch.cuda.nvtx.range(f"loss-roughness-priors-regularization"):
                     pred_roughness = pred_material[..., 3:4]
@@ -912,25 +1017,37 @@ class Trainer3DGRUT:
                         prior_roughness,
                         material_mask,
                     )
-                    lambda_roughness_priors_regularization = self.get_loss_lambda("lambda_roughness_priors_regularization")
+                    lambda_roughness_priors_regularization = self.get_loss_lambda(
+                        "lambda_roughness_priors_regularization"
+                    )
 
         # Roughness high regularization
         loss_roughness_high_regularization = torch.zeros(1, device=self.device)
         lambda_roughness_high_regularization = 0.0
-        if self.conf.loss.get("use_roughness_high_regularization", False) and pred_material is not None:
+        if (
+            self.conf.loss.get("use_roughness_high_regularization", False)
+            and pred_material is not None
+        ):
             with torch.cuda.nvtx.range(f"loss-roughness-high-regularization"):
                 pred_roughness = pred_material[..., 3:4]
                 loss_roughness_high_regularization = 1.0 - pred_roughness.mean()
-                lambda_roughness_high_regularization = self.get_loss_lambda("lambda_roughness_high_regularization")
+                lambda_roughness_high_regularization = self.get_loss_lambda(
+                    "lambda_roughness_high_regularization"
+                )
 
         # Light consistency regularization
         loss_light = torch.zeros(1, device=self.device)
         lambda_light = self.get_loss_lambda("lambda_light", default=0.0)
-        use_light_consistency = bool(self.conf.loss.get("use_light_consistency", False)) or lambda_light > 0.0
+        use_light_consistency = (
+            bool(self.conf.loss.get("use_light_consistency", False))
+            or lambda_light > 0.0
+        )
         if use_light_consistency:
             pred_light = outputs.get("pred_light")
             if pred_light is None:
-                raise KeyError("loss.use_light_consistency requires outputs['pred_light']")
+                raise KeyError(
+                    "loss.use_light_consistency requires outputs['pred_light']"
+                )
             with torch.cuda.nvtx.range(f"loss-light-consistency"):
                 loss_light = light_consistency_loss(pred_light)
 
@@ -941,15 +1058,21 @@ class Trainer3DGRUT:
             with torch.cuda.nvtx.range(f"loss-edge-aware-smoothness"):
                 edge_aware_smoothness_scale = self.conf.loss.edge_aware_smoothness_scale
                 edge_aware_smoothness_eps = self.conf.loss.edge_aware_smoothness_eps
-                edge_aware_smoothness_outputs = self.conf.loss.edge_aware_smoothness_outputs
+                edge_aware_smoothness_outputs = (
+                    self.conf.loss.edge_aware_smoothness_outputs
+                )
                 if len(edge_aware_smoothness_outputs) == 0:
-                    raise ValueError("loss.edge_aware_smoothness_outputs must contain at least one output key")
+                    raise ValueError(
+                        "loss.edge_aware_smoothness_outputs must contain at least one output key"
+                    )
 
                 edge_aware_terms = []
                 for smoothness_output_key in edge_aware_smoothness_outputs:
                     pred_smoothness_map = outputs.get(smoothness_output_key)
                     if pred_smoothness_map is None:
-                        raise KeyError(f"Configured edge-aware smoothness output '{smoothness_output_key}' was not rendered")
+                        raise KeyError(
+                            f"Configured edge-aware smoothness output '{smoothness_output_key}' was not rendered"
+                        )
                     edge_aware_terms.append(
                         edge_aware_smoothness_loss(
                             pred_smoothness_map,
@@ -961,7 +1084,9 @@ class Trainer3DGRUT:
                     )
 
                 loss_edge_aware_smoothness = torch.stack(edge_aware_terms).mean()
-                lambda_edge_aware_smoothness = self.get_loss_lambda("lambda_edge_aware_smoothness")
+                lambda_edge_aware_smoothness = self.get_loss_lambda(
+                    "lambda_edge_aware_smoothness"
+                )
 
         # Total loss
         loss = (
@@ -969,7 +1094,8 @@ class Trainer3DGRUT:
             + lambda_l2 * loss_l2
             + lambda_ssim * loss_ssim
             + lambda_albedo_priors_regularization * loss_albedo_priors_regularization
-            + lambda_roughness_priors_regularization * loss_roughness_priors_regularization
+            + lambda_roughness_priors_regularization
+            * loss_roughness_priors_regularization
             + lambda_roughness_high_regularization * loss_roughness_high_regularization
             + lambda_light * loss_light
             + lambda_edge_aware_smoothness * loss_edge_aware_smoothness
@@ -979,11 +1105,15 @@ class Trainer3DGRUT:
             l1_loss=lambda_l1 * loss_l1,
             l2_loss=lambda_l2 * loss_l2,
             ssim_loss=lambda_ssim * loss_ssim,
-            albedo_priors_regularization_loss=lambda_albedo_priors_regularization * loss_albedo_priors_regularization,
-            roughness_priors_regularization_loss=lambda_roughness_priors_regularization * loss_roughness_priors_regularization,
-            roughness_high_regularization_loss=lambda_roughness_high_regularization * loss_roughness_high_regularization,
+            albedo_priors_regularization_loss=lambda_albedo_priors_regularization
+            * loss_albedo_priors_regularization,
+            roughness_priors_regularization_loss=lambda_roughness_priors_regularization
+            * loss_roughness_priors_regularization,
+            roughness_high_regularization_loss=lambda_roughness_high_regularization
+            * loss_roughness_high_regularization,
             light_loss=lambda_light * loss_light,
-            edge_aware_smoothness_loss=lambda_edge_aware_smoothness * loss_edge_aware_smoothness,
+            edge_aware_smoothness_loss=lambda_edge_aware_smoothness
+            * loss_edge_aware_smoothness,
         )
 
     def _compute_losses(
@@ -1065,9 +1195,13 @@ class Trainer3DGRUT:
         if "timings" in metrics:
             for time_key in metrics["timings"]:
                 mean_timings[time_key] = np.mean(metrics["timings"][time_key])
-                writer.add_scalar("time/" + time_key + "/val", mean_timings[time_key], global_step)
+                writer.add_scalar(
+                    "time/" + time_key + "/val", mean_timings[time_key], global_step
+                )
 
-        writer.add_scalar("num_particles/val", self.model.num_gaussians, self.global_step)
+        writer.add_scalar(
+            "num_particles/val", self.model.num_gaussians, self.global_step
+        )
 
         mean_psnr = np.mean(metrics["psnr"])
         writer.add_scalar("psnr/val", mean_psnr, global_step)
@@ -1089,7 +1223,9 @@ class Trainer3DGRUT:
             ssim_loss = np.mean(metrics["losses"]["ssim_loss"])
             writer.add_scalar("loss/ssim/val", ssim_loss, global_step)
 
-        table = {k: np.mean(v) for k, v in metrics.items() if k in ("psnr", "ssim", "lpips")}
+        table = {
+            k: np.mean(v) for k, v in metrics.items() if k in ("psnr", "ssim", "lpips")
+        }
         for time_key in mean_timings:
             table[time_key] = f"{'{:.2f}'.format(mean_timings[time_key])}" + " ms/it"
         logger.log_table(f"📊 Validation Metrics - Step {global_step}", record=table)
@@ -1112,7 +1248,11 @@ class Trainer3DGRUT:
         writer = self.tracking.writer
         global_step = self.global_step
 
-        if self.conf.enable_writer and global_step > 0 and global_step % self.conf.log_frequency == 0:
+        if (
+            self.conf.enable_writer
+            and global_step > 0
+            and global_step % self.conf.log_frequency == 0
+        ):
             loss = np.mean(batch_metrics["losses"]["total_loss"])
             writer.add_scalar("loss/total/train", loss, global_step)
             if self.conf.loss.use_l1:
@@ -1127,24 +1267,53 @@ class Trainer3DGRUT:
             if self.conf.loss.use_opacity and "opacity_loss" in batch_metrics["losses"]:
                 opacity_loss = np.mean(batch_metrics["losses"]["opacity_loss"])
                 writer.add_scalar("loss/opacity/train", opacity_loss, global_step)
-            if self.conf.loss.use_mask_entropy and "mask_entropy_loss" in batch_metrics["losses"]:
+            if (
+                self.conf.loss.use_mask_entropy
+                and "mask_entropy_loss" in batch_metrics["losses"]
+            ):
                 mask_entropy = np.mean(batch_metrics["losses"]["mask_entropy_loss"])
                 writer.add_scalar("loss/mask_entropy/train", mask_entropy, global_step)
             if self.conf.loss.use_scale and "scale_loss" in batch_metrics["losses"]:
                 scale_loss = np.mean(batch_metrics["losses"]["scale_loss"])
                 writer.add_scalar("loss/scale/train", scale_loss, global_step)
-            if self.conf.loss.use_pseudo_normal_supervision and "shading_normal_loss" in batch_metrics["losses"]:
-                shading_normal_loss = np.mean(batch_metrics["losses"]["shading_normal_loss"])
-                writer.add_scalar("loss/shading_normal/train", shading_normal_loss, global_step)
-            if self.conf.loss.get("use_normal_prior_regularization", False) and "priors_regularization_loss" in batch_metrics["losses"]:
-                priors_regularization_loss = np.mean(batch_metrics["losses"]["priors_regularization_loss"])
-                writer.add_scalar("loss/priors_regularization/train", priors_regularization_loss, global_step)
-            if self.is_loss_enabled("use_albedo_prior_regularization") and "albedo_priors_regularization_loss" in batch_metrics["losses"]:
+            if (
+                self.conf.loss.use_pseudo_normal_supervision
+                and "shading_normal_loss" in batch_metrics["losses"]
+            ):
+                shading_normal_loss = np.mean(
+                    batch_metrics["losses"]["shading_normal_loss"]
+                )
+                writer.add_scalar(
+                    "loss/shading_normal/train", shading_normal_loss, global_step
+                )
+            if (
+                self.conf.loss.get("use_normal_prior_regularization", False)
+                and "priors_regularization_loss" in batch_metrics["losses"]
+            ):
+                priors_regularization_loss = np.mean(
+                    batch_metrics["losses"]["priors_regularization_loss"]
+                )
+                writer.add_scalar(
+                    "loss/priors_regularization/train",
+                    priors_regularization_loss,
+                    global_step,
+                )
+            if (
+                self.is_loss_enabled("use_albedo_prior_regularization")
+                and "albedo_priors_regularization_loss" in batch_metrics["losses"]
+            ):
                 albedo_priors_regularization_loss = np.mean(
                     batch_metrics["losses"]["albedo_priors_regularization_loss"]
                 )
-                writer.add_scalar("loss/albedo_priors_regularization/train", albedo_priors_regularization_loss, global_step)
-            if self.is_loss_enabled("use_roughness_prior_regularization") and "roughness_priors_regularization_loss" in batch_metrics["losses"]:
+                writer.add_scalar(
+                    "loss/albedo_priors_regularization/train",
+                    albedo_priors_regularization_loss,
+                    global_step,
+                )
+            if (
+                self.is_loss_enabled("use_roughness_prior_regularization")
+                and "roughness_priors_regularization_loss" in batch_metrics["losses"]
+            ):
                 roughness_priors_regularization_loss = np.mean(
                     batch_metrics["losses"]["roughness_priors_regularization_loss"]
                 )
@@ -1172,10 +1341,21 @@ class Trainer3DGRUT:
                 light_loss = np.mean(batch_metrics["losses"]["light_loss"])
                 writer.add_scalar("loss/light/train", light_loss, global_step)
             if self.conf.loss.use_edge_aware_smoothness:
-                edge_aware_smoothness_loss = np.mean(batch_metrics["losses"]["edge_aware_smoothness_loss"])
-                writer.add_scalar("loss/edge_aware_smoothness/train", edge_aware_smoothness_loss, global_step)
-            if self.post_processing is not None and "post_processing_reg_loss" in batch_metrics["losses"]:
-                post_processing_reg_loss = np.mean(batch_metrics["losses"]["post_processing_reg_loss"])
+                edge_aware_smoothness_loss = np.mean(
+                    batch_metrics["losses"]["edge_aware_smoothness_loss"]
+                )
+                writer.add_scalar(
+                    "loss/edge_aware_smoothness/train",
+                    edge_aware_smoothness_loss,
+                    global_step,
+                )
+            if (
+                self.post_processing is not None
+                and "post_processing_reg_loss" in batch_metrics["losses"]
+            ):
+                post_processing_reg_loss = np.mean(
+                    batch_metrics["losses"]["post_processing_reg_loss"]
+                )
                 writer.add_scalar(
                     "loss/post_processing_reg/train",
                     post_processing_reg_loss,
@@ -1186,15 +1366,25 @@ class Trainer3DGRUT:
             if "ssim" in batch_metrics:
                 writer.add_scalar("ssim/train", batch_metrics["ssim"], self.global_step)
             if "lpips" in batch_metrics:
-                writer.add_scalar("lpips/train", batch_metrics["lpips"], self.global_step)
+                writer.add_scalar(
+                    "lpips/train", batch_metrics["lpips"], self.global_step
+                )
             if "hits_mean" in batch_metrics:
-                writer.add_scalar("hits/mean/train", batch_metrics["hits_mean"], self.global_step)
+                writer.add_scalar(
+                    "hits/mean/train", batch_metrics["hits_mean"], self.global_step
+                )
             if "hits_std" in batch_metrics:
-                writer.add_scalar("hits/std/train", batch_metrics["hits_std"], self.global_step)
+                writer.add_scalar(
+                    "hits/std/train", batch_metrics["hits_std"], self.global_step
+                )
             if "hits_min" in batch_metrics:
-                writer.add_scalar("hits/min/train", batch_metrics["hits_min"], self.global_step)
+                writer.add_scalar(
+                    "hits/min/train", batch_metrics["hits_min"], self.global_step
+                )
             if "hits_max" in batch_metrics:
-                writer.add_scalar("hits/max/train", batch_metrics["hits_max"], self.global_step)
+                writer.add_scalar(
+                    "hits/max/train", batch_metrics["hits_max"], self.global_step
+                )
 
             if "timings" in batch_metrics:
                 for time_key in batch_metrics["timings"]:
@@ -1204,8 +1394,12 @@ class Trainer3DGRUT:
                         self.global_step,
                     )
 
-            writer.add_scalar("num_particles/train", self.model.num_gaussians, self.global_step)
-            writer.add_scalar("train/num_GS", self.model.num_gaussians, self.global_step)
+            writer.add_scalar(
+                "num_particles/train", self.model.num_gaussians, self.global_step
+            )
+            writer.add_scalar(
+                "train/num_GS", self.model.num_gaussians, self.global_step
+            )
 
             # # NOTE: hack to easily compare with 3DGS
             # writer.add_scalar("train_loss_patches/total_loss", loss, global_step)
@@ -1238,9 +1432,15 @@ class Trainer3DGRUT:
         if conf.export_ply.enabled:
             from threedgrut.export import PLYExporter
 
-            ply_path = conf.export_ply.path if conf.export_ply.path else os.path.join(out_dir, "export_last.ply")
+            ply_path = (
+                conf.export_ply.path
+                if conf.export_ply.path
+                else os.path.join(out_dir, "export_last.ply")
+            )
             exporter = PLYExporter()
-            exporter.export(self.model, Path(ply_path), dataset=self.train_dataset, conf=conf)
+            exporter.export(
+                self.model, Path(ply_path), dataset=self.train_dataset, conf=conf
+            )
 
         if conf.export_usd.enabled:
             from threedgrut.export import USDExporter
@@ -1329,21 +1529,32 @@ class Trainer3DGRUT:
         if self.post_processing is not None:
             parameters["post_processing"] = {
                 "module": self.post_processing.state_dict(),
-                "optimizers": [opt.state_dict() for opt in self.post_processing_optimizers],
-                "schedulers": [sched.state_dict() for sched in self.post_processing_schedulers],
+                "optimizers": [
+                    opt.state_dict() for opt in self.post_processing_optimizers
+                ],
+                "schedulers": [
+                    sched.state_dict() for sched in self.post_processing_schedulers
+                ],
             }
 
         os.makedirs(os.path.join(out_dir, f"ours_{int(global_step)}"), exist_ok=True)
         if not last_checkpoint:
-            ckpt_path = os.path.join(out_dir, f"ours_{int(global_step)}", f"ckpt_{global_step}.pt")
+            ckpt_path = os.path.join(
+                out_dir, f"ours_{int(global_step)}", f"ckpt_{global_step}.pt"
+            )
         else:
             ckpt_path = os.path.join(out_dir, "ckpt_last.pt")
         torch.save(parameters, ckpt_path)
         logger.info(f'💾 Saved checkpoint to: "{os.path.abspath(ckpt_path)}"')
         if self.conf.render.method == "3dgptir" and self.environment is not None:
             envmap_path = os.path.splitext(ckpt_path)[0] + "_environment.exr"
-            if save_environment_exr(self.environment.get_environment(), envmap_path) is not None:
-                logger.info(f'🌐 Saved environment map to: "{os.path.abspath(envmap_path)}"')
+            if (
+                save_environment_exr(self.environment.get_environment(), envmap_path)
+                is not None
+            ):
+                logger.info(
+                    f'🌐 Saved environment map to: "{os.path.abspath(envmap_path)}"'
+                )
 
     def render_gui(self, scene_updated):
         """Render & refresh a single frame for the gui"""
@@ -1387,7 +1598,10 @@ class Trainer3DGRUT:
         conf: DictConfig,
     ):
         # Freeze Gaussians and suspend strategy when distillation starts
-        if self._distillation_start_step >= 0 and global_step >= self._distillation_start_step:
+        if (
+            self._distillation_start_step >= 0
+            and global_step >= self._distillation_start_step
+        ):
             self.model.freeze_gaussians()
             self.strategy.suspend()
 
@@ -1396,7 +1610,9 @@ class Trainer3DGRUT:
             gpu_batch = self.train_dataset.get_gpu_batch_with_intrinsics(batch)
 
         # Perform validation if required
-        is_time_to_validate = (global_step > 0 or conf.validate_first) and (global_step % self.val_frequency == 0)
+        is_time_to_validate = (global_step > 0 or conf.validate_first) and (
+            global_step % self.val_frequency == 0
+        )
         if is_time_to_validate:
             self.run_validation_pass(conf)
 
@@ -1404,7 +1620,9 @@ class Trainer3DGRUT:
         with torch.cuda.nvtx.range(f"train_{global_step}_fwd"):
             profilers["inference"].start()
             sh_indirect_iterations = int(conf.get("sh_indirect_iterations", 0))
-            sh_indirect = sh_indirect_iterations > 0 and global_step < sh_indirect_iterations
+            sh_indirect = (
+                sh_indirect_iterations > 0 and global_step < sh_indirect_iterations
+            )
             outputs = self.model(
                 gpu_batch,
                 train=True,
@@ -1416,21 +1634,25 @@ class Trainer3DGRUT:
         # Apply post-processing to rendered output
         if self.post_processing is not None:
             with torch.cuda.nvtx.range(f"train_{global_step}_post_processing"):
-                outputs = apply_post_processing(self.post_processing, outputs, gpu_batch, training=True)
+                outputs = apply_post_processing(
+                    self.post_processing, outputs, gpu_batch, training=True
+                )
 
         # Convert depth to normal
         with torch.cuda.nvtx.range(f"train_{global_step}_pseudo_normal"):
             pred_dist = outputs.get("pred_dist")
             if pred_dist is not None:
                 valid = pred_dist > 0
-                pseudo_normal, pseudo_normal_mask = self.normal_utils.depth_to_pseudo_normal(
-                    rays_o=gpu_batch.rays_ori,
-                    rays_d=gpu_batch.rays_dir,
-                    T_to_world=gpu_batch.T_to_world,
-                    pred_dist=pred_dist,
-                    valid=valid,
-                    pred_opacity=outputs.get("pred_opacity"),
-                    foreground_mask=gpu_batch.gradient_mask,
+                pseudo_normal, pseudo_normal_mask = (
+                    self.normal_utils.depth_to_pseudo_normal(
+                        rays_o=gpu_batch.rays_ori,
+                        rays_d=gpu_batch.rays_dir,
+                        T_to_world=gpu_batch.T_to_world,
+                        pred_dist=pred_dist,
+                        valid=valid,
+                        pred_opacity=outputs.get("pred_opacity"),
+                        foreground_mask=gpu_batch.gradient_mask,
+                    )
                 )
                 gpu_batch.pseudo_normal = pseudo_normal
                 gpu_batch.pseudo_normal_mask = pseudo_normal_mask
@@ -1440,8 +1662,12 @@ class Trainer3DGRUT:
             batch_losses = self._compute_losses(gpu_batch, outputs)
             # Add post-processing regularization loss
             if self.post_processing is not None:
-                post_processing_reg_loss = self.post_processing.get_regularization_loss()
-                batch_losses["total_loss"] = batch_losses["total_loss"] + post_processing_reg_loss
+                post_processing_reg_loss = (
+                    self.post_processing.get_regularization_loss()
+                )
+                batch_losses["total_loss"] = (
+                    batch_losses["total_loss"] + post_processing_reg_loss
+                )
                 batch_losses["post_processing_reg_loss"] = post_processing_reg_loss
 
         # Backward strategy step
@@ -1473,9 +1699,9 @@ class Trainer3DGRUT:
         # Optimizer step
         with torch.cuda.nvtx.range(f"train_{global_step}_backprop"):
             if isinstance(self.model.optimizer, SelectiveAdam):
-                assert (
-                    outputs["mog_visibility"].shape == self.model.density.shape
-                ), f"Visibility shape {outputs['mog_visibility'].shape} does not match density shape {self.model.density.shape}"
+                assert outputs["mog_visibility"].shape == self.model.density.shape, (
+                    f"Visibility shape {outputs['mog_visibility'].shape} does not match density shape {self.model.density.shape}"
+                )
                 self.model.optimizer.step(outputs["mog_visibility"])
             else:
                 self.model.optimizer.step()
@@ -1512,7 +1738,8 @@ class Trainer3DGRUT:
 
         # Update the BVH if required
         if scene_updated or (
-            conf.model.bvh_update_frequency > 0 and global_step % conf.model.bvh_update_frequency == 0
+            conf.model.bvh_update_frequency > 0
+            and global_step % conf.model.bvh_update_frequency == 0
         ):
             with torch.cuda.nvtx.range(f"train_{global_step}_bvh"):
                 profilers["build_as"].start()
@@ -1530,7 +1757,9 @@ class Trainer3DGRUT:
             and self.conf.model.alias_table_update_frequency > 0
             and global_step % self.conf.model.alias_table_update_frequency == 0
         ):
-            with torch.cuda.nvtx.range(f"train_{global_step - 1}_environment_alias_table"):
+            with torch.cuda.nvtx.range(
+                f"train_{global_step - 1}_environment_alias_table"
+            ):
                 self.rebuild_environment_alias_table()
 
         # Compute metrics
@@ -1543,9 +1772,13 @@ class Trainer3DGRUT:
             iteration=iter,
         )
         if "forward_render" in self.model.renderer.timings:
-            batch_metrics["timings"]["forward_render_cuda"] = self.model.renderer.timings["forward_render"]
+            batch_metrics["timings"]["forward_render_cuda"] = (
+                self.model.renderer.timings["forward_render"]
+            )
         if "backward_render" in self.model.renderer.timings:
-            batch_metrics["timings"]["backward_render_cuda"] = self.model.renderer.timings["backward_render"]
+            batch_metrics["timings"]["backward_render_cuda"] = (
+                self.model.renderer.timings["backward_render"]
+            )
         metrics.append(batch_metrics)
 
         # !!! Below global step has been incremented !!!
@@ -1620,7 +1853,9 @@ class Trainer3DGRUT:
                 outputs = self.model(gpu_batch, train=False)
                 # Apply post-processing for validation (novel view mode)
                 if self.post_processing is not None:
-                    outputs = apply_post_processing(self.post_processing, outputs, gpu_batch, training=False)
+                    outputs = apply_post_processing(
+                        self.post_processing, outputs, gpu_batch, training=False
+                    )
                 profilers["inference"].end()
 
                 batch_losses = self._compute_losses(gpu_batch, outputs)
@@ -1633,7 +1868,9 @@ class Trainer3DGRUT:
                     iteration=val_iteration,
                 )
 
-                self.log_validation_iter(gpu_batch, outputs, batch_metrics, iteration=val_iteration)
+                self.log_validation_iter(
+                    gpu_batch, outputs, batch_metrics, iteration=val_iteration
+                )
                 metrics.append(batch_metrics)
 
         logger.end_progress(task_name="Validation")
@@ -1652,7 +1889,9 @@ class Trainer3DGRUT:
         for d in list_of_dicts:
             for k, v in d.items():
                 if isinstance(v, dict):
-                    flat_dict[k] = defaultdict(list) if k not in flat_dict else flat_dict[k]
+                    flat_dict[k] = (
+                        defaultdict(list) if k not in flat_dict else flat_dict[k]
+                    )
                     for inner_k, inner_v in v.items():
                         flat_dict[k][inner_k].append(inner_v)
                 else:
@@ -1663,13 +1902,17 @@ class Trainer3DGRUT:
         """Initiate training logic for n_epochs.
         Training and validation are controlled by the config.
         """
-        assert self.model.optimizer is not None, "Optimizer needs to be initialized before the training can start!"
+        assert self.model.optimizer is not None, (
+            "Optimizer needs to be initialized before the training can start!"
+        )
         conf = self.conf
 
         logger.log_rule(f"Training {conf.render.method.upper()}")
 
         # Training loop
-        logger.start_progress(task_name="Training", total_steps=conf.n_iterations, color="spring_green1")
+        logger.start_progress(
+            task_name="Training", total_steps=conf.n_iterations, color="spring_green1"
+        )
 
         for epoch_idx in range(self.n_epochs):
             self.run_train_pass(conf)

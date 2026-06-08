@@ -127,7 +127,9 @@ class VideoRecorder:
         if len(self.trajectory) < 2:
             raise ValueError("Rendering a path trajectory requires at least 2 cameras.")
         elif interpolation_mode == "catmull_rom" and len(self.trajectory) < 4:
-            raise ValueError("Rendering a path with a spline interpolated trajectory requires at least 4 cameras.")
+            raise ValueError(
+                "Rendering a path with a spline interpolated trajectory requires at least 4 cameras."
+            )
 
         out_video = None
         interpolated_path = camera_path_generator(
@@ -155,12 +157,18 @@ class VideoRecorder:
 
     def render_continuous_trajectory(self):
         if len(self.trajectory) < 4:
-            raise ValueError("Rendering a continuous trajectory requires at least 4 cameras.")
+            raise ValueError(
+                "Rendering a continuous trajectory requires at least 4 cameras."
+            )
 
         def _fit_bspline(data_points, frames_between_cameras):
-            stacked_data_points = torch.stack([dp for dp in data_points], dim=1).cpu().numpy()
+            stacked_data_points = (
+                torch.stack([dp for dp in data_points], dim=1).cpu().numpy()
+            )
             tck, u = splprep(stacked_data_points, u=None, s=0.0, per=1)
-            u_new = np.linspace(u.min(), u.max(), frames_between_cameras * len(data_points))
+            u_new = np.linspace(
+                u.min(), u.max(), frames_between_cameras * len(data_points)
+            )
             interpolated_cam_param = np.stack(splev(u_new, tck, der=0)).T
             interpolated_cam_param = torch.tensor(interpolated_cam_param)
             return interpolated_cam_param
@@ -170,7 +178,10 @@ class VideoRecorder:
             frames_between_cameras=self.frames_between_cameras,
         )
         cam_ats = _fit_bspline(
-            data_points=[c.cam_pos().squeeze() - c.cam_forward().squeeze() for c in self.trajectory],
+            data_points=[
+                c.cam_pos().squeeze() - c.cam_forward().squeeze()
+                for c in self.trajectory
+            ],
             frames_between_cameras=self.frames_between_cameras,
         )
         cam_ups = _fit_bspline(

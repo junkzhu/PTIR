@@ -52,7 +52,9 @@ class GaussianLightFieldWriter(GaussianUSDWriter):
         sorting_mode_hint: str = "cameraDistance",
         linear_srgb: bool = False,
     ) -> None:
-        super().__init__(stage, capabilities, content_root_path, linear_srgb=linear_srgb)
+        super().__init__(
+            stage, capabilities, content_root_path, linear_srgb=linear_srgb
+        )
         self.half_geometry = half_geometry
         self.half_features = half_features
         self.projection_mode_hint = projection_mode_hint
@@ -78,9 +80,13 @@ class GaussianLightFieldWriter(GaussianUSDWriter):
         if self.use_surflet_kernel:
             self.prim = UsdVol.ParticleField.Define(self.stage, prim_path).GetPrim()
             self._apply_surflet_kernel_schemas()
-            logger.info(f"Created ParticleField with GaussianSurfletAPI (2DGS/surfel) at {prim_path}")
+            logger.info(
+                f"Created ParticleField with GaussianSurfletAPI (2DGS/surfel) at {prim_path}"
+            )
         else:
-            self.prim = UsdVol.ParticleField3DGaussianSplat.Define(self.stage, prim_path).GetPrim()
+            self.prim = UsdVol.ParticleField3DGaussianSplat.Define(
+                self.stage, prim_path
+            ).GetPrim()
             self._schema = UsdVol.ParticleField3DGaussianSplat(self.prim)
             logger.info(f"Created ParticleField3DGaussianSplat at {prim_path}")
 
@@ -114,19 +120,29 @@ class GaussianLightFieldWriter(GaussianUSDWriter):
         if self._schema is not None:
             # 3DGS: ParticleField3DGaussianSplat has all attributes
             self.positions_attr = (
-                self._schema.CreatePositionshAttr() if self.half_geometry else self._schema.CreatePositionsAttr()
+                self._schema.CreatePositionshAttr()
+                if self.half_geometry
+                else self._schema.CreatePositionsAttr()
             )
             self.orientations_attr = (
-                self._schema.CreateOrientationshAttr() if self.half_geometry else self._schema.CreateOrientationsAttr()
+                self._schema.CreateOrientationshAttr()
+                if self.half_geometry
+                else self._schema.CreateOrientationsAttr()
             )
             self.scales_attr = (
-                self._schema.CreateScaleshAttr() if self.half_geometry else self._schema.CreateScalesAttr()
+                self._schema.CreateScaleshAttr()
+                if self.half_geometry
+                else self._schema.CreateScalesAttr()
             )
             self.opacities_attr = (
-                self._schema.CreateOpacitieshAttr() if self.half_features else self._schema.CreateOpacitiesAttr()
+                self._schema.CreateOpacitieshAttr()
+                if self.half_features
+                else self._schema.CreateOpacitiesAttr()
             )
             if self.capabilities.has_spherical_harmonics:
-                self.sh_degree_attr = self._schema.CreateRadianceSphericalHarmonicsDegreeAttr()
+                self.sh_degree_attr = (
+                    self._schema.CreateRadianceSphericalHarmonicsDegreeAttr()
+                )
                 self.sh_coeffs_attr = (
                     self._schema.CreateRadianceSphericalHarmonicsCoefficientshAttr()
                     if self.half_features
@@ -139,18 +155,30 @@ class GaussianLightFieldWriter(GaussianUSDWriter):
             scale_api = UsdVol.ParticleFieldScaleAttributeAPI(self.prim)
             opacity_api = UsdVol.ParticleFieldOpacityAttributeAPI(self.prim)
             self.positions_attr = (
-                pos_api.CreatePositionshAttr() if self.half_geometry else pos_api.CreatePositionsAttr()
+                pos_api.CreatePositionshAttr()
+                if self.half_geometry
+                else pos_api.CreatePositionsAttr()
             )
             self.orientations_attr = (
-                orient_api.CreateOrientationshAttr() if self.half_geometry else orient_api.CreateOrientationsAttr()
+                orient_api.CreateOrientationshAttr()
+                if self.half_geometry
+                else orient_api.CreateOrientationsAttr()
             )
-            self.scales_attr = scale_api.CreateScaleshAttr() if self.half_geometry else scale_api.CreateScalesAttr()
+            self.scales_attr = (
+                scale_api.CreateScaleshAttr()
+                if self.half_geometry
+                else scale_api.CreateScalesAttr()
+            )
             self.opacities_attr = (
-                opacity_api.CreateOpacitieshAttr() if self.half_features else opacity_api.CreateOpacitiesAttr()
+                opacity_api.CreateOpacitieshAttr()
+                if self.half_features
+                else opacity_api.CreateOpacitiesAttr()
             )
             if self.capabilities.has_spherical_harmonics:
                 rad_api = UsdVol.ParticleFieldSphericalHarmonicsAttributeAPI(self.prim)
-                self.sh_degree_attr = rad_api.CreateRadianceSphericalHarmonicsDegreeAttr()
+                self.sh_degree_attr = (
+                    rad_api.CreateRadianceSphericalHarmonicsDegreeAttr()
+                )
                 self.sh_coeffs_attr = (
                     rad_api.CreateRadianceSphericalHarmonicsCoefficientshAttr()
                     if self.half_features
@@ -187,33 +215,54 @@ class GaussianLightFieldWriter(GaussianUSDWriter):
 
         # Positions (geometry)
         if self.half_geometry:
-            self.positions_attr.Set(Vt.Vec3hArray.FromNumpy(attributes.positions.astype(np.float16)))
+            self.positions_attr.Set(
+                Vt.Vec3hArray.FromNumpy(attributes.positions.astype(np.float16))
+            )
         else:
-            self.positions_attr.Set(Vt.Vec3fArray.FromNumpy(attributes.positions.astype(np.float32)))
+            self.positions_attr.Set(
+                Vt.Vec3fArray.FromNumpy(attributes.positions.astype(np.float32))
+            )
 
         # Orientations (geometry)
         if self.half_geometry:
-            quats = [Gf.Quath(float(q[0]), float(q[1]), float(q[2]), float(q[3])) for q in attributes.rotations]
+            quats = [
+                Gf.Quath(float(q[0]), float(q[1]), float(q[2]), float(q[3]))
+                for q in attributes.rotations
+            ]
             self.orientations_attr.Set(Vt.QuathArray(quats))
         else:
-            quats = [Gf.Quatf(float(q[0]), float(q[1]), float(q[2]), float(q[3])) for q in attributes.rotations]
+            quats = [
+                Gf.Quatf(float(q[0]), float(q[1]), float(q[2]), float(q[3]))
+                for q in attributes.rotations
+            ]
             self.orientations_attr.Set(Vt.QuatfArray(quats))
 
         # Scales (geometry)
         if self.half_geometry:
-            self.scales_attr.Set(Vt.Vec3hArray.FromNumpy(attributes.scales.astype(np.float16)))
+            self.scales_attr.Set(
+                Vt.Vec3hArray.FromNumpy(attributes.scales.astype(np.float16))
+            )
         else:
-            self.scales_attr.Set(Vt.Vec3fArray.FromNumpy(attributes.scales.astype(np.float32)))
+            self.scales_attr.Set(
+                Vt.Vec3fArray.FromNumpy(attributes.scales.astype(np.float32))
+            )
 
         # Opacities (features)
         densities_clamped = np.clip(attributes.densities.flatten(), 0.0, 1.0)
         if self.half_features:
-            self.opacities_attr.Set(Vt.HalfArray.FromNumpy(densities_clamped.astype(np.float16)))
+            self.opacities_attr.Set(
+                Vt.HalfArray.FromNumpy(densities_clamped.astype(np.float16))
+            )
         else:
-            self.opacities_attr.Set(Vt.FloatArray.FromNumpy(densities_clamped.astype(np.float32)))
+            self.opacities_attr.Set(
+                Vt.FloatArray.FromNumpy(densities_clamped.astype(np.float32))
+            )
 
         # SH coefficients (features)
-        if self.capabilities.has_spherical_harmonics and self.sh_coeffs_attr is not None:
+        if (
+            self.capabilities.has_spherical_harmonics
+            and self.sh_coeffs_attr is not None
+        ):
             sh_degree = 0 if force_sh_0 else self.capabilities.sh_degree
             if self.sh_degree_attr is not None:
                 self.sh_degree_attr.Set(sh_degree)
@@ -224,15 +273,23 @@ class GaussianLightFieldWriter(GaussianUSDWriter):
             else:
                 num_sh_coeffs = (sh_degree + 1) ** 2
                 num_rest_coeffs = num_sh_coeffs - 1
-                specular_reshaped = attributes.specular.reshape((num_gaussians, num_rest_coeffs, 3))
+                specular_reshaped = attributes.specular.reshape(
+                    (num_gaussians, num_rest_coeffs, 3)
+                )
                 albedo_expanded = attributes.albedo.reshape((num_gaussians, 1, 3))
-                all_coeffs = np.concatenate([albedo_expanded, specular_reshaped], axis=1)
+                all_coeffs = np.concatenate(
+                    [albedo_expanded, specular_reshaped], axis=1
+                )
                 all_coeffs_flat = all_coeffs.reshape(-1, 3)
 
             if self.half_features:
-                self.sh_coeffs_attr.Set(Vt.Vec3hArray.FromNumpy(all_coeffs_flat.astype(np.float16)))
+                self.sh_coeffs_attr.Set(
+                    Vt.Vec3hArray.FromNumpy(all_coeffs_flat.astype(np.float16))
+                )
             else:
-                self.sh_coeffs_attr.Set(Vt.Vec3fArray.FromNumpy(all_coeffs_flat.astype(np.float32)))
+                self.sh_coeffs_attr.Set(
+                    Vt.Vec3fArray.FromNumpy(all_coeffs_flat.astype(np.float32))
+                )
 
             self.sh_coeffs_attr.SetMetadata("elementSize", num_sh_coeffs)
 

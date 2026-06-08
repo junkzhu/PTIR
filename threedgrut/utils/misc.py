@@ -27,7 +27,9 @@ OmegaConf.register_new_resolver("div", lambda a, b: a / b)
 OmegaConf.register_new_resolver("eq", lambda a, b: a == b)
 
 
-def to_torch(data: npt.NDArray, device: str, dtype: Optional[torch.dtype] = None) -> torch.Tensor:
+def to_torch(
+    data: npt.NDArray, device: str, dtype: Optional[torch.dtype] = None
+) -> torch.Tensor:
     """Converts a numpy array to a torch tensor on target device with optional type-casting"""
     return torch.from_numpy(data).to(device=device, dtype=dtype)
 
@@ -65,7 +67,9 @@ def get_activation_function(activation_function: str, inverse=False) -> Callable
 
 
 def quaternion_to_so3(r):
-    norm = torch.sqrt(r[:, 0] * r[:, 0] + r[:, 1] * r[:, 1] + r[:, 2] * r[:, 2] + r[:, 3] * r[:, 3])
+    norm = torch.sqrt(
+        r[:, 0] * r[:, 0] + r[:, 1] * r[:, 1] + r[:, 2] * r[:, 2] + r[:, 3] * r[:, 3]
+    )
 
     q = r / norm[:, None]
 
@@ -98,15 +102,31 @@ def exponential_scheduler(
     lambda_init=None,
     lambda_final=None,
 ):
-    init = lambda_init if lambda_init is not None else value_init if value_init is not None else lr_init
-    final = lambda_final if lambda_final is not None else value_final if value_final is not None else lr_final
+    init = (
+        lambda_init
+        if lambda_init is not None
+        else value_init
+        if value_init is not None
+        else lr_init
+    )
+    final = (
+        lambda_final
+        if lambda_final is not None
+        else value_final
+        if value_final is not None
+        else lr_final
+    )
     if init is None or final is None:
-        raise ValueError("Scheduler requires lr_init/lr_final, value_init/value_final, or lambda_init/lambda_final")
+        raise ValueError(
+            "Scheduler requires lr_init/lr_final, value_init/value_final, or lambda_init/lambda_final"
+        )
     init = float(init)
     final = float(final)
     max_steps = float(max_steps)
     if init <= 0.0 or final <= 0.0:
-        raise ValueError("Exponential scheduler requires positive init and final values")
+        raise ValueError(
+            "Exponential scheduler requires positive init and final values"
+        )
 
     def helper(step):
         t = 1.0 if max_steps <= 0.0 else np.clip(step / max_steps, 0, 1)
@@ -126,10 +146,24 @@ def linear_scheduler(
     lambda_init=None,
     lambda_final=None,
 ):
-    init = lambda_init if lambda_init is not None else value_init if value_init is not None else lr_init
-    final = lambda_final if lambda_final is not None else value_final if value_final is not None else lr_final
+    init = (
+        lambda_init
+        if lambda_init is not None
+        else value_init
+        if value_init is not None
+        else lr_init
+    )
+    final = (
+        lambda_final
+        if lambda_final is not None
+        else value_final
+        if value_final is not None
+        else lr_final
+    )
     if init is None or final is None:
-        raise ValueError("Scheduler requires lr_init/lr_final, value_init/value_final, or lambda_init/lambda_final")
+        raise ValueError(
+            "Scheduler requires lr_init/lr_final, value_init/value_final, or lambda_init/lambda_final"
+        )
     init = float(init)
     final = float(final)
     max_steps = float(max_steps)
@@ -208,7 +242,9 @@ def create_summary_writer(conf, object_name, out_dir, experiment_name, use_wandb
 
 
 @torch.no_grad()
-def _multinomial_sample(probabilities: torch.Tensor, n: int, replacement: bool = True) -> torch.Tensor:
+def _multinomial_sample(
+    probabilities: torch.Tensor, n: int, replacement: bool = True
+) -> torch.Tensor:
     """Sample from a distribution using torch.multinomial or numpy.random.choice.
 
 
@@ -226,7 +262,9 @@ def _multinomial_sample(probabilities: torch.Tensor, n: int, replacement: bool =
         Tensor: A 1D tensor of sampled indices.
     """
 
-    assert len(probabilities.size()) == 1, "_multinomial_sample expects a flat tensor as input"
+    assert len(probabilities.size()) == 1, (
+        "_multinomial_sample expects a flat tensor as input"
+    )
     num_elements = probabilities.size(0)
 
     if num_elements <= 2**24:
@@ -236,7 +274,9 @@ def _multinomial_sample(probabilities: torch.Tensor, n: int, replacement: bool =
         # Fallback to numpy.random.choice for larger element spaces
         weights = probabilities / probabilities.sum()
         weights_np = weights.detach().cpu().numpy()
-        sampled_idxs_np = np.random.choice(num_elements, size=n, p=weights_np, replace=replacement)
+        sampled_idxs_np = np.random.choice(
+            num_elements, size=n, p=weights_np, replace=replacement
+        )
         sampled_idxs = torch.from_numpy(sampled_idxs_np)
 
         # Return the sampled indices on the original device
