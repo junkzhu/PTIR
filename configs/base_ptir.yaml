@@ -5,7 +5,7 @@ defaults:
   - /base_gs
   - _self_
 
-n_iterations: 1500
+n_iterations: 800
 visualize_frequency: 20
 sh_indirect_iterations: 0
 
