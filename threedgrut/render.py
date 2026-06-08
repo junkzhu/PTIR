@@ -385,6 +385,12 @@ class Renderer:
 
         environment_type = OmegaConf.select(self.conf, "environment.type", default="2d")
         environment_paths = self.list_environment_maps(environment_dir, environment_type=environment_type)
+        relight_env = OmegaConf.select(self.conf, "dataset.relight_env", default=None)
+        if relight_env:
+            relight_env = {str(name) for name in relight_env}
+            environment_paths = [
+                path for path in environment_paths if self._environment_output_name(path) in relight_env
+            ]
         if not environment_paths:
             raise FileNotFoundError(f"No environment maps found in: {environment_dir}")
 

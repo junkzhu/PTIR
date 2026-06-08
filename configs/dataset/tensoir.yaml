@@ -1,3 +1,4 @@
 type: nerf
 normal: true
 material: true
+relight_env: ["bridge", "city", "fireplace", "forest", "night"]
