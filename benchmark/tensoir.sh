@@ -3,16 +3,19 @@
 set -euo pipefail
 
 CUDA_DEVICES="0"
-DATA_ROOT="/mnt/sdb1/zjk/dataset/tensoIR"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+DATA_ROOT="$REPO_ROOT/data/TensoIR"
 OUT_DIR="outputs/tensoir"
 CONFIG_NAME="apps/nerf_synthetic_3dgrt.yaml"
 INVERSION_CONFIG_NAME="inversions/nerf_synthetic_3dgptir.yaml"
 INVERSION_OUT_DIR=""
-RELIGHT_ENV_DIR="/mnt/sdb1/zjk/dataset/tensoIR/Environment_Maps/high_res_envmaps_2k"
+RELIGHT_ENV_DIR=""
 RELIGHT_OUT_DIR=""
 RUN_INVERSION=true
 RUN_RELIGHT=true
 FORCE_TRAIN=false
+DATASET_CONFIG="tensoir"
 SCENES=(lego armadillo hotdog ficus)
 EXTRA_ARGS=()
 INVERSION_EXTRA_ARGS=()
@@ -32,10 +35,11 @@ Options:
                           PTIR inversion output directory. Default: same as --out_dir.
   --inversion_args "ARGS" Extra Hydra args only for PTIR inversion.
   --no_inversion          Only run/skip stage1 training; do not run PTIR inversion.
-  --relight_env_dir PATH  Environment maps for relight. Default: $RELIGHT_ENV_DIR
+  --relight_env_dir PATH  Environment maps for relight. Default: $DATA_ROOT/Environment_Maps/high_res_envmaps_2k
   --relight_out_dir PATH  Relight render output root. Default: checkpoint run directory.
   --no_relight            Do not run relight after PTIR inversion.
   --force_train           Run stage1 training even if ckpt_last.pt already exists.
+  --dataset_config NAME   Hydra dataset config. Default: $DATASET_CONFIG
   --scenes "A B C"        Space-separated scene list. Default: ${SCENES[*]}
   -h, --help              Show this help.
 
@@ -96,6 +100,10 @@ while [[ $# -gt 0 ]]; do
             FORCE_TRAIN=true
             shift
             ;;
+        --dataset_config)
+            DATASET_CONFIG="$2"
+            shift 2
+            ;;
         --scenes)
             read -r -a SCENES <<< "$2"
             shift 2
@@ -119,6 +127,9 @@ done
 if [[ -z "$INVERSION_OUT_DIR" ]]; then
     INVERSION_OUT_DIR="$OUT_DIR"
 fi
+if [[ -z "$RELIGHT_ENV_DIR" ]]; then
+    RELIGHT_ENV_DIR="$DATA_ROOT/Environment_Maps/high_res_envmaps_2k"
+fi
 if [[ "$RUN_INVERSION" != true ]]; then
     RUN_RELIGHT=false
 fi
@@ -139,6 +150,7 @@ precompile_inversion_plugin() {
     echo "[$(date '+%F %T')] Precompiling PTIR native plugin on CUDA_VISIBLE_DEVICES=$gpu_id"
     {
         echo "config=$INVERSION_CONFIG_NAME"
+        echo "dataset=$DATASET_CONFIG"
         echo "TORCH_EXTENSIONS_DIR=$TORCH_EXTENSIONS_DIR"
         CUDA_VISIBLE_DEVICES="$gpu_id" python - <<PY
 from hydra import compose, initialize_config_dir
@@ -150,7 +162,7 @@ from threedgptir_tracer.setup_threedgptir import setup_threedgptir
 OmegaConf.register_new_resolver("int_list", lambda l: [int(x) for x in l], replace=True)
 
 with initialize_config_dir(config_dir="$PWD/configs", version_base=None):
-    conf = compose(config_name="$INVERSION_CONFIG_NAME")
+    conf = compose(config_name="$INVERSION_CONFIG_NAME", overrides=["dataset=$DATASET_CONFIG"])
 
 setup_threedgptir(conf)
 PY
@@ -193,6 +205,7 @@ run_inversion() {
         echo "scene=$scene"
         echo "cuda_device=$gpu_id"
         echo "config=$INVERSION_CONFIG_NAME"
+        echo "dataset=$DATASET_CONFIG"
         echo "path=$DATA_ROOT/$scene"
         echo "initialization.path=$initialization_path"
         echo "out_dir=$INVERSION_OUT_DIR"
@@ -202,6 +215,7 @@ run_inversion() {
         nvidia-smi || true
         CUDA_VISIBLE_DEVICES="$gpu_id" python train.py \
             --config-name "$INVERSION_CONFIG_NAME" \
+            "dataset=$DATASET_CONFIG" \
             "path=$DATA_ROOT/$scene" \
             "initialization.path=$initialization_path" \
             "out_dir=$INVERSION_OUT_DIR" \
@@ -265,6 +279,7 @@ run_scene() {
             echo "scene=$scene"
             echo "cuda_device=$gpu_id"
             echo "config=$CONFIG_NAME"
+            echo "dataset=$DATASET_CONFIG"
             echo "path=$DATA_ROOT/$scene"
             echo "out_dir=$OUT_DIR"
             echo "experiment_name=$scene"
@@ -273,6 +288,7 @@ run_scene() {
             nvidia-smi || true
             CUDA_VISIBLE_DEVICES="$gpu_id" python train.py \
                 --config-name "$CONFIG_NAME" \
+                "dataset=$DATASET_CONFIG" \
                 "path=$DATA_ROOT/$scene" \
                 "out_dir=$OUT_DIR" \
                 "experiment_name=$scene" \

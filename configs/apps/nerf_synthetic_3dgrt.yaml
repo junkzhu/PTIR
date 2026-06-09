@@ -3,7 +3,7 @@
 # order in which configs override each other (/* - denotes a relative search path)
 defaults:
   - /base_gs
-  - /dataset: tensoir
+  - /dataset: nerf
   - /initialization: random
   - /render: 3dgrt
   - _self_

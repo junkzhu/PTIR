@@ -3,12 +3,14 @@
 set -euo pipefail
 
 CUDA_DEVICES="0"
-DATA_ROOT="/mnt/sdb1/zjk/SIG26/datasets/Synthetic4Relight"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+DATA_ROOT="$REPO_ROOT/data/Synthetic4Relight"
 OUT_DIR="outputs/synthetic4relight"
 CONFIG_NAME="apps/nerf_synthetic_3dgrt.yaml"
 INVERSION_CONFIG_NAME="inversions/nerf_synthetic_3dgptir.yaml"
 INVERSION_OUT_DIR=""
-RELIGHT_ENV_DIR="/mnt/sdb1/zjk/SIG26/datasets/Synthetic4Relight/Environment_Maps"
+RELIGHT_ENV_DIR=""
 RELIGHT_OUT_DIR=""
 RUN_INVERSION=true
 RUN_RELIGHT=true
@@ -33,7 +35,7 @@ Options:
                           PTIR inversion output directory. Default: same as --out_dir.
   --inversion_args "ARGS" Extra Hydra args only for PTIR inversion.
   --no_inversion          Only run/skip stage1 training; do not run PTIR inversion.
-  --relight_env_dir PATH  Environment maps for relight. Default: $RELIGHT_ENV_DIR
+  --relight_env_dir PATH  Environment maps for relight. Default: $DATA_ROOT/Environment_Maps
   --relight_out_dir PATH  Relight render output root. Default: checkpoint run directory.
   --no_relight            Do not run relight after PTIR inversion.
   --force_train           Run stage1 training even if ckpt_last.pt already exists.
@@ -124,6 +126,9 @@ done
 
 if [[ -z "$INVERSION_OUT_DIR" ]]; then
     INVERSION_OUT_DIR="$OUT_DIR"
+fi
+if [[ -z "$RELIGHT_ENV_DIR" ]]; then
+    RELIGHT_ENV_DIR="$DATA_ROOT/Environment_Maps"
 fi
 if [[ "$RUN_INVERSION" != true ]]; then
     RUN_RELIGHT=false
