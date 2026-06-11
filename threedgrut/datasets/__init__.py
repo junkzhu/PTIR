@@ -156,6 +156,7 @@ def make(name: str, config, ray_jitter):
                     config.dataset, "material", "train"
                 ),
                 mask_from_background=config.dataset.get("mask_from_background", None),
+                downsample_factor=config.dataset.get("downsample_factor", 1),
             )
             val_dataset = NeRFDataset(
                 config.path,
@@ -166,6 +167,7 @@ def make(name: str, config, ray_jitter):
                     config.dataset, "material", "val"
                 ),
                 mask_from_background=config.dataset.get("mask_from_background", None),
+                downsample_factor=config.dataset.get("downsample_factor", 1),
             )
         case "colmap":
             # Load EXIF exposure data if enabled (shared between train and val)
@@ -336,6 +338,7 @@ def make_test(name: str, config):
                     config.dataset, "material", "test"
                 ),
                 mask_from_background=config.dataset.get("mask_from_background", None),
+                downsample_factor=config.dataset.get("downsample_factor", 1),
             )
         case "colmap":
             # Load EXIF exposure data if enabled

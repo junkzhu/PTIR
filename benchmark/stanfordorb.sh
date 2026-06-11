@@ -222,6 +222,7 @@ run_scene() {
             echo "initialization.num_gaussians=$INITIALIZATION_NUM_GAUSSIANS"
             echo "initialization.xyz_max=$INITIALIZATION_XYZ_MAX"
             echo "initialization.xyz_min=$INITIALIZATION_XYZ_MIN"
+            echo "loss.lambda_mask_entropy=1.0"
             echo "out_dir=$OUT_DIR"
             echo "experiment_name=$scene"
             printf 'extra_args=%q ' "${EXTRA_ARGS[@]}"
@@ -234,6 +235,7 @@ run_scene() {
                 "initialization.num_gaussians=$INITIALIZATION_NUM_GAUSSIANS" \
                 "initialization.xyz_max=$INITIALIZATION_XYZ_MAX" \
                 "initialization.xyz_min=$INITIALIZATION_XYZ_MIN" \
+                "loss.lambda_mask_entropy=1.0" \
                 "out_dir=$OUT_DIR" \
                 "experiment_name=$scene" \
                 "${EXTRA_ARGS[@]}"

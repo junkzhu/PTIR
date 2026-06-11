@@ -47,6 +47,7 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
         load_normals=False,
         load_materials=False,
         mask_from_background=None,
+        downsample_factor=1,
     ):
         self.root_dir = path
         self.device = device
@@ -56,6 +57,7 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
         self.load_normals = load_normals
         self.load_materials = load_materials
         self.mask_from_background = mask_from_background
+        self.downsample_factor = downsample_factor
 
         # Cache for per-worker GPU tensors (thread-local storage)
         self._worker_gpu_cache = {}
@@ -148,8 +150,8 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
 
         frame = Image.open(img_path)
 
-        w = frame.width
-        h = frame.height
+        w = int(frame.width / self.downsample_factor)
+        h = int(frame.height / self.downsample_factor)
         self.img_wh = (w, h)
 
         fx = fy = 0.5 * w / np.tan(0.5 * meta["camera_angle_x"])
@@ -388,9 +390,12 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
 
         mask_path = self.mask_paths[idx]
         if os.path.exists(mask_path):
-            mask = torch.from_numpy(
-                np.array(Image.open(mask_path).convert("L"))
-            ).reshape(1, self.image_h, self.image_w, 1)
+            mask = cv2.resize(
+                np.array(Image.open(mask_path).convert("L")),
+                self.img_wh,
+                interpolation=cv2.INTER_NEAREST,
+            )
+            mask = torch.from_numpy(mask).reshape(1, self.image_h, self.image_w, 1)
             output_dict["mask"] = mask
         elif alpha is not None:
             mask = torch.from_numpy(alpha).reshape(1, self.image_h, self.image_w, 1)
@@ -403,9 +408,14 @@ class NeRFDataset(Dataset, BoundedMultiViewDataset, DatasetVisualization):
 
         gradient_mask_path = self.gradient_mask_paths[idx]
         if os.path.exists(gradient_mask_path):
-            gradient_mask = torch.from_numpy(
-                np.array(Image.open(gradient_mask_path).convert("L"))
-            ).reshape(1, self.image_h, self.image_w, 1)
+            gradient_mask = cv2.resize(
+                np.array(Image.open(gradient_mask_path).convert("L")),
+                self.img_wh,
+                interpolation=cv2.INTER_NEAREST,
+            )
+            gradient_mask = torch.from_numpy(gradient_mask).reshape(
+                1, self.image_h, self.image_w, 1
+            )
             output_dict["gradient_mask"] = gradient_mask
 
         return output_dict
