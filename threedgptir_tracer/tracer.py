@@ -16,6 +16,7 @@
 import logging
 import math
 import os
+from dataclasses import dataclass
 from enum import IntEnum
 
 import torch
@@ -34,6 +35,88 @@ logger = logging.getLogger(__name__)
 #
 
 _threedgptir_plugin = None
+
+
+@dataclass(frozen=True)
+class LightBuffers:
+    lights: torch.Tensor
+    alias_table: torch.Tensor
+    mesh_vertices: torch.Tensor
+    mesh_triangles: torch.Tensor
+    mesh_lights: torch.Tensor
+    mesh_triangle_alias_table: torch.Tensor
+
+    @classmethod
+    def empty(cls, device: torch.device | str) -> "LightBuffers":
+        return cls(
+            lights=torch.empty((0, 9), dtype=torch.float32, device=device),
+            alias_table=torch.empty((5, 0), dtype=torch.float32, device=device),
+            mesh_vertices=torch.empty((0, 3), dtype=torch.float32, device=device),
+            mesh_triangles=torch.empty((0, 3), dtype=torch.int32, device=device),
+            mesh_lights=torch.empty((0, 8), dtype=torch.float32, device=device),
+            mesh_triangle_alias_table=torch.empty(
+                (3, 0), dtype=torch.float32, device=device
+            ),
+        )
+
+    @classmethod
+    def from_batch(cls, batch: Batch, device: torch.device | str) -> "LightBuffers":
+        empty = cls.empty(device)
+
+        def value_or_empty(name: str, fallback: torch.Tensor) -> torch.Tensor:
+            value = getattr(batch, name, None)
+            return fallback if value is None else value
+
+        return cls(
+            lights=value_or_empty("lights", empty.lights),
+            alias_table=value_or_empty("light_alias_table", empty.alias_table),
+            mesh_vertices=value_or_empty("mesh_light_vertices", empty.mesh_vertices),
+            mesh_triangles=value_or_empty("mesh_light_triangles", empty.mesh_triangles),
+            mesh_lights=value_or_empty("mesh_lights", empty.mesh_lights),
+            mesh_triangle_alias_table=value_or_empty(
+                "mesh_light_triangle_alias_table",
+                empty.mesh_triangle_alias_table,
+            ),
+        ).to(device)
+
+    def to(self, device: torch.device | str) -> "LightBuffers":
+        return LightBuffers(
+            lights=self.lights.to(device=device, dtype=torch.float32).contiguous(),
+            alias_table=self.alias_table.to(
+                device=device, dtype=torch.float32
+            ).contiguous(),
+            mesh_vertices=self.mesh_vertices.to(
+                device=device, dtype=torch.float32
+            ).contiguous(),
+            mesh_triangles=self.mesh_triangles.to(
+                device=device, dtype=torch.int32
+            ).contiguous(),
+            mesh_lights=self.mesh_lights.to(
+                device=device, dtype=torch.float32
+            ).contiguous(),
+            mesh_triangle_alias_table=self.mesh_triangle_alias_table.to(
+                device=device, dtype=torch.float32
+            ).contiguous(),
+        )
+
+    def tensors(
+        self,
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+    ]:
+        return (
+            self.lights,
+            self.alias_table,
+            self.mesh_vertices,
+            self.mesh_triangles,
+            self.mesh_lights,
+            self.mesh_triangle_alias_table,
+        )
 
 
 def load_threedgptir_plugin(conf):
@@ -71,6 +154,7 @@ class Tracer:
             mog_mmet,
             environment,
             environment_alias_table,
+            light_buffers,
             render_opts,
             sph_degree,
             min_transmittance,
@@ -80,6 +164,15 @@ class Tracer:
                 [mog_pos, mog_dns, mog_rot, mog_scl, torch.zeros_like(mog_dns)], dim=1
             )
             particle_material = torch.concat([mog_malb, mog_mrgh, mog_mmet], dim=1)
+            light_buffers = light_buffers.to(ray_dir.device)
+            (
+                lights,
+                light_alias_table,
+                mesh_light_vertices,
+                mesh_light_triangles,
+                mesh_lights,
+                mesh_light_triangle_alias_table,
+            ) = light_buffers.tensors()
             (
                 ray_radiance,
                 ray_density,
@@ -105,6 +198,12 @@ class Tracer:
                 mog_snrm,
                 environment,
                 environment_alias_table,
+                lights,
+                light_alias_table,
+                mesh_light_vertices,
+                mesh_light_triangles,
+                mesh_lights,
+                mesh_light_triangle_alias_table,
                 render_opts,
                 sph_degree,
                 min_transmittance,
@@ -130,6 +229,12 @@ class Tracer:
                 mog_snrm,
                 environment,
                 environment_alias_table,
+                lights,
+                light_alias_table,
+                mesh_light_vertices,
+                mesh_light_triangles,
+                mesh_lights,
+                mesh_light_triangle_alias_table,
             )
             ctx.frame_id = frame_id
             ctx.render_opts = render_opts
@@ -190,6 +295,12 @@ class Tracer:
                 mog_snrm,
                 environment,
                 environment_alias_table,
+                lights,
+                light_alias_table,
+                mesh_light_vertices,
+                mesh_light_triangles,
+                mesh_lights,
+                mesh_light_triangle_alias_table,
             ) = ctx.saved_variables
             frame_id = ctx.frame_id
             if ray_light_grd is None:
@@ -221,6 +332,12 @@ class Tracer:
                 mog_snrm,
                 environment,
                 environment_alias_table,
+                lights,
+                light_alias_table,
+                mesh_light_vertices,
+                mesh_light_triangles,
+                mesh_lights,
+                mesh_light_triangle_alias_table,
                 ray_radiance_grd,
                 ray_density_grd,
                 ray_hit_distance_grd,
@@ -258,6 +375,7 @@ class Tracer:
                 mog_mrgh_grd,
                 mog_mmet_grd,
                 environment_grd,
+                None,
                 None,
                 None,
                 None,
@@ -315,6 +433,7 @@ class Tracer:
         self._warned_spp_fallback = False
         self._logged_spp_configs = set()
         self.pred_pbr_filter = Filter(self.conf.render.get("filter_type", "none"))
+        self.visualize_lights = bool(self.conf.render.get("visualize_lights", False))
 
         logger.info(
             f'🔆 Creating threedgptir Optix tracing pipeline.. Using CUDA path: "{torch.utils.cpp_extension.CUDA_HOME}"'
@@ -341,7 +460,7 @@ class Tracer:
                 "enable_metallic",
                 self.conf.model.get("optimize_material_metallic", False),
             ),
-            self.conf.render.visualize_environment,
+            self.visualize_lights,
         )
 
         self.frame_timer = (
@@ -559,6 +678,10 @@ class Tracer:
                     jitter=chunk_jitter,
                 )
                 environment = gaussians.get_environment()
+                if environment is None:
+                    environment = torch.empty(
+                        (0, 0, 4), dtype=torch.float32, device=rays_dir.device
+                    )
                 alias_table = getattr(gaussians, "environment_alias_table", None)
                 if alias_table is None:
                     environment_alias_table = torch.empty(
@@ -583,6 +706,10 @@ class Tracer:
                         .to(device=rays_dir.device)
                         .contiguous()
                     )
+                light_buffers = LightBuffers.from_batch(
+                    gpu_batch,
+                    device=rays_dir.device,
+                )
 
                 (
                     chunk_pred_rgb,
@@ -615,6 +742,7 @@ class Tracer:
                     gaussians.get_material_metallic().contiguous(),
                     environment,
                     environment_alias_table,
+                    light_buffers,
                     int(
                         Tracer.RenderOpts.INDIRECT
                         if sh_indirect
@@ -727,4 +855,4 @@ class Tracer:
             else 0.0,
             "mog_visibility": mog_visibility,
         }
-        return post_processing(outputs, gpu_batch, self.conf.render.visualize_environment)
+        return post_processing(outputs, gpu_batch, self.visualize_lights)

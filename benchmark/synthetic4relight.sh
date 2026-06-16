@@ -246,7 +246,7 @@ run_relight() {
     local relight_out_display="$RELIGHT_OUT_DIR"
     local render_args=(
         --checkpoint "$checkpoint_path"
-        --relight
+        --environment-relight
         --environment-dir "$RELIGHT_ENV_DIR"
     )
 

@@ -15,6 +15,8 @@
 
 import argparse
 from pathlib import Path
+from threedgrut.model.light import MeshLight, PointLight, SphereLight
+from threedgrut.render import Renderer
 
 if __name__ == "__main__":
     # Set up command line argument parser
@@ -35,7 +37,7 @@ if __name__ == "__main__":
         "--out-dir",
         default=None,
         type=str,
-        help="Output path. Required unless --relight is set; --relight defaults to the checkpoint run directory.",
+        help="Output path. Required unless --environment-relight is set; --environment-relight defaults to the checkpoint run directory.",
     )
     parser.add_argument(
         "--save-gt",
@@ -47,31 +49,49 @@ if __name__ == "__main__":
         action="store_false",
         help="If set, extra image metrics will not be computed [True by default]",
     )
-    parser.add_argument(
-        "--relight",
+    relight_group = parser.add_mutually_exclusive_group()
+    relight_group.add_argument(
+        "--environment-relight",
         action="store_true",
         help="If set, render the scaled-albedo checkpoint under every environment map in --environment-dir.",
+    )
+    relight_group.add_argument(
+        "--lights-relight",
+        action="store_true",
+        help="If set, render with the demo point/sphere/mesh lights.",
     )
     parser.add_argument(
         "--environment-dir",
         type=str,
         default=None,
-        help="Folder containing environment maps used by --relight.",
+        help="Folder containing environment maps used by --environment-relight.",
+    )
+    parser.add_argument(
+        "--environment-path",
+        type=str,
+        default=None,
+        help="Explicit environment map path. For --lights-relight, no environment is loaded unless this is set.",
+    )
+    parser.add_argument(
+        "--visualize-lights",
+        action="store_true",
+        help="If set, make environment and visible lights contribute on escaped rays.",
     )
     args = parser.parse_args()
 
-    if args.relight and not args.environment_dir:
-        parser.error("--environment-dir is required when --relight is set")
-    if not args.relight and not args.out_dir:
-        parser.error("--out-dir is required unless --relight is set")
-
-    from threedgrut.render import Renderer
+    if args.environment_relight and not args.environment_dir:
+        parser.error("--environment-dir is required when --environment-relight is set")
+    if args.environment_relight and args.environment_path:
+        parser.error("--environment-path cannot be used with --environment-relight")
+    if not args.environment_relight and not args.out_dir:
+        parser.error("--out-dir is required unless --environment-relight is set")
 
     out_dir = args.out_dir
-    if args.relight and out_dir is None:
+    if args.environment_relight and out_dir is None:
         out_dir = str(Path(args.checkpoint).resolve().parent)
+    visualize_lights = args.visualize_lights
 
-    if args.relight:
+    if args.environment_relight:
         renderer = Renderer.from_checkpoint(
             checkpoint_path=str(Path(out_dir) / "ckpt_last_scaled.pt"),
             path=args.path,
@@ -79,8 +99,66 @@ if __name__ == "__main__":
             save_gt=False,
             computes_extra_metrics=False,
             create_run_dir=False,
+            visualize_lights=visualize_lights,
         )
         renderer.render_relight_all(environment_dir=args.environment_dir)
+    elif args.lights_relight:
+        renderer = Renderer.from_checkpoint(
+            checkpoint_path=args.checkpoint,
+            path=args.path,
+            out_dir=out_dir,
+            save_gt=False,
+            computes_extra_metrics=False,
+            visualize_lights=visualize_lights,
+            restore_environment=args.environment_path is not None,
+            environment_path=args.environment_path,
+        )
+
+        # Lights relight has no paired GT target, so metrics are always disabled.
+        renderer.compute_metrics = False
+        renderer.model.lights = [
+            PointLight(
+                position=(0.0, 0.0, 1.0),
+                intensity=(20.0, 20.0, 20.0),
+                device=renderer.model.device,
+            ),
+            MeshLight(
+                vertices=[
+                    [0.3, -0.1, 0.9],
+                    [0.5, -0.1, 0.9],
+                    [0.5, 0.1, 0.9],
+                    [0.3, 0.1, 0.9],
+                    [0.3, -0.1, 1.1],
+                    [0.5, -0.1, 1.1],
+                    [0.5, 0.1, 1.1],
+                    [0.3, 0.1, 1.1],
+                ],
+                triangles=[
+                    [0, 3, 2],
+                    [0, 2, 1],
+                    [4, 5, 6],
+                    [4, 6, 7],
+                    [0, 1, 5],
+                    [0, 5, 4],
+                    [3, 7, 6],
+                    [3, 6, 2],
+                    [0, 4, 7],
+                    [0, 7, 3],
+                    [1, 2, 6],
+                    [1, 6, 5],
+                ],
+                radiance=(0.0, 0.0, 20.0),
+                two_sided=False,
+                device=renderer.model.device,
+            ),
+            SphereLight(
+                center=(0.0, 1.0, 0.0),
+                radius=0.1,
+                radiance=(20.0, 0.0, 0.0),
+                device=renderer.model.device,
+            ),
+        ]
+        renderer.render_all()
     else:
         renderer = Renderer.from_checkpoint(
             checkpoint_path=args.checkpoint,
@@ -88,5 +166,7 @@ if __name__ == "__main__":
             out_dir=out_dir,
             save_gt=args.save_gt,
             computes_extra_metrics=args.compute_extra_metrics,
+            visualize_lights=visualize_lights,
+            environment_path=args.environment_path,
         )
         renderer.render_all()

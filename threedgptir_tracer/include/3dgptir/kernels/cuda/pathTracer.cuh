@@ -18,6 +18,7 @@
 #include <optix.h>
 
 #include <3dgptir/kernels/cuda/gaussianParticles.cuh>
+#include <3dgptir/kernels/cuda/lightSampler.cuh>
 #include <3dgptir/kernels/cuda/material.cuh>
 #include <3dgptir/kernels/cuda/sampler.cuh>
 #include <3dgptir/payLoad.h>
@@ -453,7 +454,7 @@ static __device__ __inline__ void sampleBrdfNextDirection(
     path.currentRayPayload = rayPayload(nextRay, 0.0f);
 #ifdef ENABLE_MIS
     path.currentRayPayload.scatterPdf = scatterPdf;
-    path.currentRayPayload.lightPdf = environmentAliasPdf(nextRay.direction);
+    path.currentRayPayload.lightPdf = lightSamplerPdf(currentInteraction.position, nextRay.direction);
 #endif
 }
 
@@ -464,7 +465,13 @@ static __device__ __inline__ void sampleNee(
 
     float lightPdf = 0.0f;
     float scatterPdf = 0.0f;
-    const float3 lightDirection = sampleEnvironmentAliasDirection(sampler, lightPdf);
+    const LightSample lightSample = sampleLight(currentInteraction.position, sampler);
+    const float3 lightDirection = lightSample.wi;
+    lightPdf = lightSample.pdf;
+    if (lightPdf <= 0.0f || (lightSample.Li.x == 0.0f && lightSample.Li.y == 0.0f && lightSample.Li.z == 0.0f)) {
+        path.emitterRayPayload = rayPayload();
+        return;
+    }
     if (dot(currentInteraction.shadingnormal, lightDirection) <= 0.0f) {
         path.emitterRayPayload = rayPayload();
         return;
@@ -475,10 +482,16 @@ static __device__ __inline__ void sampleNee(
         currentInteraction,
         lightDirection,
         scatterPdf);
+    if (lightSample.lightType == LightSamplerType_Point) {
+        scatterPdf = 0.0f;
+    }
     const Ray lightRay(
         currentInteraction.position + lightDirection * kSelfOcclusionRayOriginOffset,
         lightDirection);
-    if (traceShadowMonteCarloOccluded<true>(lightRay, sampler)) {
+    const float shadowTmax = lightSample.dist < 1e19f
+        ? fmaxf(0.0f, lightSample.dist - kSelfOcclusionRayOriginOffset)
+        : RayHit::InfiniteDistance;
+    if (traceShadowMonteCarloOccluded<true>(lightRay, sampler, 0.0f, shadowTmax)) {
         path.emitterRayPayload = rayPayload();
         return;
     }
@@ -486,7 +499,7 @@ static __device__ __inline__ void sampleNee(
 
     path.emitterRayPayload.lightPdf = lightPdf;
     path.emitterRayPayload.scatterPdf = scatterPdf;
-    path.emitterRayPayload.light = getBackgroundColor(lightDirection);
+    path.emitterRayPayload.light = lightSample.Li;
     path.emitterRayPayload.contribution = path.pathThroughput * brdfTimesCos * path.emitterRayPayload.light / fmaxf(lightPdf, 1e-6f);
 }
 
@@ -559,7 +572,7 @@ static __device__ __inline__ void sampleBrdfNextDirectionBwd(
     }
 
 #ifdef ENABLE_MIS
-    const float lightPdf = environmentAliasPdf(nextRayDirection);
+    const float lightPdf = lightSamplerPdf(currentInteraction.position, nextRayDirection);
     const float nextThroughputMax = fmaxf(nextPathThroughput.x, fmaxf(nextPathThroughput.y, nextPathThroughput.z));
     const bool firstBounceNeeActive = path.numBounces == 1u && nextThroughputMax >= 1e-4f;
     if (firstBounceNeeActive) {

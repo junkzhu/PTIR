@@ -5,7 +5,7 @@ set -euo pipefail
 CUDA_DEVICES="0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-DATA_ROOT="$REPO_ROOT/data/TensoIR"
+DATA_ROOT="$REPO_ROOT/data/TensoIR_Material"
 OUT_DIR="outputs/tensoir"
 CONFIG_NAME="apps/nerf_synthetic_3dgrt.yaml"
 INVERSION_CONFIG_NAME="inversions/nerf_synthetic_3dgptir.yaml"
@@ -128,7 +128,7 @@ if [[ -z "$INVERSION_OUT_DIR" ]]; then
     INVERSION_OUT_DIR="$OUT_DIR"
 fi
 if [[ -z "$RELIGHT_ENV_DIR" ]]; then
-    RELIGHT_ENV_DIR="$DATA_ROOT/Environment_Maps/high_res_envmaps_2k"
+    RELIGHT_ENV_DIR="$DATA_ROOT/Environment_Maps"
 fi
 if [[ "$RUN_INVERSION" != true ]]; then
     RUN_RELIGHT=false
@@ -233,7 +233,7 @@ run_relight() {
     local relight_out_display="$RELIGHT_OUT_DIR"
     local render_args=(
         --checkpoint "$checkpoint_path"
-        --relight
+        --environment-relight
         --environment-dir "$RELIGHT_ENV_DIR"
     )
 

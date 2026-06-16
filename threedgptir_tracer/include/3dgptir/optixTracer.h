@@ -107,7 +107,7 @@ protected:
         bool enableHitCounts,
         bool enableMIS,
         bool enableMetallic,
-        bool enableVisualizeEnvironment);
+        bool enableVisualizeLights);
     void createPipeline(const OptixDeviceContext context,
                         const std::string& path,
                         const std::string& dependencies_path,
@@ -141,7 +141,7 @@ public:
         bool enableHitCounts,
         bool enableMIS,
         bool enableMetallic,
-        bool enableVisualizeEnvironment);
+        bool enableVisualizeLights);
 
     virtual ~OptixTracer();
 
@@ -156,6 +156,12 @@ public:
         torch::Tensor particleShadingNormal,
         torch::Tensor environment,
         torch::Tensor environmentAliasTable,
+        torch::Tensor lights,
+        torch::Tensor lightAliasTable,
+        torch::Tensor meshLightVertices,
+        torch::Tensor meshLightTriangles,
+        torch::Tensor meshLights,
+        torch::Tensor meshLightTriangleAliasTable,
         uint32_t shIndirect,
         int sphDegree,
         float minTransmittance,
@@ -182,6 +188,12 @@ public:
         torch::Tensor particleShadingNormal,
         torch::Tensor environment,
         torch::Tensor environmentAliasTable,
+        torch::Tensor lights,
+        torch::Tensor lightAliasTable,
+        torch::Tensor meshLightVertices,
+        torch::Tensor meshLightTriangles,
+        torch::Tensor meshLights,
+        torch::Tensor meshLightTriangleAliasTable,
         torch::Tensor rayRadGrd,
         torch::Tensor rayDnsGrd,
         torch::Tensor rayHitGrd,

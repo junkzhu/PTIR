@@ -30,7 +30,7 @@ from threedgrut.datasets.protocols import Batch
 from threedgrut.datasets.utils import read_colmap_points3D_text, read_next_bytes
 from threedgrut.export import PLYExporter
 from threedgrut.export.base import ExportableModel
-from threedgrut.model.environment import Environment
+from threedgrut.model.light import Environment
 from threedgrut.model.geometry import k_nearest_neighbors, nearest_neighbor_dist_cpuKD
 from threedgrut.optimizers import SelectiveAdam
 from threedgrut.utils.logger import logger
@@ -282,6 +282,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         self.environment_parameterization = (
             Environment.LINEAR_ENVIRONMENT_PARAMETERIZATION
         )
+        self.lights = []
 
         # Check if we would like to do progressive training
         self.feature_type = self.conf.model.progressive_training.feature_type

@@ -50,7 +50,7 @@ extern "C" __global__ void __raygen__rg() {
 #endif
     }
     
-#ifndef ENABLE_VISUALIZE_ENVIRONMENT
+#ifndef ENABLE_VISUALIZE_LIGHTS
     if (!path.currentRayPayload.interaction.valid) { return; }
 #endif
 

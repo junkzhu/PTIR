@@ -93,9 +93,7 @@ def apply_gt_mask_to_tensor(
     return tensor * mask
 
 
-def post_processing(
-    outputs: dict, gpu_batch, visualize_environment: bool = False
-) -> dict:
+def post_processing(outputs: dict, gpu_batch, visualize_lights: bool = False) -> dict:
     """Mask PTIR/PBR image outputs with the batch GT foreground mask."""
     if pbr_gt_mask_was_applied(outputs):
         return outputs
@@ -107,7 +105,7 @@ def post_processing(
     masked_outputs = dict(outputs)
     applied = False
     for key in PBR_GT_MASK_OUTPUT_KEYS:
-        if visualize_environment and key in ("pred_pbr", "pred_direct"):
+        if visualize_lights and key in ("pred_pbr", "pred_direct"):
             continue
         value = outputs.get(key)
         if value is None:

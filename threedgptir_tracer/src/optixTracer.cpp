@@ -245,7 +245,7 @@ std::vector<std::string> OptixTracer::generateDefines(
     bool enableHitCounts,
     bool enableMIS,
     bool enableMetallic,
-    bool enableVisualizeEnvironment) {
+    bool enableVisualizeLights) {
     std::vector<std::string> defines;
     if (_state) {
         defines.emplace_back("-DPARTICLE_KERNEL_DEGREE=" + std::to_string(static_cast<int32_t>(particleKernelDegree)));
@@ -261,8 +261,8 @@ std::vector<std::string> OptixTracer::generateDefines(
         if (enableMetallic) {
             defines.emplace_back("-DENABLE_METALLIC");
         }
-        if (enableVisualizeEnvironment) {
-            defines.emplace_back("-DENABLE_VISUALIZE_ENVIRONMENT");
+        if (enableVisualizeLights) {
+            defines.emplace_back("-DENABLE_VISUALIZE_LIGHTS");
         }
         defines.emplace_back("-DSPH_MAX_NUM_COEFFS=" + std::to_string((_state->particleRadianceSphDegree + 1) * (_state->particleRadianceSphDegree + 1)));
         defines.emplace_back("-DPARTICLE_PRIMITIVE_TYPE=" + std::to_string(_state->gPrimType));
@@ -285,7 +285,7 @@ OptixTracer::OptixTracer(
     bool enableHitCounts,
     bool enableMIS,
     bool enableMetallic,
-    bool enableVisualizeEnvironment) {
+    bool enableVisualizeLights) {
 
     _state = new State();
     memset(_state, 0, sizeof(State));
@@ -321,7 +321,7 @@ OptixTracer::OptixTracer(
     _state->gPrimNumTri                   = 0;
 
     std::vector<std::string> defines = generateDefines(particleKernelDegree, particleKernelDensityClamping,
-                                                       particleRadianceSphDegree, enableNormals, enableHitCounts, enableMIS, enableMetallic, enableVisualizeEnvironment);
+                                                       particleRadianceSphDegree, enableNormals, enableHitCounts, enableMIS, enableMetallic, enableVisualizeLights);
 
     const uint32_t sharedFlags =
         (_state->gPrimType == MOGTracingSphere ? PipelineFlag_SpherePrim : ((_state->gPrimType == MOGTracingCustom) || (_state->gPrimType == MOGTracingInstances) ? PipelineFlag_HasIS : 0));
@@ -917,6 +917,12 @@ OptixTracer::trace(uint32_t frameNumber,
                    torch::Tensor particleShadingNormal,
                    torch::Tensor environment,
                    torch::Tensor environmentAliasTable,
+                   torch::Tensor lights,
+                   torch::Tensor lightAliasTable,
+                   torch::Tensor meshLightVertices,
+                   torch::Tensor meshLightTriangles,
+                   torch::Tensor meshLights,
+                   torch::Tensor meshLightTriangleAliasTable,
                    uint32_t shIndirect,
                    int sphDegree,
                    float minTransmittance,
@@ -978,6 +984,17 @@ OptixTracer::trace(uint32_t frameNumber,
     paramsHost.rayPbrComponents = packed_accessor32<float, 5>(rayPbrComponents);
 
     paramsHost.environment = Environment(environment, environmentAliasTable);
+    paramsHost.numLights = lights.size(0);
+    paramsHost.lights    = packed_accessor32<float, 2>(lights);
+    paramsHost.numLightEntries = lightAliasTable.size(1);
+    paramsHost.lightAliasTable = packed_accessor32<float, 2>(lightAliasTable);
+    paramsHost.numMeshLightVertices = meshLightVertices.size(0);
+    paramsHost.meshLightVertices = packed_accessor32<float, 2>(meshLightVertices);
+    paramsHost.numMeshLightTriangles = meshLightTriangles.size(0);
+    paramsHost.meshLightTriangles = packed_accessor32<int32_t, 2>(meshLightTriangles);
+    paramsHost.numMeshLights = meshLights.size(0);
+    paramsHost.meshLights = packed_accessor32<float, 2>(meshLights);
+    paramsHost.meshLightTriangleAliasTable = packed_accessor32<float, 2>(meshLightTriangleAliasTable);
 
     cudaStream_t cudaStream = at::cuda::getCurrentCUDAStream();
     reallocateParamsDevice(sizeof(paramsHost), cudaStream);
@@ -1016,6 +1033,12 @@ OptixTracer::traceBwd(uint32_t frameNumber,
                       torch::Tensor particleShadingNormal,
                       torch::Tensor environment,
                       torch::Tensor environmentAliasTable,
+                      torch::Tensor lights,
+                      torch::Tensor lightAliasTable,
+                      torch::Tensor meshLightVertices,
+                      torch::Tensor meshLightTriangles,
+                      torch::Tensor meshLights,
+                      torch::Tensor meshLightTriangleAliasTable,
                       torch::Tensor rayRadGrd,
                       torch::Tensor rayDnsGrd,
                       torch::Tensor rayHitGrd,
@@ -1095,6 +1118,17 @@ OptixTracer::traceBwd(uint32_t frameNumber,
     paramsHost.environmentGrad    = packed_accessor32<float, 3>(environmentGrad);
 
     paramsHost.environment = Environment(environment, environmentAliasTable);
+    paramsHost.numLights = lights.size(0);
+    paramsHost.lights    = packed_accessor32<float, 2>(lights);
+    paramsHost.numLightEntries = lightAliasTable.size(1);
+    paramsHost.lightAliasTable = packed_accessor32<float, 2>(lightAliasTable);
+    paramsHost.numMeshLightVertices = meshLightVertices.size(0);
+    paramsHost.meshLightVertices = packed_accessor32<float, 2>(meshLightVertices);
+    paramsHost.numMeshLightTriangles = meshLightTriangles.size(0);
+    paramsHost.meshLightTriangles = packed_accessor32<int32_t, 2>(meshLightTriangles);
+    paramsHost.numMeshLights = meshLights.size(0);
+    paramsHost.meshLights = packed_accessor32<float, 2>(meshLights);
+    paramsHost.meshLightTriangleAliasTable = packed_accessor32<float, 2>(meshLightTriangleAliasTable);
 
     cudaStream_t cudaStream = at::cuda::getCurrentCUDAStream();
 

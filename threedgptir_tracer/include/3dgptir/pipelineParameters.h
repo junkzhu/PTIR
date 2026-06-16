@@ -49,6 +49,17 @@ struct PipelineParameters {
     PackedTensorAccessor32<float, 5> rayPbrComponents; ///< output direct/indirect PBR components
 
     Environment environment;
+    unsigned int numLights;
+    PackedTensorAccessor32<float, 2> lights; ///< packed lights [N, 9]: type + 8 params
+    unsigned int numLightEntries;
+    PackedTensorAccessor32<float, 2> lightAliasTable; ///< top-level light table [5, N]
+    unsigned int numMeshLightVertices;
+    PackedTensorAccessor32<float, 2> meshLightVertices; ///< packed mesh-light vertices [V, 3]
+    unsigned int numMeshLightTriangles;
+    PackedTensorAccessor32<int32_t, 2> meshLightTriangles; ///< packed mesh-light triangles [T, 3]
+    unsigned int numMeshLights;
+    PackedTensorAccessor32<float, 2> meshLights; ///< packed mesh lights [M, 8]
+    PackedTensorAccessor32<float, 2> meshLightTriangleAliasTable; ///< triangle table [3, T]
 
     OptixTraversableHandle handle;
     OptixAabb aabb;

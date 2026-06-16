@@ -8,6 +8,7 @@
 #include <3dgptir/environment.h>
 #include <3dgptir/mathUtils.h>
 #include <3dgptir/payLoad.h>
+#include <3dgptir/kernels/cuda/meshLight.cuh>
 #include <3dgptir/kernels/cuda/sampler.cuh>
 #include <math_constants.h>
 
@@ -471,9 +472,169 @@ static __device__ __forceinline__ float3 getBackgroundColorBwd(
     return background;
 }
 
+struct VisibleLightHit {
+    bool valid;
+    bool isEnvironment;
+    float dist;
+    float3 radiance;
+};
+
+static __device__ __forceinline__ VisibleLightHit emptyVisibleLightHit() {
+    VisibleLightHit hit;
+    hit.valid = false;
+    hit.isEnvironment = false;
+    hit.dist = 1e20f;
+    hit.radiance = make_float3(0.0f);
+    return hit;
+}
+
+static __device__ __forceinline__ bool intersectSphereAreaLight(
+    const Ray& ray,
+    const unsigned int lightId,
+    float& hitDistance,
+    float3& radiance) {
+    if (lightId >= params.numLights || static_cast<unsigned int>(params.lights[lightId][0] + 0.5f) != 2u) {
+        return false;
+    }
+
+    const float3 center = make_float3(
+        params.lights[lightId][1],
+        params.lights[lightId][2],
+        params.lights[lightId][3]);
+    const float radius = params.lights[lightId][4];
+    if (radius <= 0.0f) {
+        return false;
+    }
+
+    const float3 oc = ray.origin - center;
+    const float b = dot(oc, ray.direction);
+    const float c = dot(oc, oc) - radius * radius;
+    const float discriminant = b * b - c;
+    if (discriminant <= 0.0f) {
+        return false;
+    }
+
+    const float sqrtDiscriminant = sqrtf(discriminant);
+    float t = -b - sqrtDiscriminant;
+    if (t <= 1e-5f) {
+        t = -b + sqrtDiscriminant;
+    }
+    if (t <= 1e-5f) {
+        return false;
+    }
+
+    radiance = make_float3(
+        params.lights[lightId][5],
+        params.lights[lightId][6],
+        params.lights[lightId][7]);
+    if (radiance.x <= 0.0f && radiance.y <= 0.0f && radiance.z <= 0.0f) {
+        return false;
+    }
+
+    hitDistance = t;
+    return true;
+}
+
+static __device__ __forceinline__ bool intersectMeshAreaLight(
+    const Ray& ray,
+    const unsigned int lightId,
+    float& hitDistance,
+    float3& radiance) {
+    if (!hasMeshLightData() || lightId >= params.numMeshLights) {
+        return false;
+    }
+
+    const unsigned int triangleOffset = static_cast<unsigned int>(params.meshLights[lightId][0] + 0.5f);
+    const unsigned int triangleCount = static_cast<unsigned int>(params.meshLights[lightId][1] + 0.5f);
+    if (triangleCount == 0u || triangleOffset + triangleCount > params.numMeshLightTriangles) {
+        return false;
+    }
+
+    radiance = make_float3(
+        params.meshLights[lightId][4],
+        params.meshLights[lightId][5],
+        params.meshLights[lightId][6]);
+    if (radiance.x <= 0.0f && radiance.y <= 0.0f && radiance.z <= 0.0f) {
+        return false;
+    }
+
+    const bool twoSided = params.meshLights[lightId][7] > 0.5f;
+    float nearest = 1e20f;
+    for (unsigned int triangleId = triangleOffset; triangleId < triangleOffset + triangleCount; ++triangleId) {
+        float3 v0;
+        float3 v1;
+        float3 v2;
+        if (!getMeshLightTriangle(triangleId, v0, v1, v2)) {
+            continue;
+        }
+
+        float t;
+        float u;
+        float v;
+        if (!intersectTriangle(ray.origin, ray.direction, v0, v1, v2, t, u, v)) {
+            continue;
+        }
+
+        const float3 normalUnnormalized = cross(v1 - v0, v2 - v0);
+        const float normalLength = length(normalUnnormalized);
+        if (normalLength <= 1e-12f) {
+            continue;
+        }
+        const float cosLight = twoSided
+            ? fabsf(dot(normalUnnormalized / normalLength, -ray.direction))
+            : dot(normalUnnormalized / normalLength, -ray.direction);
+        if (cosLight <= 1e-6f) {
+            continue;
+        }
+        nearest = fminf(nearest, t);
+    }
+
+    if (nearest >= 1e19f) {
+        return false;
+    }
+    hitDistance = nearest;
+    return true;
+}
+
+static __device__ __forceinline__ VisibleLightHit getVisibleLightHit(const Ray& ray) {
+    VisibleLightHit nearest = emptyVisibleLightHit();
+
+#ifdef ENABLE_VISUALIZE_LIGHTS
+    // Area lights are only intersected when visible light/environment rendering is requested.
+    for (unsigned int i = 0; i < params.numLights; ++i) {
+        float hitDistance = 1e20f;
+        float3 radiance = make_float3(0.0f);
+        if (intersectSphereAreaLight(ray, i, hitDistance, radiance) && hitDistance < nearest.dist) {
+            nearest.valid = true;
+            nearest.isEnvironment = false;
+            nearest.dist = hitDistance;
+            nearest.radiance = radiance;
+        }
+    }
+    for (unsigned int i = 0; i < params.numMeshLights; ++i) {
+        float hitDistance = 1e20f;
+        float3 radiance = make_float3(0.0f);
+        if (intersectMeshAreaLight(ray, i, hitDistance, radiance) && hitDistance < nearest.dist) {
+            nearest.valid = true;
+            nearest.isEnvironment = false;
+            nearest.dist = hitDistance;
+            nearest.radiance = radiance;
+        }
+    }
+#endif
+
+    if (!nearest.valid && params.environment.data != nullptr && params.environment.width > 0 && params.environment.height > 0) {
+        nearest.valid = true;
+        nearest.isEnvironment = true;
+        nearest.dist = 1e20f;
+        nearest.radiance = getBackgroundColor(ray.direction);
+    }
+
+    return nearest;
+}
+
 static __device__ __forceinline__ void accumulateLightContribution(pathPayload& path) {
     path.currentRayPayload.contribution = make_float3(0.0f);
-    const bool hasEnvironment = params.environment.data != nullptr && params.environment.width > 0 && params.environment.height > 0;
     const bool firstSecondaryBounce = path.numBounces == 1u;
 
 #ifdef ENABLE_MIS
@@ -501,11 +662,14 @@ static __device__ __forceinline__ void accumulateLightContribution(pathPayload& 
 #endif
             path.accumulatedLighting += path.currentRayPayload.contribution;
             path.accumulatedIndirectLighting += path.currentRayPayload.contribution;
-        } else if (path.currentRayPayload.valid && hasEnvironment) {
+        } else if (path.currentRayPayload.valid) {
+            const VisibleLightHit visibleLight = getVisibleLightHit(path.currentRayPayload.ray);
+            if (!visibleLight.valid) {
+                return;
+            }
             path.pathThroughput *= path.currentRayPayload.transmittance;
-            const float3 backgroundLight = getBackgroundColor(path.currentRayPayload.ray.direction);
-            path.currentRayPayload.light += backgroundLight;
-            path.accumulatedLightNoBrdf += backgroundLight;
+            path.currentRayPayload.light += visibleLight.radiance;
+            path.accumulatedLightNoBrdf += visibleLight.radiance;
             path.currentRayPayload.contribution = path.pathThroughput * path.currentRayPayload.light;
 #ifdef ENABLE_MIS
             if (firstSecondaryBounce) {
@@ -525,11 +689,14 @@ static __device__ __forceinline__ void accumulateLightContribution(pathPayload& 
     }
 #endif
 
-    if (path.currentRayPayload.valid && hasEnvironment) {
+    if (path.currentRayPayload.valid) {
+        const VisibleLightHit visibleLight = getVisibleLightHit(path.currentRayPayload.ray);
+        if (!visibleLight.valid) {
+            return;
+        }
         path.pathThroughput *= path.currentRayPayload.transmittance;
-        const float3 backgroundLight = getBackgroundColor(path.currentRayPayload.ray.direction);
-        path.currentRayPayload.light += backgroundLight;
-        path.accumulatedLightNoBrdf += backgroundLight;
+        path.currentRayPayload.light += visibleLight.radiance;
+        path.accumulatedLightNoBrdf += visibleLight.radiance;
         path.currentRayPayload.contribution = path.pathThroughput * path.currentRayPayload.light;
 #ifdef ENABLE_MIS
         if (firstSecondaryBounce) {
@@ -552,7 +719,6 @@ static __device__ __forceinline__ void accumulateLightContributionBwd(
     pathPayload& path,
     PipelineParams& pipelineParams) {
     path.currentRayPayload.contribution = make_float3(0.0f);
-    const bool hasEnvironment = params.environment.data != nullptr && params.environment.width > 0 && params.environment.height > 0;
     const bool firstSecondaryBounce = path.numBounces == 1u;
 
 #ifdef ENABLE_MIS
@@ -579,7 +745,11 @@ static __device__ __forceinline__ void accumulateLightContributionBwd(
             }
 #endif
             path.accumulatedLighting -= path.currentRayPayload.contribution;
-        } else if (path.currentRayPayload.valid && hasEnvironment) {
+        } else if (path.currentRayPayload.valid) {
+            const VisibleLightHit visibleLight = getVisibleLightHit(path.currentRayPayload.ray);
+            if (!visibleLight.valid) {
+                return;
+            }
             path.pathThroughput *= path.currentRayPayload.transmittance;
             float3 environmentGrad = path.accumulatedLightingGrad * path.pathThroughput;
 #ifdef ENABLE_MIS
@@ -588,8 +758,10 @@ static __device__ __forceinline__ void accumulateLightContributionBwd(
             }
 #endif
             environmentGrad += path.accumulatedLightNoBrdfGrad;
-            const float3 background = getBackgroundColorBwd(path.currentRayPayload.ray.direction, environmentGrad, pipelineParams, &path.currentRayPayload.rayDirGrad);
-            path.currentRayPayload.contribution = path.pathThroughput * background;
+            const float3 visibleRadiance = visibleLight.isEnvironment
+                ? getBackgroundColorBwd(path.currentRayPayload.ray.direction, environmentGrad, pipelineParams, &path.currentRayPayload.rayDirGrad)
+                : visibleLight.radiance;
+            path.currentRayPayload.contribution = path.pathThroughput * visibleRadiance;
 #ifdef ENABLE_MIS
             if (firstSecondaryBounce) {
                 path.currentRayPayload.contribution *= brdfSideMis;
@@ -607,7 +779,11 @@ static __device__ __forceinline__ void accumulateLightContributionBwd(
     }
 #endif
 
-    if (path.currentRayPayload.valid && hasEnvironment) {
+    if (path.currentRayPayload.valid) {
+        const VisibleLightHit visibleLight = getVisibleLightHit(path.currentRayPayload.ray);
+        if (!visibleLight.valid) {
+            return;
+        }
         path.pathThroughput *= path.currentRayPayload.transmittance;
 
         float3 environmentGrad = path.accumulatedLightingGrad * path.pathThroughput;
@@ -617,8 +793,10 @@ static __device__ __forceinline__ void accumulateLightContributionBwd(
         }
 #endif
         environmentGrad += path.accumulatedLightNoBrdfGrad;
-        const float3 background = getBackgroundColorBwd(path.currentRayPayload.ray.direction, environmentGrad, pipelineParams, &path.currentRayPayload.rayDirGrad);
-        path.currentRayPayload.contribution = path.pathThroughput * background;
+        const float3 visibleRadiance = visibleLight.isEnvironment
+            ? getBackgroundColorBwd(path.currentRayPayload.ray.direction, environmentGrad, pipelineParams, &path.currentRayPayload.rayDirGrad)
+            : visibleLight.radiance;
+        path.currentRayPayload.contribution = path.pathThroughput * visibleRadiance;
 #ifdef ENABLE_MIS
         if (firstSecondaryBounce) {
             path.currentRayPayload.contribution *= brdfSideMis;

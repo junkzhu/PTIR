@@ -30,7 +30,13 @@ from threedgrut.metric import (
     create_psnr_criterion,
     write_relight_summary_to_metrics,
 )
-from threedgrut.model.environment import Environment
+from threedgrut.model.light import (
+    Environment,
+    Light,
+    LightType,
+    build_light_alias_table,
+    pack_mesh_lights,
+)
 from threedgrut.model.model import MixtureOfGaussians
 from threedgrut.model.ptir_helper import (
     append_ptir_metrics,
@@ -74,6 +80,7 @@ class Renderer:
         self.global_step = global_step
         self.dataset, self.dataloader = self.create_test_dataloader(conf)
         self.writer = writer
+        self.compute_metrics = True
         self.compute_extra_metrics = compute_extra_metrics
         self.post_processing = post_processing
         self.checkpoint_path = checkpoint_path
@@ -108,7 +115,12 @@ class Renderer:
         torchvision.utils.save_image(image.squeeze(0).permute(2, 0, 1), path)
 
     @staticmethod
-    def _restore_environment_from_checkpoint(model, conf, checkpoint: dict) -> None:
+    def _restore_environment_from_checkpoint(
+        model,
+        conf,
+        checkpoint: dict,
+        use_checkpoint_environment_state: bool = True,
+    ) -> None:
         if (
             conf.render.method != "3dgptir"
             and OmegaConf.select(conf, "environment", default=None) is None
@@ -126,7 +138,11 @@ class Renderer:
                 conf, "environment.parameterization", default="linear"
             ),
         )
-        environment_state = checkpoint.get("environment_state")
+        environment_state = (
+            checkpoint.get("environment_state")
+            if use_checkpoint_environment_state
+            else None
+        )
         if environment_state is not None:
             environment.load_state_dict(environment_state)
             environment.configure_optimization(
@@ -158,6 +174,57 @@ class Renderer:
         ):
             model.environment.requires_grad_(False)
 
+    def _pack_lights_for_batch(self, batch):
+        model_lights = getattr(self.model, "lights", None)
+        analytic_lights = None
+        mesh_lights = []
+        if model_lights is not None and not isinstance(model_lights, torch.Tensor):
+            analytic_lights = []
+            model_lights_iter = (
+                [model_lights] if isinstance(model_lights, (Light, dict)) else model_lights
+            )
+            for light in model_lights_iter:
+                light_obj = Light.from_dict(light) if isinstance(light, dict) else light
+                if isinstance(light_obj, Light) and light_obj.type == LightType.MESH:
+                    mesh_lights.append(light_obj)
+                else:
+                    analytic_lights.append(light_obj)
+        else:
+            analytic_lights = model_lights
+
+        batch.lights = Light.pack_lights(
+            analytic_lights,
+            device=batch.rays_dir.device,
+            dtype=torch.float32,
+        )
+        mesh_light_pack = pack_mesh_lights(
+            mesh_lights,
+            device=batch.rays_dir.device,
+            dtype=torch.float32,
+        )
+        batch.mesh_light_vertices = mesh_light_pack.vertices
+        batch.mesh_light_triangles = mesh_light_pack.triangles
+        batch.mesh_lights = mesh_light_pack.params
+        batch.mesh_light_triangle_alias_table = mesh_light_pack.triangle_alias_table
+        environment_type = OmegaConf.select(self.conf, "environment.type", default="2d")
+        light_alias_table = build_light_alias_table(
+            environment=self.model.get_environment(),
+            environment_type=environment_type,
+            lights=batch.lights,
+            mesh_powers=mesh_light_pack.powers,
+            device=batch.rays_dir.device,
+        )
+        if light_alias_table is None:
+            batch.light_alias_table = torch.empty(
+                (5, 0), dtype=torch.float32, device=batch.rays_dir.device
+            )
+        else:
+            batch.light_alias_table = light_alias_table.pack(
+                device=batch.rays_dir.device,
+                dtype=torch.float32,
+            )
+        return batch
+
     def create_test_dataloader(self, conf):
         """Create the test dataloader for the given configuration."""
         from threedgrut.datasets.utils import configure_dataloader_for_platform
@@ -188,6 +255,9 @@ class Renderer:
         model=None,
         computes_extra_metrics=True,
         create_run_dir=True,
+        visualize_lights=False,
+        restore_environment=True,
+        environment_path=None,
     ):
         """Loads checkpoint for test path.
         If path is stated, it will override the test path in checkpoint.
@@ -203,6 +273,19 @@ class Renderer:
             conf["render"]["particle_kernel_density_clamping"] = True
             conf["render"]["min_transmittance"] = 0.03
         conf["render"]["enable_kernel_timings"] = True
+        OmegaConf.update(
+            conf,
+            "render.visualize_lights",
+            bool(visualize_lights),
+            force_add=True,
+        )
+        if environment_path is not None:
+            OmegaConf.update(
+                conf,
+                "environment.path",
+                str(environment_path),
+                force_add=True,
+            )
 
         object_name = Path(conf.path).stem
         experiment_name = conf["experiment_name"]
@@ -218,7 +301,17 @@ class Renderer:
             model = MixtureOfGaussians(conf)
             # Initialize the parameters from checkpoint
             model.init_from_checkpoint(checkpoint, setup_optimizer=False)
-        cls._restore_environment_from_checkpoint(model, conf, checkpoint)
+        if restore_environment:
+            cls._restore_environment_from_checkpoint(
+                model,
+                conf,
+                checkpoint,
+                use_checkpoint_environment_state=environment_path is None,
+            )
+        else:
+            cls._set_model_environment(model, None)
+            model.environment_alias_table = None
+            model.optimize_environment = False
         model.build_acc()
 
         # Load post-processing if present in checkpoint
@@ -379,6 +472,7 @@ class Renderer:
         for iteration, batch in enumerate(self.dataloader):
             frame_name = "{0:05d}.png".format(iteration)
             gpu_batch = self.dataset.get_gpu_batch_with_intrinsics(batch)
+            gpu_batch = self._pack_lights_for_batch(gpu_batch)
             outputs = self.model(gpu_batch)
 
             if self.post_processing is not None:
@@ -526,6 +620,7 @@ class Renderer:
             writer=None,
             computes_extra_metrics=False,
             create_run_dir=False,
+            visualize_lights=bool(self.conf.render.get("visualize_lights", False)),
         )
         return relight_renderer.render_relight_all(
             environment_dir, output_root=output_root
@@ -567,18 +662,24 @@ class Renderer:
     def render_all(self):
         """Render all the images in the test dataset and log the metrics."""
 
-        # Criterions that we log during training
-        criterions = {"psnr": create_psnr_criterion().to("cuda")}
-
-        if self.compute_extra_metrics:
-            criterions |= {
-                "ssim": StructuralSimilarityIndexMeasure(data_range=1.0).to("cuda"),
-                "lpips": LearnedPerceptualImagePatchSimilarity(
-                    net_type="vgg", normalize=True
-                ).to("cuda"),
-            }
-
         is_ptir = self.conf.render.method == "3dgptir"
+
+        # Criterions that we log during training.
+        criterions = {}
+        if self.compute_metrics:
+            criterions = {
+                "psnr": create_psnr_criterion().to("cuda"),
+            }
+            if self.compute_extra_metrics:
+                criterions |= {
+                    "ssim": StructuralSimilarityIndexMeasure(data_range=1.0).to(
+                        "cuda"
+                    ),
+                    "lpips": LearnedPerceptualImagePatchSimilarity(
+                        net_type="vgg", normalize=True
+                    ).to("cuda"),
+                }
+
         save_renders = not is_ptir
         output_path_renders = None
         if save_renders:
@@ -594,16 +695,17 @@ class Renderer:
 
         output_path_ptir_aovs = {}
         if is_ptir:
-            for aov_name in (
+            aov_names = [
                 "direct",
                 "indirect",
                 "light",
                 "pbr",
-                "pbr_gt",
                 "albedo",
-                "albedo_gt",
                 "roughness",
-            ):
+            ]
+            if self.save_gt or self.compute_metrics:
+                aov_names += ["pbr_gt", "albedo_gt"]
+            for aov_name in aov_names:
                 output_path_ptir_aovs[aov_name] = os.path.join(
                     self.out_dir, f"ours_{int(self.global_step)}", aov_name
                 )
@@ -650,6 +752,7 @@ class Renderer:
 
             # Get the GPU-cached batch
             gpu_batch = self.dataset.get_gpu_batch_with_intrinsics(batch)
+            gpu_batch = self._pack_lights_for_batch(gpu_batch)
 
             # Compute the outputs of a single batch
             outputs = self.model(gpu_batch)
@@ -712,10 +815,11 @@ class Renderer:
                             os.path.join(output_path_ptir_aovs[aov_name], frame_name),
                             linear_to_srgb=True,
                         )
-                self._save_nhwc_image(
-                    rgb_gt_full,
-                    os.path.join(output_path_ptir_aovs["pbr_gt"], frame_name),
-                )
+                if "pbr_gt" in output_path_ptir_aovs:
+                    self._save_nhwc_image(
+                        rgb_gt_full,
+                        os.path.join(output_path_ptir_aovs["pbr_gt"], frame_name),
+                    )
 
                 if pred_material is not None:
                     albedo = pred_material[..., 0:3]
@@ -728,7 +832,10 @@ class Renderer:
                         roughness,
                         os.path.join(output_path_ptir_aovs["roughness"], frame_name),
                     )
-                    if material_albedo_gt is not None:
+                    if (
+                        material_albedo_gt is not None
+                        and "albedo_gt" in output_path_ptir_aovs
+                    ):
                         self._save_nhwc_image(
                             material_albedo_gt,
                             os.path.join(
@@ -739,13 +846,24 @@ class Renderer:
                         albedo_gt_list.append(material_albedo_gt.detach().cpu())
                         albedo_list.append(albedo.detach().cpu())
 
-            pred_img_to_write = metric_rgb_full[-1].clip(0, 1.0)
-            gt_img_to_write = rgb_gt_full[-1].clip(0, 1.0)
-
             if self.save_gt:
                 self._save_nhwc_image(
                     rgb_gt_full, os.path.join(output_path_gt, frame_name)
                 )
+
+            # Relight-only renders can skip GT metrics entirely.
+            inference_time.append(outputs["frame_time_ms"])
+            if not self.compute_metrics:
+                logger.info(f"Frame {iteration}")
+                logger.log_progress(
+                    task_name="Rendering",
+                    advance=1,
+                    iteration=f"{str(iteration)}",
+                )
+                continue
+
+            pred_img_to_write = metric_rgb_full[-1].clip(0, 1.0)
+            gt_img_to_write = rgb_gt_full[-1].clip(0, 1.0)
 
             # Compute the loss
             ptir_frame_metrics = {}
@@ -841,15 +959,17 @@ class Renderer:
                 ).item()
             )
 
-            # Record the time
-            inference_time.append(outputs["frame_time_ms"])
-
             progress_metrics = {"iteration": f"{str(iteration)}", "psnr": psnr[-1]}
             if normal_mae_single_img is not None:
                 progress_metrics["normal_mae"] = normal_mae_single_img
             logger.log_progress(task_name="Rendering", advance=1, **progress_metrics)
 
         logger.end_progress(task_name="Rendering")
+
+        if not self.compute_metrics:
+            mean_inference_time = np.mean(inference_time) if inference_time else 0.0
+            logger.info("Rendering metrics skipped.")
+            return None, None, mean_inference_time
 
         if output_path_ptir_aovs:
             if albedo_list:

@@ -33,11 +33,8 @@ import threedgrut.datasets as datasets
 from threedgrut.datasets.protocols import BoundedMultiViewDataset
 from threedgrut.datasets.utils import DEFAULT_DEVICE, MultiEpochsDataLoader, PointCloud
 from threedgrut.metric import create_psnr_criterion
-from threedgrut.model.environment import (
-    EnvAliasTable,
-    Environment,
-    save_environment_exr,
-)
+from threedgrut.model.aliastable import EnvAliasTable
+from threedgrut.model.light import Environment, save_environment_exr
 from threedgrut.model.losses import (
     depth_distortion_loss,
     edge_aware_smoothness_loss,
