@@ -1,424 +1,133 @@
+# PTIR-GF: Path-Traced Inverse Rendering with Global Illumination in 3D Gaussian Fields
+
 <p align="center">
-  <img height="100" src="assets/3dgrut_logo.png">
+  <img src="assets/teaser.jpg" width="100%" style="background-color: white;">
 </p>
 
----
+### [[Project]](https://junkzhu.github.io/project_pages/PTIR/) [[Paper]](https://arxiv.org/abs/2606.09606) 
+          
+> [Junke Zhu](https://github.com/junkzhu), Hao Zhang, [Yutian Zhu](https://github.com/rubatotree), Ang Li, [Chenxiao Hu](https://github.com/Hineven), [Meng Gai](https://cs.pku.edu.cn/info/1160/3584.htm), Fei Zhu, [Zhangjin Huang](http://staff.ustc.edu.cn/~zhuang/), [Sheng Li](https://lishengpku.github.io/)
+
+## Framework
 <p align="center">
-  <img width="100%" src="assets/nvidia-hq-playground.gif">
+  <img src="assets/pipeline.jpg" width="100%">
 </p>
 
-This repository provides the official implementation of **3D Gaussian Ray Tracing (3DGRT)**. Unlike traditional methods that rely on splatting, 3DGRT performs ray tracing of volumetric Gaussian particles instead. This enables support for distorted cameras with complex, time-dependent effects such as rolling shutters, while also efficiently simulating secondary rays required for rendering phenomena like reflection, refraction, and shadows. However, 3DGRT requires dedicated ray-tracing hardware and remains slower than 3DGS.
-
-> __3D Gaussian Ray Tracing: Fast Tracing of Particle Scenes__
-> [Nicolas Moenne-Loccoz*](https://www.linkedin.com/in/nicolas-moënne-loccoz-71040512/?original_referer=https%3A%2F%2Fwww%2Egoogle%2Ecom%2F&originalSubdomain=ca), [Ashkan Mirzaei*](https://ashmrz.github.io), [Or Perel](https://orperel.github.io/), [Riccardo De Lutio](https://riccardodelutio.github.io/), [Janick Martinez Esturo](https://jme.pub/),
-> [Gavriel State](https://www.linkedin.com/in/gavstate/?originalSubdomain=ca), [Sanja Fidler](https://www.cs.utoronto.ca/~fidler/), [Nicholas Sharp^](https://nmwsharp.com/), [Zan Gojcic^](https://zgojcic.github.io/) _(*,^ indicates equal contribution)_
-> _SIGGRAPH Asia 2024 (Journal Track)_
-> __[Project page](https://research.nvidia.com/labs/toronto-ai/3DGRT)&nbsp;/ [Paper](https://research.nvidia.com/labs/toronto-ai/3DGRT/res/3dgrt_compressed.pdf)&nbsp;/ [Video](https://research.nvidia.com/labs/toronto-ai/3DGRT/res/3dgrt_supplementary_video.mp4)&nbsp;/ [BibTeX](assets/3dgrt2024.bib)__
-
-## 🔥 News
-- ✅[2026/03] **NCore v4:** Support for training from NCore v4 datasets ([NCore](https://github.com/NVIDIA/ncore), [commands](#training-on-ncore-v4-datasets)).
-- ✅[2026/01] Physically-Plausible ISP support.
-- ✅[2025/08] Support for the 3DGRT and 3DGS/3DGRT pipelines is now available with the Vulkan API as part of the [Vulkan Gaussian Splatting Project](https://github.com/nvpro-samples/vk_gaussian_splatting).
-- ✅[2025/07] Support for datasets with multiple sensors (only for COLMAP-style datasets).
-- ✅[2025/07] Support for Windows has been added.
-- ✅[2025/06] Playground supports PBR meshes and environment maps.
-- ✅[2025/04] Support for image masks.
-- ✅[2025/04] SparseAdam support.
-- ✅[2025/04] MCMC densification strategy support.
-- ✅[2025/04] Stable release [v1.0.0](https://github.com/nv-tlabs/3dgrut/releases/tag/v1.0.0) tagged.
-- ✅[2025/03] Initial code release!
-- ✅[2024/08] [3DGRT](https://research.nvidia.com/labs/toronto-ai/3DGRT/res/3dgrt_compressed.pdf) was accepted to SIGGRAPH Asia 2024!
-
-## Contents
-
-- [🔥 News](#-news)
-- [Contents](#contents)
-- [🔧 1 Dependencies and Installation](#-1-dependencies-and-installation)
-  - [Running with Docker](#running-with-docker)
-- [💻 2. Train 3DGRT scenes](#-2-train-3dgrt-scenes)
-  - [Training on NCore v4 datasets](#training-on-ncore-v4-datasets)
-  - [Using image masks](#using-image-masks)
-  - [Exporting USDZ for use in Omniverse and Isaac Sim](#exporting-usdz-for-use-in-omniverse-and-isaac-sim)
-- [🎥 3. Rendering from Checkpoints](#-3-rendering-from-checkpoints)
-  - [To visualize training progress interactively](#to-visualize-training-progress-interactively)
-  - [To visualize a pre-trained checkpoint](#to-visualize-a-pre-trained-checkpoint)
-- [📋 4. Evaluations](#-4-evaluations)
-- [🛝 5. Interactive Playground GUI](#-5-interactive-playground-gui)
-- [📄 6. Contributing](#-6-contributing)
-- [🎓 7. Citations](#-7-citations)
-- [🙏 8. Acknowledgements](#-8-acknowledgements)
-
-## 🔧 1 Dependencies and Installation
-- Supported CUDA versions: 11.8, 12.4, 12.6, 12.8 (default), 13.0 (experimental)
-- For good performance with 3DGRT, we recommend using an NVIDIA GPU with Ray Tracing (RT) cores.
-- Both Linux and Windows are supported via UV install scripts.
-
-### Option A: Using UV (Recommended)
-
-(Kindly contributed by [@MasahiroOgawa](https://github.com/MasahiroOgawa))
-
-[UV](https://docs.astral.sh/uv/) provides faster installation and better dependency resolution.
+## Dependencies and Installation
+Clone the repository with submodules first:
 
 ```bash
-git clone --recursive https://github.com/nv-tlabs/3dgrut.git
-cd 3dgrut
+git clone --recursive https://github.com/junkzhu/PTIR.git
+cd PTIR
 ```
 
 <details open>
 <summary><strong>Linux</strong></summary>
 
-The install scripts automatically find or install a GCC version compatible with your chosen CUDA toolkit.
-
-**Prerequisites:**
-1. **uv** installed: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-2. A CUDA toolkit — choose one of the sub-options below.
-3. **OpenGL headers** for playground: `sudo apt-get install libgl1-mesa-dev`
-
-**Sub-option A1 — System CUDA** (use an existing `nvcc` in `PATH` or `CUDA_HOME`):
-
 ```bash
-./install_env_uv.sh          # venv name defaults to "3dgrut"
-source .venv/bin/activate
+chmod +x install_env.sh
+./install_env.sh ptir
+conda activate ptir
 ```
 
-**Sub-option A2 — conda-managed CUDA** (let conda install the CUDA toolkit):
+For CUDA 12.8.1:
 
 ```bash
-# Step 1: create a conda environment with the CUDA toolkit
-CUDA_VERSION=12 ./scripts/create_conda.sh 3dgrut
-conda activate 3dgrut
-# Step 2: install Python dependencies
-./install_env_uv.sh  # or conda run -n 3dgrut ./install_env_uv.sh
+CUDA_VERSION=12.8.1 ./install_env.sh ptir
+conda activate ptir
 ```
 
-**Sub-option A3 — Local venv CUDA** (download CUDA into `.venv/`, no system-wide install needed):
+If your default GCC version is higher than 11:
 
 ```bash
-# Supported CUDA_VERSION values: 11.8 (or 11), 12.4, 12.6, 12.8 (or 12), 13.0 (or 13)
-FORCE_LOCAL_CUDA=1 CUDA_VERSION=12 ./scripts/create_venv_cuda.sh   # ~4 GB download on first run
-source .venv/bin/activate
-./install_env_uv.sh
-```
+# CUDA 11.8.0
+./install_env.sh ptir WITH_GCC11
+conda activate ptir
 
-> [!NOTE]
-> Requires **wget**: `sudo apt-get install wget`
-> The CUDA toolkit runfile (~4GB) is cached at `/tmp/cuda_<version>_linux.run` and reused on subsequent runs.
-> The downloaded CUDA toolkit is installed locally to `.venv/cuda-{version}/`. You can force a local install
-> even with system CUDA available by setting `FORCE_LOCAL_CUDA=1` in the environment variables.
+# CUDA 12.8.1
+CUDA_VERSION=12.8.1 ./install_env.sh ptir WITH_GCC11
+conda activate ptir
+```
 
 </details>
 
-<details>
+<details open>
 <summary><strong>Windows</strong></summary>
 
-**Prerequisites:**
-1. **uv** installed: `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
-2. **CUDA Toolkit** installed from [NVIDIA CUDA Downloads](https://developer.nvidia.com/cuda-downloads)
-3. **Visual Studio Build Tools** (2019 or later) with the **Desktop development with C++** workload.
-   The script auto-detects `cl.exe`, `cmake`, and `ninja` from the VS installation.
-   If both a CUDA-compatible VS (2019–2022) and a newer one are installed, the script prefers the compatible version.
-   For VS 2025+ (not yet officially supported by CUDA), the script automatically adds `--allow-unsupported-compiler` to nvcc.
-
-From a PowerShell terminal in the project root:
-
 ```powershell
-.\install_env_uv.ps1                     # auto-detects CUDA, venv name defaults to "3dgrut"
+.\install_env.ps1 -CondaEnv ptir
+conda activate ptir
 ```
-
-To override `CUDA_HOME`:
-
-```powershell
-$env:CUDA_HOME = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8"
-.\install_env_uv.ps1
-```
-
-After installation, **activate the virtual environment** (required for every new terminal session):
-
-```powershell
-.venv\Scripts\Activate.ps1
-```
-
-This also sets the build environment variables (`TORCH_CUDA_ARCH_LIST`, `CUDA_HOME`, VS Build Tools paths, etc.) that were persisted during installation.
 
 </details>
 
-### Option B: Using Legacy Conda Script
+## Dataset
+Download the following datasets:
+- TensoIR_Material: [LINK](https://drive.google.com/file/d/1OM5LcHIHD2oBPhuSeU8vRtf3ILuI47Tj/view?usp=sharing)
+- Synthetic4Relight: [LINK](https://drive.google.com/file/d/1Lr4Ola4XA0yqs2UAUWDdRs1Ww4gwOY2S/view?usp=sharing)
 
-<details>
-<summary>Legacy Conda Installation via <code>install_env.sh</code> (CUDA 11.8.0 / 12.8.1 only)</summary>
-</br>
+Put the datasets under the `data` folder as below:
+```
+data/
+    TensoIR_Material/
+    Synthetic4Relight/
+```
 
-> [!NOTE]
-> `install_env.sh` is a legacy script that only supports CUDA 11.8.0 and 12.8.1 and requires
-> manual GCC management. For new setups, prefer **Sub-option A1** above, which supports more
-> CUDA versions and handles GCC compatibility automatically.
-
+## Training and Evaluation
+Run the benchmark scripts for training and evaluation:
 ```bash
-git clone --recursive https://github.com/nv-tlabs/3dgrut.git
-cd 3dgrut
-chmod +x install_env.sh
-./install_env.sh 3dgrut
-conda activate 3dgrut
+bash benchmark/tensoir.sh --cuda_device 0,1,2,3
+bash benchmark/synthetic4relight.sh --cuda_device 0,1,2,3
 ```
 
-If your system GCC is newer than 11, install `gcc-11` first and pass the `WITH_GCC11` flag:
-```sh
-sudo apt-get install gcc-11 g++-11
-./install_env.sh 3dgrut WITH_GCC11
-```
-</details>
-
-### Blackwell / RTX 50 series Support
-
-We support CUDA 12.8 (Blackwell / RTX 50 series) — kindly contributed by <a href="https://www.github.com/johnnynunez">@johnnynunez</a>:
-
-Using the legacy script:
-```sh
-CUDA_VERSION=12.8.1 ./install_env.sh 3dgrut_cuda12 WITH_GCC11
-```
-
-Or using the UV script:
-```sh
-FORCE_LOCAL_CUDA=1 CUDA_VERSION=12 ./scripts/create_venv_cuda.sh 3dgrut_cuda12
-source .venv/bin/activate
-./install_env_uv.sh
-```
-
-### Building and Running with Docker
-
-To build the Docker image:
-```sh
-docker build --build-arg CUDA_VERSION=12.8.1 -t 3dgrut:cuda128 .
-```
-
-Build the Docker image:
+Run a single scene:
 ```bash
-git clone --recursive https://github.com/nv-tlabs/3dgrut.git
-cd 3dgrut
-docker build . -t 3dgrut
+bash benchmark/tensoir.sh --cuda_device 0 --scenes "ficus"
+bash benchmark/synthetic4relight.sh --cuda_device 0 --scenes "hotdog"
 ```
 
-Run it:
+Run arbitrary light relighting:
 ```bash
-xhost +local:root
-docker run -v --rm -it --gpus=all --net=host --ipc=host -v $PWD:/workspace --runtime=nvidia -e DISPLAY 3dgrut
-```
-> [!NOTE]
-> Remember to set the DISPLAY environment variable if you are running on a remote server from the command line.
-
-## 💻 2. Train 3DGRT scenes
-
-We provide different configurations for training using 3DGRT models on common benchmark datasets.
-For example, you can download the [NeRF Synthetic dataset](https://www.kaggle.com/datasets/nguyenhung1903/nerf-synthetic-dataset),
-the [MipNeRF360 dataset](https://jonbarron.info/mipnerf360/), or [ScanNet++](https://kaldir.vc.in.tum.de/scannetpp/),
-and then run one of the following commands:
-
-```bash
-# Train Lego with 3DGRT
-python train.py --config-name apps/nerf_synthetic_3dgrt.yaml path=data/nerf_synthetic/lego out_dir=runs experiment_name=lego_3dgrt
-
-# Train Bonsai
-python train.py --config-name apps/colmap_3dgrt.yaml path=data/mipnerf360/bonsai out_dir=runs experiment_name=bonsai_3dgrt dataset.downsample_factor=2
-
-# Train Scannet++
-python train.py --config-name apps/scannetpp_3dgrt.yaml path=data/scannetpp/0a5c013435/dslr out_dir=runs experiment_name=0a5c013435_3dgrt
+CUDA_VISIBLE_DEVICES=0 python render.py \
+    --checkpoint path/to/ckpt_last.pt \
+    --path path/to/data \
+    --out-dir path/to/output \
+    --environment-path path/to/envmap.hdr \
+    --lights-relight
 ```
 
-### Training on NCore v4 datasets
+The light setup is configured in `render.py` under `renderer.model.lights`.
 
-Set `path` to your **NCore v4 sequence JSON**. Data layout and tooling are described in the open-source [**NCore**](https://github.com/NVIDIA/ncore) repository. Training defaults are in `configs/dataset/ncore.yaml`.
+<p align="center">
+  <img src="assets/garden.gif" width="49%">
+  <img src="assets/kitchen.gif" width="49%">
+</p>
 
-```bash
-python train.py --config-name apps/ncore_3dgrt.yaml      path=<path>/<sequence-meta>.json out_dir=runs experiment_name=ncore_3dgrt
-python train.py --config-name apps/ncore_3dgrt_mcmc.yaml path=<path>/<sequence-meta>.json out_dir=runs experiment_name=ncore_3dgrt_mcmc
-# Example overrides: dataset.downsample=0.5 num_workers=8
-```
+## Acknowledge
+Our work is built upon the following works:
+- [3DGRUT](https://github.com/nv-tlabs/3dgrut) (Baseline of This Framework)
+- [RGB2X](https://github.com/zheng95z/rgbx)
 
-We also support the MCMC densification strategy and the selective Adam optimizer for 3DGRT.
+We also refer to the implementations of the following works:
+- [TensoIR](https://github.com/Haian-Jin/TensoIR)
+- [GS-IR](https://github.com/lzhnb/gs-ir)
+- [GS-ID](https://github.com/dukang/gs-id)
+- [R3DG](https://github.com/NJU-3DV/Relightable3DGaussian)
+- [IRGS](https://github.com/fudan-zvg/IRGS)
+- [SVG-IR](https://github.com/learner-shx/SVG-IR)
 
-To enable MCMC, use:
-```bash
-python train.py --config-name apps/colmap_3dgrt_mcmc.yaml path=data/mipnerf360/bonsai out_dir=runs experiment_name=bonsai_3dgrt dataset.downsample_factor=2
-```
+Thanks for these great projects!
 
-To enable selective Adam, use:
-```bash
-python train.py --config-name apps/colmap_3dgrt.yaml path=data/mipnerf360/bonsai out_dir=runs experiment_name=bonsai_3dgrt dataset.downsample_factor=2 optimizer.type=selective_adam
-```
-
-If you use MCMC and Selective Adam in your research, please cite [3dgs-mcmc](https://github.com/ubc-vision/3dgs-mcmc), [taming-3dgs](https://github.com/humansensinglab/taming-3dgs),
-and the [gSplat](https://github.com/nerfstudio-project/gsplat/tree/main) library from which the code was adopted (links to the code are provided in the source files).
-
-> [!Note]
-> For ScanNet++, we expect the dataset to be preprocessed using the method described in [FisheyeGS](https://github.com/zmliao/Fisheye-GS?tab=readme-ov-file#prepare-training-data-on-scannet-dataset).
-
-> [!Note]
-> If you're running from the PyCharm IDE, enable the rich console as follows:
-> Run Configuration > Modify Options > Emulate terminal in output console*
-
-### Using image masks
-In order to use image masks, you need to provide a mask for each image in the dataset. The mask is a grayscale image (0s and 1s) that masks out the parts of the image that should not be used during training, i.e. all the pixels with value 0 will be ignored in the loss computation.
-
-The provided masks should have the same resolution as their corresponding images and be stored in the same folder with the same name but with `_mask.png` extension. For example, to mask out the parts of the image `path-to-image/image.jpeg`, the mask should be stored at `path-to-image/image_mask.png`.
-
-**NOTE**: The masks are only used for loss computation and not for computing the metrics.
-
-### Exporting USDZ for use in Omniverse and Isaac Sim
-
-As a beta feature, Omniverse Kit 107.3 and Isaac Sim 5.0 are able to support rendering 3D Gaussians in a specific custom USDZ-based format that uses an extension of the UsdVolVolume Schema.
-
-The 3DGRUT repository can output trained scenes to this format by enabling the `export_usd` flag:
-
-```bash
-python train.py --config-name apps/colmap_3dgrt.yaml path=data/mipnerf360/garden/ out_dir=runs experiment_name=garden_3dgrt dataset.downsample_factor=2 export_usd.enabled=true
-```
-
-> [!NOTE]
-> The USD output schema is currently compatible with Isaac Sim 5.0, but how USD and reconstruction workflows work together is highly likely to change in future versions. This is a beta feature.
-
-#### Converting PLY files to USDZ
-
-If you have existing Gaussian data in PLY format, for example, from 3DGS, you can convert it to the USDZ format using the transcode script:
-
-```bash
-python -m threedgrut.export.scripts.transcode path/to/your/model.ply --output path/to/output.usdz --format lightfield
-```
-
-This is useful for converting 3DGS models from other sources to the USDZ format.
-
-
-## 🎥 3. Rendering from Checkpoints
-Evaluate a checkpoint with splatting, the OptiX tracer, or PyTorch:
-```bash
-python render.py --checkpoint runs/lego/ckpt_last.pt --out-dir outputs/eval
-```
-
-### To visualize training progress interactively
-```bash
-python train.py --config-name apps/nerf_synthetic_3dgrt.yaml path=data/nerf_synthetic/lego with_gui=True
-```
-> [!NOTE]
-> Remember to set the DISPLAY environment variable if you are running on a remote server from the command line.
-
-Alternatively, use the viser GUI contributed by the community (@tangkangqi):
-```bash
-python train.py --config-name apps/nerf_synthetic_3dgrt.yaml path=data/nerf_synthetic/lego with_viser_gui=True
-```
-> [!NOTE]
-> Remember to install viser first via `pip install viser` and forward the port 8080 to your local machine if you are running on a remote server.
-
-
-### To visualize a pre-trained checkpoint
-```bash
-python train.py --config-name apps/nerf_synthetic_3dgrt.yaml path=data/nerf_synthetic/lego with_gui=True test_last=False export_ingp.enabled=False resume=runs/lego/ckpt_last.pt
-```
-
-On startup, you might see a black screen, but you can use the GUI to navigate to the correct camera views:
-<img src="assets/train_gui_initial.jpg" height="400"/>
-<img src="assets/render_lego.jpg" height="400"/>
-
-Similarly, you can use the viser GUI by setting `with_viser_gui=True` instead of `with_gui=True`.
-
-
-## 📋 4. Evaluations
-
-We provide scripts to reproduce results reported in publications.
-
-```bash
-# Training
-bash ./benchmark/mipnerf360.sh <config-yaml>
-# Rendering
-bash ./benchmark/mipnerf360_render.sh <results-folder>
-```
-
-<details>
-<summary><strong><a name="grt-benchmark">3DGRT Results Produced on RTX 5090</a></strong></summary>
-<br/>
-
-
-**NeRF Synthetic Dataset**
-
-```bash
-bash ./benchmark/nerf_synthetic.sh apps/nerf_synthetic_3dgrt.yaml
-bash ./benchmark/nerf_synthetic_render.sh results/nerf_synthetic
-```
-
-|            | PSNR	  | SSIM	| Train (s) |	FPS |
-|------------|--------|-------|-------|------|
-| Chair      | 35.85	| 0.988	| 556.4	| 299 |
-| Drums      | 25.87	| 0.953	| 462.8	| 389 |
-| Ficus      | 36.57	| 0.989	| 331.0	| 465 |
-| Hotdog     | 37.88	| 0.986	| 597.0	| 270 |
-| Lego       | 36.70	| 0.985	| 469.8	| 360 |
-| Materials  | 30.42	| 0.962	| 463.3	| 347 |
-| Mic        | 35.90	| 0.992	| 443.4	| 291 |
-| Ship       | 31.73	| 0.909	| 510.7	| 360 |
-| *Average*  | 33.87	| 0.971	| 479.3	| 347 |
-
-
-**MipNeRF360 Dataset**
-
-```bash
-bash ./benchmark/mipnerf360.sh apps/colmap_3dgrt.yaml
-bash ./benchmark/mipnerf360_render.sh results/mipnerf360
-```
-|           | PSNR  | SSIM	| Train (s) |	FPS |
-|-----------|-------|-------|-------|------|
-| Bicycle   | 24.85	| 0.748	| 2335	| 66 |
-| Bonsai    | 31.95	| 0.942	| 3383	| 72 |
-| Counter   | 28.47	| 0.905	| 3247	| 62 |
-| Flowers   | 21.42	| 0.615	| 2090	| 86 |
-| Garden    | 26.97	| 0.852	| 2253	| 70 |
-| Kitchen   | 30.13	| 0.921	| 4837	| 39 |
-| Room      | 30.35	| 0.911	| 2734	| 73 |
-| Stump     | 26.37	| 0.770	| 1995	| 73 |
-| Treehill  | 22.08	| 0.622	| 2413	| 68 |
-| *Average* | 27.22	| 0.817	| 2869	| 68 |
-
-</details>
-
-
-
-## 🛝 5. Interactive Playground GUI
-
-The playground allows interactive exploration of pretrained scenes, with ray-tracing effects such as inserted objects,
-reflections, refractions, depth of field, and more.
-
-Run the playground UI to visualize a pretrained scene with:
-```
-python playground.py --gs_object <ckpt_path>
-```
-
-See [Playground README](threedgrut_playground/README.md) for details.
-
-*Update (2025/04): The playground engine is now exposed, and remote rendering is supported; see README for details.*
-
-## 📄 6. Contributing
-
-Contributions are welcome! Please feel free to submit a pull request.
-
-Formatting uses `black` and `isort`. Please run
-`black . --target-version=py311 --line-length=120 --exclude=thirdparty/tiny-cuda-nn` and
-`isort . --skip=thirdparty/tiny-cuda-nn --profile=black` before submitting a pull request.
-
-## 🎓 7. Citations
-
-```
-@article{loccoz20243dgrt,
-    author = {Nicolas Moenne-Loccoz and Ashkan Mirzaei and Or Perel and Riccardo de Lutio and Janick Martinez Esturo and Gavriel State and Sanja Fidler and Nicholas Sharp and Zan Gojcic},
-    title = {3D Gaussian Ray Tracing: Fast Tracing of Particle Scenes},
-    journal = {ACM Transactions on Graphics and SIGGRAPH Asia},
-    year = {2024},
+## BibTeX
+If you find our code or paper helps, please consider citing:
+```bibtex
+@misc{zhu2026pathtracedinverserenderingglobal,
+      title={Path-Traced Inverse Rendering with Global Illumination in 3D Gaussian Fields}, 
+      author={Junke Zhu and Hao Zhang and Yutian Zhu and Ang Li and Chenxiao Hu and Meng Gai and Fei Zhu and Zhangjin Huang and Sheng Li},
+      year={2026},
+      eprint={2606.09606},
+      archivePrefix={arXiv},
+      primaryClass={cs.GR},
+      url={https://arxiv.org/abs/2606.09606}, 
 }
 ```
-
-
-## 🙏 8. Acknowledgements
-
-We sincerely thank our colleagues for their valuable contributions to this project.
-
-Hassan Abu Alhaija, Ronnie Sharif, Beau Perschall and Lars Fabiunke for assistance with assets.
-Greg Muthler, Magnus Andersson, Maksim Eisenstein, Tanki Zhang, Nathan Morrical, Dietger van Antwerpen and John Burgess for performance feedback.
-Thomas Müller, Merlin Nimier-David, and Carsten Kolve for inspiration and pointers.
-Ziyu Chen, Clement Fuji-Tsang, Masha Shugrina, and George Kopanas for technical & experiment assistance,
-and to Ramana Kiran and Shailesh Mishra for typo fixes.
