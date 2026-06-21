@@ -767,9 +767,12 @@ class Renderer:
             rgb_gt_full = gpu_batch.rgb_gt
             normal_gt = getattr(gpu_batch, "normal_gt", None)
             material_albedo_gt = getattr(gpu_batch, "material_albedo_gt", None)
-            material_albedo_gt = apply_gt_mask_to_tensor(
-                material_albedo_gt, getattr(gpu_batch, "mask", None)
-            )
+            dataset_root = os.path.normpath(str(getattr(self.dataset, "root_dir", "")))
+            # Synthetic4Relight material albedo GT is alpha-masked when read by NeRFDataset.
+            if "synthetic4relight" not in dataset_root.lower():
+                material_albedo_gt = apply_gt_mask_to_tensor(
+                    material_albedo_gt, getattr(gpu_batch, "mask", None)
+                )
             material_roughness_gt = getattr(gpu_batch, "material_roughness_gt", None)
             material_roughness_gt = apply_gt_mask_to_tensor(
                 material_roughness_gt, getattr(gpu_batch, "mask", None)

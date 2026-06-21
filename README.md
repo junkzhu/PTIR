@@ -1,4 +1,4 @@
-# PTIR-GF: Path-Traced Inverse Rendering with Global Illumination in 3D Gaussian Fields
+# PTIR-GS: Path-Traced Inverse Rendering with Global Illumination in 3D Gaussian Fields
 
 <p align="center">
   <img src="assets/teaser.jpg" width="100%" style="background-color: white;">
@@ -6,7 +6,7 @@
 
 ### [[Project]](https://junkzhu.github.io/project_pages/PTIR/) [[Paper]](https://arxiv.org/abs/2606.09606) 
           
-> [Junke Zhu](https://github.com/junkzhu), Hao Zhang, [Yutian Zhu](https://github.com/rubatotree), Ang Li, [Chenxiao Hu](https://github.com/Hineven), [Meng Gai](https://cs.pku.edu.cn/info/1160/3584.htm), Fei Zhu, [Zhangjin Huang](http://staff.ustc.edu.cn/~zhuang/), [Sheng Li](https://lishengpku.github.io/)
+> [Junke Zhu](https://github.com/junkzhu), [Hao Zhang](https://github.com/0xrabbyte), [Yutian Zhu](https://rubatotree.github.io/academic/), [Ang Li](https://github.com/Alan-sp), [Chenxiao Hu](https://github.com/Hineven), [Meng Gai](https://cs.pku.edu.cn/info/1160/3584.htm), Fei Zhu, [Zhangjin Huang](http://staff.ustc.edu.cn/~zhuang/), [Sheng Li](https://lishengpku.github.io/)
 
 ## Framework
 <p align="center">
