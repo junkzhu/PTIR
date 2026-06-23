@@ -480,6 +480,17 @@ class Renderer:
                     self.post_processing, outputs, gpu_batch, training=False
                 )
 
+            # Follow existing methods evaluation by applying the
+            # GT foreground mask before computing relighting metrics:
+            # https://github.com/fudan-zvg/IRGS/blob/main/eval_relighting_syn4.py#L164
+            # https://github.com/NJU-3DV/Relightable3DGaussian/blob/main/eval_relighting_syn4.py#167
+            relight_mask = getattr(gpu_batch, "mask", None)
+            if relight_mask is not None:
+                outputs = dict(outputs)
+                outputs["pred_pbr"] = apply_gt_mask_to_tensor(
+                    outputs["pred_pbr"], relight_mask
+                )
+
             frame_metrics = metric.update_relight_pbr(
                 pred_pbr_linear=outputs["pred_pbr"],
                 dataset=self.dataset,
@@ -767,12 +778,9 @@ class Renderer:
             rgb_gt_full = gpu_batch.rgb_gt
             normal_gt = getattr(gpu_batch, "normal_gt", None)
             material_albedo_gt = getattr(gpu_batch, "material_albedo_gt", None)
-            dataset_root = os.path.normpath(str(getattr(self.dataset, "root_dir", "")))
-            # Synthetic4Relight material albedo GT is alpha-masked when read by NeRFDataset.
-            if "synthetic4relight" not in dataset_root.lower():
-                material_albedo_gt = apply_gt_mask_to_tensor(
-                    material_albedo_gt, getattr(gpu_batch, "mask", None)
-                )
+            material_albedo_gt = apply_gt_mask_to_tensor(
+                material_albedo_gt, getattr(gpu_batch, "mask", None)
+            )
             material_roughness_gt = getattr(gpu_batch, "material_roughness_gt", None)
             material_roughness_gt = apply_gt_mask_to_tensor(
                 material_roughness_gt, getattr(gpu_batch, "mask", None)

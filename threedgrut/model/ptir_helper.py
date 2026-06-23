@@ -48,7 +48,11 @@ def linear_to_srgb(image: torch.Tensor) -> torch.Tensor:
 
 PBR_GT_MASK_APPLIED_KEY = "_pbr_gt_mask_applied"
 PBR_GT_MASK_OUTPUT_KEYS = (
-    "pred_pbr",
+    # Like IRGS, NVS pred_pbr is unmasked during metric computation.
+    # https://github.com/fudan-zvg/IRGS/blob/main/render.py#L65 
+    # While other material should be masked to avoid biasing the metrics.
+    # https://github.com/fudan-zvg/IRGS/blob/main/eval_material_tensoir.py#L121
+    # "pred_pbr",
     "pred_direct",
     "pred_indirect",
     "pred_light",
