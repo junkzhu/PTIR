@@ -103,6 +103,10 @@ The light setup is configured in `render.py` under `renderer.model.lights`.
   <img src="assets/kitchen.gif" width="49%">
 </p>
 
+## Mitsuba Implementation
+A Mitsuba-based implementation is available at [PTIR-Mitsuba](https://github.com/junkzhu/PTIR-Mitsuba).
+Before running the Mitsuba pipeline, please first refine the GS model separately, then use the refined GS model as the input to PTIR-Mitsuba.
+
 ## Acknowledge
 Our work is built upon the following works:
 - [3DGRUT](https://github.com/nv-tlabs/3dgrut) (Baseline of This Framework)
