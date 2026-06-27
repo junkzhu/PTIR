@@ -455,6 +455,9 @@ class Renderer:
 
         environment_path = Path(environment_path)
         output_dir = Path(output_dir)
+        if (output_dir / "metrics.json").exists():
+            logger.info(f"Skipping {self._environment_output_name(environment_path)}: metrics.json already exists")
+            return output_dir
         self._load_relight_environment(environment_path)
         metric = Metric(device="cuda")
 

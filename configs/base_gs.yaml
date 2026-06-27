@@ -146,7 +146,7 @@ loss:
   lambda_scale: 0.0
 
   use_pseudo_normal_supervision: true
-  lambda_shading_normal: 0.05
+  lambda_shading_normal: 0.01
 
   use_depth_distortion: false
   depth_distortion_start_iteration: 15000
@@ -154,10 +154,10 @@ loss:
 
   use_normal_prior_regularization: false
   normal_priors_end_iteration: 30000
-  lambda_normal_priors_regularization: 0.02
+  lambda_normal_priors_regularization: 0.01
 
   use_edge_aware_smoothness: true
-  lambda_edge_aware_smoothness: 0.02
+  lambda_edge_aware_smoothness: 0.01
   edge_aware_smoothness_outputs:
     - pred_shadingnormal
     #- pred_dist
