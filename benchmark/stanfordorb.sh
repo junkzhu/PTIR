@@ -17,6 +17,7 @@ FORCE_TRAIN=false
 INITIALIZATION_NUM_GAUSSIANS="50_000"
 INITIALIZATION_XYZ_MAX="0.5"
 INITIALIZATION_XYZ_MIN="-0.5"
+STAGE1_ITERATIONS="7000"
 SCENES=(
     cactus_scene001 gnome_scene003 car_scene002
 )
@@ -222,6 +223,7 @@ run_scene() {
             echo "initialization.num_gaussians=$INITIALIZATION_NUM_GAUSSIANS"
             echo "initialization.xyz_max=$INITIALIZATION_XYZ_MAX"
             echo "initialization.xyz_min=$INITIALIZATION_XYZ_MIN"
+            echo "n_iterations=$STAGE1_ITERATIONS"
             echo "loss.lambda_mask_entropy=1.0"
             echo "out_dir=$OUT_DIR"
             echo "experiment_name=$scene"
@@ -235,6 +237,7 @@ run_scene() {
                 "initialization.num_gaussians=$INITIALIZATION_NUM_GAUSSIANS" \
                 "initialization.xyz_max=$INITIALIZATION_XYZ_MAX" \
                 "initialization.xyz_min=$INITIALIZATION_XYZ_MIN" \
+                "n_iterations=$STAGE1_ITERATIONS" \
                 "loss.lambda_mask_entropy=1.0" \
                 "out_dir=$OUT_DIR" \
                 "experiment_name=$scene" \
