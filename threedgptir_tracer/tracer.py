@@ -478,6 +478,84 @@ class Tracer:
     def _get_spp_chunk(self, spp: int) -> int:
         return min(spp, max(1, int(self.conf.render.get("spp_chunk", spp))))
 
+    def _warn_spp_fallback(self, reason: str):
+        if not self._warned_spp_fallback:
+            rich_logger.warning(f"PTIR SPP fallback to spp=1: {reason}.")
+            self._warned_spp_fallback = True
+
+    @staticmethod
+    def _flat(value, dtype: torch.dtype, device: torch.device):
+        if value is None:
+            return None
+        return torch.as_tensor(value, dtype=dtype, device=device).flatten()
+
+    def _extract_pinhole_intrinsics(
+        self,
+        gpu_batch: Batch,
+        dtype: torch.dtype,
+        device: torch.device,
+        warn: bool = True,
+    ):
+        # Case 1: direct intrinsics, expected as [fx, fy, cx, cy] or 3x3 K.
+        intrinsics = self._flat(getattr(gpu_batch, "intrinsics", None), dtype, device)
+        if intrinsics is not None:
+            if intrinsics.numel() == 4:
+                return tuple(intrinsics)
+            if intrinsics.numel() == 9:
+                K = intrinsics.reshape(3, 3)
+                return K[0, 0], K[1, 1], K[0, 2], K[1, 2]
+            if warn:
+                self._warn_spp_fallback("unsupported intrinsics format")
+            return None
+
+        # Case 2: nerfstudio OpenCV pinhole camera parameters.
+        params = getattr(
+            gpu_batch, "intrinsics_OpenCVPinholeCameraModelParameters", None
+        )
+        if params is None:
+            if warn:
+                self._warn_spp_fallback("missing pinhole intrinsics")
+            return None
+
+        def get(name):
+            if isinstance(params, dict):
+                return params.get(name)
+            return getattr(params, name, None)
+
+        # SPP ray expansion assumes distortion-free pinhole rays.
+        for name in ("radial_coeffs", "tangential_coeffs", "thin_prism_coeffs"):
+            coeffs = self._flat(get(name), dtype, device)
+            if coeffs is not None and coeffs.numel() > 0:
+                if torch.any(torch.abs(coeffs) > 1e-8).item():
+                    if warn:
+                        self._warn_spp_fallback("distorted camera model")
+                    return None
+
+        focal = self._flat(get("focal_length"), dtype, device)
+        principal = self._flat(get("principal_point"), dtype, device)
+
+        if focal is None or principal is None or focal.numel() < 1 or principal.numel() < 2:
+            if warn:
+                self._warn_spp_fallback("incomplete pinhole intrinsics")
+            return None
+
+        fx = focal[0]
+        fy = focal[1] if focal.numel() > 1 else focal[0]
+        cx, cy = principal[:2]
+        return fx, fy, cx, cy
+
+    def _can_expand_spp(self, gpu_batch: Batch) -> bool:
+        return (
+            getattr(gpu_batch, "pixel_coords", None) is not None
+            and self._extract_pinhole_intrinsics(
+                gpu_batch,
+                gpu_batch.rays_dir.dtype,
+                gpu_batch.rays_dir.device,
+                warn=False,
+            )
+            is not None
+        )
+
     def _make_spp_jitter(
         self,
         spp: int,
@@ -520,21 +598,17 @@ class Tracer:
         if spp == 1 and jitter is None:
             return rays_ori, rays_dir, 1
 
-        intrinsics = getattr(gpu_batch, "intrinsics", None)
         pixel_coords = getattr(gpu_batch, "pixel_coords", None)
+        intrinsics = self._extract_pinhole_intrinsics(
+            gpu_batch, rays_dir.dtype, rays_dir.device
+        )
         if intrinsics is None or pixel_coords is None:
-            if not self._warned_spp_fallback:
-                rich_logger.warning(
-                    "PTIR SPP requested but batch has no pinhole intrinsics/pixel_coords; using spp=1."
-                )
-                self._warned_spp_fallback = True
+            if pixel_coords is None:
+                self._warn_spp_fallback("batch has no pixel_coords")
             return rays_ori, rays_dir, 1
 
         base_batch, h, w, _ = rays_dir.shape
-        fx, fy, cx, cy = [
-            torch.as_tensor(v, dtype=rays_dir.dtype, device=rays_dir.device)
-            for v in intrinsics
-        ]
+        fx, fy, cx, cy = intrinsics
         pixel_origin = (
             pixel_coords.to(dtype=rays_dir.dtype, device=rays_dir.device) - 0.5
         )
@@ -621,15 +695,10 @@ class Tracer:
 
             base_batch = gpu_batch.rays_dir.shape[0]
             spp = self._get_spp(train)
-            if spp > 1 and (
-                getattr(gpu_batch, "intrinsics", None) is None
-                or getattr(gpu_batch, "pixel_coords", None) is None
-            ):
-                if not self._warned_spp_fallback:
-                    rich_logger.warning(
-                        "PTIR SPP requested but batch has no pinhole intrinsics/pixel_coords; using spp=1."
-                    )
-                    self._warned_spp_fallback = True
+            if spp > 1 and not self._can_expand_spp(gpu_batch):
+                self._warn_spp_fallback(
+                    "batch has no supported pinhole intrinsics/pixel_coords"
+                )
                 spp = 1
 
             spp_chunk = self._get_spp_chunk(spp)
