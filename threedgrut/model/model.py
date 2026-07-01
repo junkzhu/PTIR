@@ -107,6 +107,8 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         return self.material_metallic_activation(self.material_metallic)
 
     def get_environment(self) -> torch.Tensor | None:
+        if isinstance(self.environment, torch.nn.Module):
+            return self.environment()
         if (
             self.environment is not None
             and self.optimize_environment
@@ -909,15 +911,14 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
 
             # If the module is a torch.nn.Module, we can add all of its trainable parameters to the optimizer
             if isinstance(module, torch.nn.Module):
-                module_parameters = filter(
-                    lambda p: p.requires_grad and len(p) > 0, module.parameters()
-                )
-                n_params = sum(
-                    [np.prod(p.size(), dtype=int) for p in module_parameters]
-                )
+                module_parameters = [
+                    parameter
+                    for parameter in module.parameters()
+                    if parameter.requires_grad and parameter.numel() > 0
+                ]
 
-                if n_params > 0:
-                    params.append({"params": module.parameters(), "name": name, **args})
+                if module_parameters:
+                    params.append({"params": module_parameters, "name": name, **args})
 
             # If the module is a torch.nn.Parameter, we can add it to the optimizer
             elif isinstance(module, torch.nn.Parameter):
@@ -952,7 +953,14 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
     def setup_scheduler(self):
         self.schedulers = {}
         for name, args in self.conf.scheduler.items():
-            if args.type is not None and getattr(self, name).requires_grad:
+            module = getattr(self, name)
+            if isinstance(module, torch.nn.Module):
+                requires_grad = any(
+                    parameter.requires_grad for parameter in module.parameters()
+                )
+            else:
+                requires_grad = module.requires_grad
+            if args.type is not None and requires_grad:
                 if name == "positions":
                     self.schedulers[name] = get_scheduler(args.type)(
                         lr_init=args.lr_init * self.scene_extent,

@@ -26,9 +26,12 @@ import imageio
 import imageio.plugins.freeimage as fi
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 from threedgrut.model.aliastable import (
     DEFAULT_ALIAS_TABLE_SIZE,
+    ENVIRONMENT_TYPE_CUBE,
+    ENVIRONMENT_TYPE_SPHERICAL_GAUSSIAN,
     EnvAliasTable,
     build_alias_table,
     build_environment_alias_table,
@@ -43,6 +46,7 @@ LIGHT_TYPE_SPHERE = 2
 LIGHT_TYPE_MESH = 3
 PACKED_LIGHT_SIZE = 9
 PACKED_MESH_LIGHT_SIZE = 8
+_DEFAULT_ENVIRONMENT_SIZE = (64, 128)
 
 
 @dataclass(frozen=True)
@@ -499,12 +503,352 @@ def save_environment_exr(
     return output_path
 
 
+def _softplus_inverse(value: torch.Tensor) -> torch.Tensor:
+    tiny = torch.finfo(value.dtype).tiny
+    return torch.log(torch.expm1(value).clamp_min(tiny))
+
+
+def _radiance_to_sg_raw(radiance: torch.Tensor, gamma: float) -> torch.Tensor:
+    scaled = float(gamma) * torch.log1p(torch.clamp(radiance, min=0.0))
+    return _softplus_inverse(scaled)
+
+
+def _sg_raw_to_radiance(raw: torch.Tensor, gamma: float) -> torch.Tensor:
+    return torch.exp(F.softplus(raw) / float(gamma)) - 1.0
+
+
+def _fibonacci_sphere_directions(
+    n_lobes: int,
+    device: torch.device | str | None = None,
+    dtype: torch.dtype = torch.float32,
+) -> torch.Tensor:
+    if n_lobes <= 0:
+        raise ValueError(f"n_lobes must be positive, got {n_lobes}.")
+
+    indices = torch.arange(n_lobes, dtype=dtype, device=device)
+    if n_lobes == 1:
+        return torch.tensor([[0.0, 1.0, 0.0]], dtype=dtype, device=device)
+
+    y = 1.0 - indices / float(n_lobes - 1) * 2.0
+    radius = torch.sqrt(torch.clamp(1.0 - y * y, min=0.0))
+    golden_angle = torch.pi * (
+        3.0 - torch.sqrt(torch.as_tensor(5.0, dtype=dtype, device=device))
+    )
+    theta = indices * golden_angle
+    return torch.stack(
+        [torch.cos(theta) * radius, y, torch.sin(theta) * radius],
+        dim=-1,
+    ).contiguous()
+
+
+def _equirectangular_texel_directions(
+    height: int,
+    width: int,
+    device: torch.device | str | None = None,
+    dtype: torch.dtype = torch.float32,
+) -> torch.Tensor:
+    if height <= 0 or width <= 0:
+        raise ValueError(f"resolution entries must be positive, got {(height, width)}.")
+
+    y, x = torch.meshgrid(
+        torch.arange(height, dtype=dtype, device=device),
+        torch.arange(width, dtype=dtype, device=device),
+        indexing="ij",
+    )
+    u = (x + 0.5) / float(width)
+    v = (y + 0.5) / float(height)
+    theta = u * 2.0 * torch.pi - torch.pi
+    phi = (v - 0.5) * torch.pi
+    return torch.stack(
+        [
+            torch.sin(theta) * torch.cos(phi),
+            torch.cos(theta) * torch.cos(phi),
+            -torch.sin(phi),
+        ],
+        dim=-1,
+    ).contiguous()
+
+
+def _as_resolution(value: Any, default: tuple[int, int]) -> tuple[int, int]:
+    if value is None:
+        return default
+    if isinstance(value, str):
+        parts = value.lower().replace("x", ",").split(",")
+        value = [part.strip() for part in parts if part.strip()]
+    if not isinstance(value, Sequence) or len(value) != 2:
+        raise ValueError(f"resolution must be a (height, width) pair, got {value}.")
+    height, width = int(value[0]), int(value[1])
+    if height <= 0 or width <= 0:
+        raise ValueError(f"resolution entries must be positive, got {value}.")
+    return height, width
+
+
+def _as_rgb_tensor(
+    value: float | Sequence[float] | torch.Tensor,
+    device: torch.device | str | None,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    tensor = torch.as_tensor(value, device=device, dtype=dtype)
+    if tensor.ndim == 0:
+        tensor = tensor.expand(3)
+    tensor = tensor.reshape(-1)
+    if tensor.numel() != 3:
+        raise ValueError(f"RGB value must have one or three entries, got {value}.")
+    return tensor
+
+
+def _alternating_sg_sharpness(
+    n_lobes: int,
+    device: torch.device | str | None,
+    dtype: torch.dtype,
+    low: float,
+    high: float,
+) -> torch.Tensor:
+    indices = torch.arange(n_lobes, device=device)
+    sharpnesses = torch.empty(n_lobes, device=device, dtype=dtype)
+    sharpnesses[indices % 2 == 0] = float(low)
+    sharpnesses[indices % 2 == 1] = float(high)
+    return sharpnesses
+
+
+class SphericalGaussianEnvironment(torch.nn.Module):
+    """Learnable SG lighting evaluated into a 2D environment map."""
+
+    DEFAULT_NUM_LOBES = 24
+    DEFAULT_GAMMA = 0.3
+    DEFAULT_SHARPNESS_LOW = 1.0
+    DEFAULT_SHARPNESS_HIGH = 20.0
+    DEFAULT_RAW_AMPLITUDE = -3.5
+    DEFAULT_MIN_SHARPNESS = 1.0e-4
+
+    def __init__(
+        self,
+        n_lobes: int = DEFAULT_NUM_LOBES,
+        resolution: tuple[int, int] = _DEFAULT_ENVIRONMENT_SIZE,
+        gamma: float = DEFAULT_GAMMA,
+        sharpness: float | Sequence[float] | torch.Tensor | None = None,
+        init_radiance: float | Sequence[float] | torch.Tensor = 0.5,
+        min_sharpness: float = DEFAULT_MIN_SHARPNESS,
+        device: torch.device | str | None = None,
+        dtype: torch.dtype = torch.float32,
+        raw_amplitudes: torch.Tensor | None = None,
+        directions: torch.Tensor | None = None,
+        sharpnesses: torch.Tensor | None = None,
+    ) -> None:
+        super().__init__()
+
+        self.n_lobes = int(n_lobes)
+        self.height, self.width = _as_resolution(resolution, _DEFAULT_ENVIRONMENT_SIZE)
+        if self.height == 6 * self.width:
+            raise ValueError(
+                "spherical_gaussian resolution is evaluated as a 2D environment map "
+                f"and must not use cubemap strip shape [6*N, N], got {(self.height, self.width)}."
+            )
+        self.gamma = float(gamma)
+        self.min_sharpness = float(min_sharpness)
+
+        if self.gamma <= 0.0:
+            raise ValueError(f"gamma must be positive, got {gamma}.")
+        if self.min_sharpness <= 0.0:
+            raise ValueError(
+                f"min_sharpness must be positive, got {min_sharpness}."
+            )
+
+        if directions is None:
+            directions = _fibonacci_sphere_directions(
+                self.n_lobes, device=device, dtype=dtype
+            )
+        else:
+            directions = torch.as_tensor(directions, device=device, dtype=dtype)
+            if directions.shape != (self.n_lobes, 3):
+                raise ValueError(
+                    f"directions must have shape [{self.n_lobes}, 3], got {tuple(directions.shape)}."
+                )
+        directions = F.normalize(directions, dim=-1)
+        self.directions = torch.nn.Parameter(directions.detach().clone())
+
+        texel_directions = _equirectangular_texel_directions(
+            self.height, self.width, device=device, dtype=dtype
+        )
+        self.register_buffer("texel_directions", texel_directions)
+
+        if sharpnesses is None:
+            if sharpness is None:
+                sharpnesses = _alternating_sg_sharpness(
+                    self.n_lobes,
+                    device=device,
+                    dtype=dtype,
+                    low=self.DEFAULT_SHARPNESS_LOW,
+                    high=self.DEFAULT_SHARPNESS_HIGH,
+                )
+            else:
+                sharpnesses = torch.as_tensor(sharpness, device=device, dtype=dtype)
+                if sharpnesses.ndim == 0:
+                    sharpnesses = sharpnesses.expand(self.n_lobes)
+                sharpnesses = sharpnesses.reshape(-1)
+        else:
+            sharpnesses = torch.as_tensor(
+                sharpnesses, device=device, dtype=dtype
+            ).reshape(-1)
+        if sharpnesses.numel() != self.n_lobes:
+            raise ValueError(
+                f"sharpness must have one or {self.n_lobes} entries, got {sharpnesses.numel()}."
+            )
+        sharpnesses = torch.clamp(sharpnesses, min=self.min_sharpness)
+        raw_sharpness = _softplus_inverse(sharpnesses - self.min_sharpness)
+        self.raw_sharpness = torch.nn.Parameter(raw_sharpness.detach().clone())
+
+        if raw_amplitudes is None:
+            init_rgb = _as_rgb_tensor(init_radiance, device, dtype)
+            default_rgb = torch.full((3,), 0.5, device=device, dtype=dtype)
+            if torch.allclose(init_rgb, default_rgb):
+                raw_amplitudes = torch.full(
+                    (self.n_lobes, 3),
+                    self.DEFAULT_RAW_AMPLITUDE,
+                    device=device,
+                    dtype=dtype,
+                )
+            else:
+                kernel_mean = (1.0 - torch.exp(-2.0 * sharpnesses)) / (
+                    2.0 * sharpnesses
+                )
+                amplitudes = init_rgb.reshape(1, 3) / torch.clamp(
+                    float(self.n_lobes) * kernel_mean.reshape(self.n_lobes, 1),
+                    min=torch.finfo(dtype).tiny,
+                )
+                raw_amplitudes = _radiance_to_sg_raw(amplitudes, self.gamma)
+        else:
+            raw_amplitudes = torch.as_tensor(
+                raw_amplitudes, device=device, dtype=dtype
+            )
+            if raw_amplitudes.shape != (self.n_lobes, 3):
+                raise ValueError(
+                    f"raw_amplitudes must have shape [{self.n_lobes}, 3], got {tuple(raw_amplitudes.shape)}."
+                )
+        self.raw_amplitudes = torch.nn.Parameter(raw_amplitudes.detach().clone())
+
+    @classmethod
+    def from_config(
+        cls,
+        config: Mapping[str, Any] | None = None,
+        device: torch.device | str | None = None,
+        dtype: torch.dtype = torch.float32,
+        init_radiance: float | Sequence[float] | torch.Tensor = 0.5,
+    ) -> "SphericalGaussianEnvironment":
+        config = {} if config is None else dict(config)
+        resolution = _as_resolution(
+            config.get("resolution", config.get("size", None)),
+            _DEFAULT_ENVIRONMENT_SIZE,
+        )
+        return cls(
+            n_lobes=int(
+                config.get("n_lobes", config.get("num_lobes", cls.DEFAULT_NUM_LOBES))
+            ),
+            resolution=resolution,
+            gamma=float(config.get("gamma", cls.DEFAULT_GAMMA)),
+            sharpness=config.get("sharpness", None),
+            init_radiance=init_radiance,
+            min_sharpness=float(
+                config.get("min_sharpness", cls.DEFAULT_MIN_SHARPNESS)
+            ),
+            device=device,
+            dtype=dtype,
+        )
+
+    @classmethod
+    def from_state(
+        cls,
+        state: Mapping[str, torch.Tensor],
+        config: Mapping[str, Any] | None = None,
+        device: torch.device | str | None = None,
+        dtype: torch.dtype = torch.float32,
+    ) -> "SphericalGaussianEnvironment":
+        config = {} if config is None else dict(config)
+        raw_amplitudes = torch.as_tensor(
+            state["raw_amplitudes"], device=device, dtype=dtype
+        )
+        n_lobes = int(raw_amplitudes.shape[0])
+
+        directions = state.get("directions", None)
+        if directions is not None:
+            directions = torch.as_tensor(directions, device=device, dtype=dtype)
+
+        sharpnesses = None
+        if "raw_sharpness" not in state and "sharpnesses" in state:
+            sharpnesses = torch.as_tensor(
+                state["sharpnesses"], device=device, dtype=dtype
+            )
+
+        texel_directions = state.get("texel_directions", None)
+        if texel_directions is not None:
+            texel_directions = torch.as_tensor(
+                texel_directions, device=device, dtype=dtype
+            )
+            resolution = tuple(int(v) for v in texel_directions.shape[:2])
+        else:
+            resolution = _as_resolution(
+                config.get("resolution", config.get("size", None)),
+                _DEFAULT_ENVIRONMENT_SIZE,
+            )
+
+        module = cls(
+            n_lobes=n_lobes,
+            resolution=resolution,
+            gamma=float(config.get("gamma", cls.DEFAULT_GAMMA)),
+            sharpness=None if sharpnesses is None else sharpnesses,
+            init_radiance=0.5,
+            min_sharpness=float(
+                config.get("min_sharpness", cls.DEFAULT_MIN_SHARPNESS)
+            ),
+            device=device,
+            dtype=dtype,
+            raw_amplitudes=raw_amplitudes,
+            directions=directions,
+            sharpnesses=sharpnesses,
+        )
+        module.load_state_dict(dict(state), strict=False)
+        return module
+
+    def config_dict(self) -> dict[str, Any]:
+        return {
+            "n_lobes": self.n_lobes,
+            "resolution": [self.height, self.width],
+            "gamma": self.gamma,
+            "min_sharpness": self.min_sharpness,
+        }
+
+    def amplitudes(self) -> torch.Tensor:
+        return _sg_raw_to_radiance(self.raw_amplitudes, self.gamma)
+
+    def sharpness(self) -> torch.Tensor:
+        return F.softplus(self.raw_sharpness) + self.min_sharpness
+
+    def normalized_directions(self) -> torch.Tensor:
+        return F.normalize(self.directions, dim=-1)
+
+    def forward(self) -> torch.Tensor:
+        view_dirs = self.texel_directions.reshape(-1, 3)
+        lobe_dirs = self.normalized_directions()
+        dot_products = torch.matmul(view_dirs, lobe_dirs.transpose(0, 1))
+        lobes = torch.exp(self.sharpness().reshape(1, -1) * (dot_products - 1.0))
+        rgb = torch.matmul(lobes, self.amplitudes()).reshape(
+            self.height, self.width, 3
+        )
+        alpha = torch.ones(
+            self.height,
+            self.width,
+            1,
+            dtype=rgb.dtype,
+            device=rgb.device,
+        )
+        return torch.cat([rgb, alpha], dim=-1).contiguous()
+
+
 class Environment:
     """Load environment maps and expose them as 4-channel torch tensors."""
 
     FIXED_ENVIRONMENT_OPTIONS = ["Model-Background", "Black", "White"]
     ENVIRONMENT_EXTENSIONS = (".hdr", ".exr", ".png", ".jpg", ".jpeg", ".tif", ".tiff")
-    ENVIRONMENT_TYPE_OPTIONS = ["2d", "cube"]
     CUBEMAP_FACE_NAMES = ("+X", "-X", "+Y", "-Y", "+Z", "-Z")
     CUBEMAP_FACE_ALIASES = (
         ("+x", "posx", "px", "right"),
@@ -514,7 +858,7 @@ class Environment:
         ("+z", "posz", "pz", "front"),
         ("-z", "negz", "nz", "back"),
     )
-    DEFAULT_ENVIRONMENT_SIZE = (64, 128)
+    DEFAULT_ENVIRONMENT_SIZE = _DEFAULT_ENVIRONMENT_SIZE
     DEFAULT_CUBEMAP_FACE_SIZE = 64
     LOG_ENVIRONMENT_MIN = 1.0e-6
     LOG_ENVIRONMENT_PARAMETERIZATION = "log_exp"
@@ -531,7 +875,7 @@ class Environment:
         self.device = device
         self.path = path
         self.folder = None
-        self.environment_type = self._normalize_environment_type(environment_type)
+        self.environment_type = str(environment_type).lower()
         self.environment_parameterization = (
             self._normalize_environment_parameterization(parameterization)
         )
@@ -610,19 +954,10 @@ class Environment:
             self.environment = tensor.detach()
 
     def configure_optimization(self, enabled: bool) -> None:
-        environment = self.get_environment()
         self.optimize_environment = bool(enabled)
+        environment = self.get_environment()
         if environment is not None:
             self._set_environment_tensor(environment)
-
-    @classmethod
-    def _normalize_environment_type(cls, environment_type: str) -> str:
-        normalized = str(environment_type).lower()
-        if normalized not in cls.ENVIRONMENT_TYPE_OPTIONS:
-            raise ValueError(
-                f"environment_type must be one of {cls.ENVIRONMENT_TYPE_OPTIONS}, got '{environment_type}'."
-            )
-        return normalized
 
     @classmethod
     def _normalize_environment_parameterization(cls, parameterization: str) -> str:
@@ -707,7 +1042,7 @@ class Environment:
 
     def _prepare_environment_data(self, data: np.ndarray) -> np.ndarray:
         rgb = self._prepare_rgb(data)
-        if self.environment_type == "cube":
+        if self.environment_type == ENVIRONMENT_TYPE_CUBE:
             rgb = self._prepare_cubemap(rgb)
         return rgb
 
@@ -762,7 +1097,7 @@ class Environment:
                     f"Cubemap face {face_name} shape {face.shape[:2]} does not match {face_size}x{face_size}."
                 )
 
-        self.environment_type = "cube"
+        self.environment_type = ENVIRONMENT_TYPE_CUBE
         self.path = None
         self.folder = os.path.commonpath(
             [os.path.dirname(os.path.abspath(path)) for path in face_paths]
@@ -775,7 +1110,7 @@ class Environment:
     def load_path(self, environment_path: str) -> torch.Tensor:
         """Load an environment map from an explicit file path."""
         if os.path.isdir(environment_path):
-            if self.environment_type != "cube":
+            if self.environment_type != ENVIRONMENT_TYPE_CUBE:
                 raise ValueError("Directory loading is only supported for cubemaps.")
             environment = self.load_cubemap_files(
                 self._find_cubemap_face_paths(environment_path)
@@ -828,7 +1163,7 @@ class Environment:
         return self.get_environment()
 
     def _constant_environment(self, value: float) -> torch.Tensor:
-        if self.environment_type == "cube":
+        if self.environment_type == ENVIRONMENT_TYPE_CUBE:
             height = 6 * self.DEFAULT_CUBEMAP_FACE_SIZE
             width = self.DEFAULT_CUBEMAP_FACE_SIZE
         else:
@@ -871,7 +1206,9 @@ class Environment:
         pad = environment.new_ones(environment.shape[0], environment.shape[1], 1)
         self._set_environment_tensor(torch.cat([environment, pad], dim=-1))
 
-    def get_environment_parameter(self) -> Optional[torch.Tensor]:
+    def get_environment_parameter(
+        self,
+    ) -> torch.Tensor | torch.nn.Parameter | torch.nn.Module | None:
         return self.environment
 
     def get_environment(self) -> Optional[torch.Tensor]:
@@ -928,9 +1265,9 @@ class Environment:
         self.environment_offset = list(
             state_dict.get("environment_offset", self.environment_offset)
         )
-        self.environment_type = self._normalize_environment_type(
+        self.environment_type = str(
             state_dict.get("environment_type", self.environment_type)
-        )
+        ).lower()
         self.optimize_environment = bool(
             state_dict.get("optimize_environment", self.optimize_environment)
         )
@@ -947,6 +1284,182 @@ class Environment:
         else:
             self._set_environment_parameter(environment, parameterization)
         self._hdr_data = None
+
+
+class SGEnvironment(Environment):
+    """Environment wrapper for learnable spherical Gaussian lighting."""
+
+    def __init__(
+        self,
+        path: Optional[str] = None,
+        device: Optional[torch.device | str] = None,
+        optimize_environment: bool = False,
+        spherical_gaussian: Mapping[str, Any] | None = None,
+    ) -> None:
+        self.spherical_gaussian_config = (
+            {} if spherical_gaussian is None else dict(spherical_gaussian)
+        )
+        super().__init__(
+            path=path,
+            device=device,
+            environment_type=ENVIRONMENT_TYPE_SPHERICAL_GAUSSIAN,
+            optimize_environment=optimize_environment,
+            parameterization=self.LINEAR_ENVIRONMENT_PARAMETERIZATION,
+        )
+
+    def _set_spherical_gaussian_module(
+        self, module: SphericalGaussianEnvironment
+    ) -> None:
+        if self.device is not None:
+            module = module.to(device=self.device)
+        module.requires_grad_(self.optimize_environment)
+        self.environment = module
+        self.environment_parameterization = self.LINEAR_ENVIRONMENT_PARAMETERIZATION
+        self.spherical_gaussian_config = module.config_dict()
+
+    def _set_spherical_gaussian_environment(
+        self,
+        init_radiance: float | Sequence[float] | torch.Tensor = 0.5,
+        state: Mapping[str, torch.Tensor] | None = None,
+    ) -> None:
+        if state is None:
+            module = SphericalGaussianEnvironment.from_config(
+                self.spherical_gaussian_config,
+                device=self.device,
+                dtype=torch.float32,
+                init_radiance=init_radiance,
+            )
+        else:
+            module = SphericalGaussianEnvironment.from_state(
+                state,
+                config=self.spherical_gaussian_config,
+                device=self.device,
+                dtype=torch.float32,
+            )
+        self._set_spherical_gaussian_module(module)
+
+    def _set_spherical_gaussian_from_tensor(self, environment: torch.Tensor) -> None:
+        tensor = self._as_environment_tensor(environment)
+        mean_rgb = tensor[..., :3].mean(dim=(0, 1)).detach()
+        self._set_spherical_gaussian_environment(init_radiance=mean_rgb)
+
+    def _set_environment_parameter(
+        self, environment: torch.Tensor, parameterization: Optional[str] = None
+    ) -> None:
+        self.environment_parameterization = self.LINEAR_ENVIRONMENT_PARAMETERIZATION
+        self._set_spherical_gaussian_from_tensor(environment)
+
+    def _set_environment_tensor(self, environment: Optional[torch.Tensor]) -> None:
+        if environment is None:
+            self.environment = None
+            return
+        self._set_spherical_gaussian_from_tensor(environment)
+
+    def configure_optimization(self, enabled: bool) -> None:
+        self.optimize_environment = bool(enabled)
+        if isinstance(self.environment, SphericalGaussianEnvironment):
+            self.environment.requires_grad_(self.optimize_environment)
+
+    def init_environment(self, value: float = 0.5) -> torch.Tensor:
+        self.path = None
+        self.folder = None
+        self.current_name = "Initialized"
+        self._hdr_data = None
+        self._set_spherical_gaussian_environment(init_radiance=value)
+        return self.get_environment()
+
+    def set_env(self, env_name: Optional[str] = None) -> None:
+        if env_name in ("Model-Background", "Black"):
+            self._hdr_data = None
+            self._set_spherical_gaussian_environment(init_radiance=0.0)
+        elif env_name == "White":
+            self._hdr_data = None
+            self._set_spherical_gaussian_environment(init_radiance=1.0)
+        else:
+            self._load_hdr(env_name)
+        self.current_name = env_name
+
+    def get_environment_parameter(
+        self,
+    ) -> torch.nn.Module | None:
+        return self.environment
+
+    def get_environment(self) -> Optional[torch.Tensor]:
+        if self.environment is None:
+            return None
+        return self.environment()
+
+    def state_dict(self) -> dict:
+        return {
+            "current_name": self.current_name,
+            "path": self.path,
+            "environment_offset": list(self.environment_offset),
+            "environment": None,
+            "spherical_gaussian_state": None
+            if self.environment is None
+            else {
+                name: value.detach().clone()
+                for name, value in self.environment.state_dict().items()
+            },
+            "spherical_gaussian_config": self.spherical_gaussian_config,
+            "environment_parameterization": self.LINEAR_ENVIRONMENT_PARAMETERIZATION,
+            "environment_type": self.environment_type,
+            "optimize_environment": self.optimize_environment,
+            "intensity": self.intensity,
+        }
+
+    def load_state_dict(self, state_dict: dict) -> None:
+        self.current_name = state_dict.get("current_name", self.current_name)
+        self.path = state_dict.get("path", self.path)
+        self.environment_offset = list(
+            state_dict.get("environment_offset", self.environment_offset)
+        )
+        self.environment_type = ENVIRONMENT_TYPE_SPHERICAL_GAUSSIAN
+        self.optimize_environment = bool(
+            state_dict.get("optimize_environment", self.optimize_environment)
+        )
+        self.intensity = float(state_dict.get("intensity", self.intensity))
+        self.spherical_gaussian_config = dict(
+            state_dict.get(
+                "spherical_gaussian_config", self.spherical_gaussian_config
+            )
+            or {}
+        )
+
+        spherical_gaussian_state = state_dict.get("spherical_gaussian_state")
+        if spherical_gaussian_state is not None:
+            self._set_spherical_gaussian_environment(state=spherical_gaussian_state)
+        else:
+            environment = state_dict.get("environment")
+            if environment is None:
+                self._set_spherical_gaussian_environment()
+            else:
+                self._set_environment_parameter(environment)
+        self._hdr_data = None
+
+
+def create_environment(
+    path: Optional[str] = None,
+    device: Optional[torch.device | str] = None,
+    environment_type: str = "2d",
+    optimize_environment: bool = False,
+    parameterization: str = Environment.LINEAR_ENVIRONMENT_PARAMETERIZATION,
+    spherical_gaussian: Mapping[str, Any] | None = None,
+) -> Environment:
+    if str(environment_type).lower() == ENVIRONMENT_TYPE_SPHERICAL_GAUSSIAN:
+        return SGEnvironment(
+            path=path,
+            device=device,
+            optimize_environment=optimize_environment,
+            spherical_gaussian=spherical_gaussian,
+        )
+    return Environment(
+        path=path,
+        device=device,
+        environment_type=environment_type,
+        optimize_environment=optimize_environment,
+        parameterization=parameterization,
+    )
 
 
 def estimate_environment_power(
@@ -1580,9 +2093,12 @@ __all__ = [
     "MeshLightPack",
     "MeshLightTriangleAliasTable",
     "PointLight",
+    "SGEnvironment",
     "SphereLight",
+    "SphericalGaussianEnvironment",
     "build_light_alias_table",
     "build_mesh_light_triangle_alias_table",
+    "create_environment",
     "environment_tensor_to_rgb_numpy",
     "estimate_light_power",
     "pack_mesh_lights",

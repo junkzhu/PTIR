@@ -20,7 +20,7 @@ model:
 
 environment:
   path: null
-  type: "2d" #Supported types: "2d" or "cube".
+  type: "2d" #Supported types: "2d", "cube", or "spherical_gaussian".
   parameterization: "log_exp" #Supported types: "linear" or "log_exp".
 
 initialization:

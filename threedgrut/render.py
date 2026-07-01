@@ -35,6 +35,7 @@ from threedgrut.model.light import (
     Light,
     LightType,
     build_light_alias_table,
+    create_environment,
     pack_mesh_lights,
 )
 from threedgrut.model.model import MixtureOfGaussians
@@ -127,7 +128,13 @@ class Renderer:
         ):
             return
 
-        environment = Environment(
+        sg_config = OmegaConf.select(
+            conf, "environment.spherical_gaussian", default=None
+        )
+        if sg_config is not None:
+            sg_config = OmegaConf.to_container(sg_config, resolve=True)
+
+        environment = create_environment(
             path=OmegaConf.select(conf, "environment.path", default=None),
             device=model.device,
             environment_type=OmegaConf.select(conf, "environment.type", default="2d"),
@@ -137,6 +144,7 @@ class Renderer:
             parameterization=OmegaConf.select(
                 conf, "environment.parameterization", default="linear"
             ),
+            spherical_gaussian=sg_config,
         )
         environment_state = (
             checkpoint.get("environment_state")
@@ -160,11 +168,20 @@ class Renderer:
 
     @staticmethod
     def _set_model_environment(
-        model, environment_parameter: torch.Tensor | torch.nn.Parameter | None
+        model,
+        environment_parameter: torch.Tensor
+        | torch.nn.Parameter
+        | torch.nn.Module
+        | None,
     ) -> None:
-        if isinstance(
-            getattr(model, "environment", None), torch.nn.Parameter
-        ) and not isinstance(environment_parameter, torch.nn.Parameter):
+        current_environment = getattr(model, "environment", None)
+        if isinstance(current_environment, torch.nn.Module) and not isinstance(
+            environment_parameter, torch.nn.Module
+        ):
+            delattr(model, "environment")
+        elif isinstance(current_environment, torch.nn.Parameter) and not isinstance(
+            environment_parameter, torch.nn.Parameter
+        ):
             delattr(model, "environment")
 
         model.environment = environment_parameter
@@ -268,6 +285,7 @@ class Renderer:
         visualize_lights=False,
         restore_environment=True,
         environment_path=None,
+        config_overrides=None,
     ):
         """Loads checkpoint for test path.
         If path is stated, it will override the test path in checkpoint.
@@ -278,6 +296,8 @@ class Renderer:
         global_step = checkpoint["global_step"]
 
         conf = checkpoint["config"]
+        if config_overrides:
+            conf = OmegaConf.merge(conf, OmegaConf.from_dotlist(list(config_overrides)))
         # overrides
         if conf["render"]["method"] in ("3dgrt", "3dgptir"):
             conf["render"]["particle_kernel_density_clamping"] = True
@@ -418,7 +438,8 @@ class Renderer:
         return self._step_output_dir() / "relight"
 
     def _load_relight_environment(self, environment_path: Path) -> None:
-        environment_type = OmegaConf.select(self.conf, "environment.type", default="2d")
+        environment_type = "cube" if environment_path.is_dir() else "2d"
+
         environment = Environment(
             path=str(environment_path),
             device=getattr(self.model, "device", "cuda"),

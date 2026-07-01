@@ -22,6 +22,18 @@ import torch.nn.functional as F
 
 
 DEFAULT_ALIAS_TABLE_SIZE = (64, 128)
+ENVIRONMENT_TYPE_2D = "2d"
+ENVIRONMENT_TYPE_CUBE = "cube"
+ENVIRONMENT_TYPE_SPHERICAL_GAUSSIAN = "spherical_gaussian"
+ENVIRONMENT_TYPE_OPTIONS = (
+    ENVIRONMENT_TYPE_2D,
+    ENVIRONMENT_TYPE_CUBE,
+    ENVIRONMENT_TYPE_SPHERICAL_GAUSSIAN,
+)
+EQUIRECTANGULAR_ENVIRONMENT_TYPES = (
+    ENVIRONMENT_TYPE_2D,
+    ENVIRONMENT_TYPE_SPHERICAL_GAUSSIAN,
+)
 
 
 @dataclass(frozen=True)
@@ -192,7 +204,8 @@ def _environment_solid_angles(
     device: torch.device,
     dtype: torch.dtype,
 ) -> torch.Tensor:
-    if environment_type == "cube":
+    normalized_type = str(environment_type).lower()
+    if normalized_type == ENVIRONMENT_TYPE_CUBE:
         if height != 6 * width:
             raise ValueError(
                 f"Cubemap environment must have shape [6*N, N, C], got H={height}, W={width}."
@@ -212,9 +225,9 @@ def environment_importance_weights(
         return None
 
     normalized_type = str(environment_type).lower()
-    if normalized_type not in ("2d", "cube"):
+    if normalized_type not in ENVIRONMENT_TYPE_OPTIONS:
         raise ValueError(
-            f"environment_type must be one of ['2d', 'cube'], got '{environment_type}'."
+            f"environment_type must be one of {list(ENVIRONMENT_TYPE_OPTIONS)}, got '{environment_type}'."
         )
 
     weights = _environment_luminance(environment, luminance_weights)
@@ -242,12 +255,12 @@ def build_environment_alias_table(
         raise ValueError(f"eps must be non-negative, got {eps}.")
 
     normalized_type = str(environment_type).lower()
-    if normalized_type not in ("2d", "cube"):
+    if normalized_type not in ENVIRONMENT_TYPE_OPTIONS:
         raise ValueError(
-            f"environment_type must be one of ['2d', 'cube'], got '{environment_type}'."
+            f"environment_type must be one of {list(ENVIRONMENT_TYPE_OPTIONS)}, got '{environment_type}'."
         )
 
-    if normalized_type == "2d":
+    if normalized_type in EQUIRECTANGULAR_ENVIRONMENT_TYPES:
         environment = _resize_2d_environment_for_alias_table(environment, target_size)
 
     luminance = _environment_luminance(environment, luminance_weights)
@@ -286,6 +299,10 @@ def build_environment_alias_table(
 
 __all__ = [
     "DEFAULT_ALIAS_TABLE_SIZE",
+    "ENVIRONMENT_TYPE_2D",
+    "ENVIRONMENT_TYPE_CUBE",
+    "ENVIRONMENT_TYPE_SPHERICAL_GAUSSIAN",
+    "ENVIRONMENT_TYPE_OPTIONS",
     "EnvAliasTable",
     "build_alias_table",
     "build_environment_alias_table",

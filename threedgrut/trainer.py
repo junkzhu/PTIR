@@ -34,7 +34,10 @@ from threedgrut.datasets.protocols import BoundedMultiViewDataset
 from threedgrut.datasets.utils import DEFAULT_DEVICE, MultiEpochsDataLoader, PointCloud
 from threedgrut.metric import create_psnr_criterion
 from threedgrut.model.aliastable import EnvAliasTable
-from threedgrut.model.light import Environment, save_environment_exr
+from threedgrut.model.light import (
+    create_environment,
+    save_environment_exr,
+)
 from threedgrut.model.losses import (
     depth_distortion_loss,
     edge_aware_smoothness_loss,
@@ -294,21 +297,29 @@ class Trainer3DGRUT:
         env_parameterization = OmegaConf.select(
             conf, "environment.parameterization", default="linear"
         )
+        sg_config = OmegaConf.select(
+            conf, "environment.spherical_gaussian", default=None
+        )
+        if sg_config is not None:
+            sg_config = OmegaConf.to_container(sg_config, resolve=True)
         optimize_environment = bool(
             OmegaConf.select(conf, "model.optimize_environment", default=False)
         )
-        self.environment = Environment(
+        self.environment = create_environment(
             path=env_path,
             device=self.device,
             environment_type=env_type,
             optimize_environment=optimize_environment,
             parameterization=env_parameterization,
+            spherical_gaussian=sg_config,
         )
         self.model.optimize_environment = self.environment.optimize_environment
         self.model.environment_parameterization = (
             self.environment.environment_parameterization
         )
-        self.model.environment = self.environment.get_environment_parameter()
+        Renderer._set_model_environment(
+            self.model, self.environment.get_environment_parameter()
+        )
         if self.conf.render.method == "3dgptir" and self.conf.render.enable_mis:
             self.rebuild_environment_alias_table(log=True)
 
@@ -341,7 +352,9 @@ class Trainer3DGRUT:
         self.model.environment_parameterization = (
             self.environment.environment_parameterization
         )
-        self.model.environment = self.environment.get_environment_parameter()
+        Renderer._set_model_environment(
+            self.model, self.environment.get_environment_parameter()
+        )
         if self.conf.render.method == "3dgptir" and self.conf.render.enable_mis:
             self.rebuild_environment_alias_table(log=True)
         else:
@@ -520,13 +533,28 @@ class Trainer3DGRUT:
         self.gui = gui
 
     def init_metrics(self):
-        self.criterions = Dict(
-            psnr=create_psnr_criterion().to(self.device),
-            ssim=StructuralSimilarityIndexMeasure(data_range=1.0).to(self.device),
-            lpips=LearnedPerceptualImagePatchSimilarity(
+        self.criterions = Dict()
+
+    def get_criterion(self, name: str) -> nn.Module:
+        criterion = self.criterions.get(name)
+        if criterion is not None:
+            return criterion
+
+        if name == "psnr":
+            criterion = create_psnr_criterion().to(self.device)
+        elif name == "ssim":
+            criterion = StructuralSimilarityIndexMeasure(data_range=1.0).to(
+                self.device
+            )
+        elif name == "lpips":
+            criterion = LearnedPerceptualImagePatchSimilarity(
                 net_type="vgg", normalize=True
-            ).to(self.device),
-        )
+            ).to(self.device)
+        else:
+            raise KeyError(f"Unknown criterion: {name}")
+
+        self.criterions[name] = criterion
+        return criterion
 
     def init_experiments_tracking(self, conf: DictConfig):
         # Initialize the tensorboard writer
@@ -644,13 +672,6 @@ class Trainer3DGRUT:
         metrics = dict()
         step = self.global_step
 
-        rgb_gt = gpu_batch.rgb_gt
-        rgb_pred = outputs["pred_rgb"]
-
-        psnr = self.criterions["psnr"]
-        ssim = self.criterions["ssim"]
-        lpips = self.criterions["lpips"]
-
         # Move losses to cpu once
         metrics["losses"] = {k: v.detach().item() for k, v in losses.items()}
 
@@ -659,13 +680,22 @@ class Trainer3DGRUT:
         )
         is_compute_validation_metrics = split == "validation"
 
-        if is_compute_train_hit_metrics or is_compute_validation_metrics:
-            metrics["hits_mean"] = outputs["hits_count"].mean().item()
-            metrics["hits_std"] = outputs["hits_count"].std().item()
-            metrics["hits_min"] = outputs["hits_count"].min().item()
-            metrics["hits_max"] = outputs["hits_count"].max().item()
+        hits_count = outputs.get("hits_count")
+        if (
+            is_compute_train_hit_metrics or is_compute_validation_metrics
+        ) and hits_count is not None:
+            metrics["hits_mean"] = hits_count.mean().item()
+            metrics["hits_std"] = hits_count.std().item()
+            metrics["hits_min"] = hits_count.min().item()
+            metrics["hits_max"] = hits_count.max().item()
 
         if is_compute_validation_metrics:
+            rgb_gt = gpu_batch.rgb_gt
+            rgb_pred = outputs["pred_rgb"]
+            psnr = self.get_criterion("psnr")
+            ssim = self.get_criterion("ssim")
+            lpips = self.get_criterion("lpips")
+
             with torch.cuda.nvtx.range(f"criterions_psnr"):
                 metrics["psnr"] = psnr(rgb_pred, rgb_gt).item()
 
@@ -679,9 +709,10 @@ class Trainer3DGRUT:
                 metrics["lpips"] = lpips(pred_rgb_full_clipped, rgb_gt_full).item()
 
             if iteration in self.conf.writer.log_image_views:
-                metrics["img_hit_counts"] = jet_map(
-                    outputs["hits_count"][-1], self.conf.writer.max_num_hits
-                )
+                if hits_count is not None:
+                    metrics["img_hit_counts"] = jet_map(
+                        hits_count[-1], self.conf.writer.max_num_hits
+                    )
                 metrics["img_gt"] = gpu_batch.rgb_gt[-1].clip(0, 1.0)
                 metrics["img_pred"] = outputs["pred_rgb"][-1].clip(0, 1.0)
                 metrics["img_pred_dist"] = jet_map(outputs["pred_dist"][-1], 100)
@@ -1635,24 +1666,27 @@ class Trainer3DGRUT:
                     self.post_processing, outputs, gpu_batch, training=True
                 )
 
-        # Convert depth to normal
-        with torch.cuda.nvtx.range(f"train_{global_step}_pseudo_normal"):
-            pred_dist = outputs.get("pred_dist")
-            if pred_dist is not None:
-                valid = pred_dist > 0
-                pseudo_normal, pseudo_normal_mask = (
-                    self.normal_utils.depth_to_pseudo_normal(
-                        rays_o=gpu_batch.rays_ori,
-                        rays_d=gpu_batch.rays_dir,
-                        T_to_world=gpu_batch.T_to_world,
-                        pred_dist=pred_dist,
-                        valid=valid,
-                        pred_opacity=outputs.get("pred_opacity"),
-                        foreground_mask=gpu_batch.gradient_mask,
+        # Convert depth to pseudo normals only when a configured loss consumes them.
+        if self.conf.render.method != "3dgptir" and self.conf.loss.get(
+            "use_pseudo_normal_supervision", False
+        ):
+            with torch.cuda.nvtx.range(f"train_{global_step}_pseudo_normal"):
+                pred_dist = outputs.get("pred_dist")
+                if pred_dist is not None:
+                    valid = pred_dist > 0
+                    pseudo_normal, pseudo_normal_mask = (
+                        self.normal_utils.depth_to_pseudo_normal(
+                            rays_o=gpu_batch.rays_ori,
+                            rays_d=gpu_batch.rays_dir,
+                            T_to_world=gpu_batch.T_to_world,
+                            pred_dist=pred_dist,
+                            valid=valid,
+                            pred_opacity=outputs.get("pred_opacity"),
+                            foreground_mask=gpu_batch.gradient_mask,
+                        )
                     )
-                )
-                gpu_batch.pseudo_normal = pseudo_normal
-                gpu_batch.pseudo_normal_mask = pseudo_normal_mask
+                    gpu_batch.pseudo_normal = pseudo_normal
+                    gpu_batch.pseudo_normal_mask = pseudo_normal_mask
 
         # Compute the losses of a single batch
         with torch.cuda.nvtx.range(f"train_{global_step}_loss"):

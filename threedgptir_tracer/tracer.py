@@ -468,6 +468,63 @@ class Tracer:
         )
         self.timings = {}
 
+    def _required_train_output_keys(self) -> set[str]:
+        keys = {
+            "pred_pbr",
+            "pred_material",
+        }
+
+        lambda_light = float(self.conf.loss.get("lambda_light", 0.0))
+        if (
+            bool(self.conf.loss.get("use_light_consistency", False))
+            or lambda_light > 0.0
+        ):
+            keys.add("pred_light")
+
+        if bool(self.conf.loss.get("use_edge_aware_smoothness", False)):
+            keys.update(self.conf.loss.get("edge_aware_smoothness_outputs", []))
+
+        return keys
+
+    def _train_output_key_sets(
+        self, train: bool
+    ) -> tuple[set[str] | None, set[str] | None]:
+        if not train or not bool(
+            self.conf.render.get("hide_intermediate_outputs", False)
+        ):
+            return None, None
+
+        final_output_keys = self._required_train_output_keys()
+        accumulation_keys = set(final_output_keys)
+        if "pred_pbr" in accumulation_keys:
+            accumulation_keys.add("pred_opacity")
+        if "pred_direct" in accumulation_keys or "pred_indirect" in accumulation_keys:
+            accumulation_keys.update(("pbr_components", "pred_opacity"))
+        return final_output_keys, accumulation_keys
+
+    def _postprocess_pbr_outputs(self, outputs: dict[str, torch.Tensor]) -> None:
+        pred_opacity = outputs.get("pred_opacity")
+        opacity_weighted_keys = ("pred_pbr", "pred_direct", "pred_indirect")
+        if pred_opacity is not None:
+            for key in opacity_weighted_keys:
+                value = outputs.get(key)
+                if value is not None:
+                    outputs[key] = value * pred_opacity
+
+        for key in (*opacity_weighted_keys, "pred_light"):
+            value = outputs.get(key)
+            if value is not None:
+                outputs[key] = self.pred_pbr_filter(value)
+
+    @staticmethod
+    def _normalize_depth_output(outputs: dict[str, torch.Tensor]) -> None:
+        pred_dist = outputs.get("pred_dist")
+        pred_opacity = outputs.get("pred_opacity")
+        if pred_dist is not None and pred_opacity is not None:
+            outputs["pred_dist"] = torch.nan_to_num(
+                pred_dist / pred_opacity, 0.0, 0.0
+            )
+
     def _get_spp(self, train: bool) -> int:
         if train:
             spp = self.conf.render.inversion_spp
@@ -730,9 +787,22 @@ class Tracer:
                 )
                 self._logged_spp_configs.add(spp_config)
 
-            accumulated_outputs = None
+            final_output_keys, accumulation_keys = self._train_output_key_sets(train)
+
+            accumulated_outputs = {}
             mog_visibility = None
             total_spp = 0
+
+            def accumulate_output(name: str, value: torch.Tensor) -> None:
+                if accumulation_keys is not None and name not in accumulation_keys:
+                    return
+                averaged = self._average_spp_output(value, chunk_spp, base_batch)
+                weighted = averaged * chunk_spp
+                previous = accumulated_outputs.get(name)
+                accumulated_outputs[name] = (
+                    weighted if previous is None else previous + weighted
+                )
+
             for spp_start in range(0, spp, spp_chunk):
                 chunk_spp = min(spp_chunk, spp - spp_start)
                 chunk_jitter = (
@@ -830,42 +900,21 @@ class Tracer:
                     train,
                 )
 
-                chunk_outputs = (
-                    self._average_spp_output(chunk_pred_rgb, chunk_spp, base_batch),
-                    self._average_spp_output(chunk_pred_opacity, chunk_spp, base_batch),
-                    self._average_spp_output(chunk_pred_dist, chunk_spp, base_batch),
-                    self._average_spp_output(
-                        chunk_pred_dist_second_moment, chunk_spp, base_batch
-                    ),
-                    self._average_spp_output(
-                        chunk_pred_distortion, chunk_spp, base_batch
-                    ),
-                    self._average_spp_output(chunk_pred_normals, chunk_spp, base_batch),
-                    self._average_spp_output(
-                        chunk_pred_shadingnormal, chunk_spp, base_batch
-                    ),
-                    self._average_spp_output(
-                        chunk_pred_material, chunk_spp, base_batch
-                    ),
-                    self._average_spp_output(chunk_hits_count, chunk_spp, base_batch),
-                    self._average_spp_output(chunk_pred_pbr, chunk_spp, base_batch),
-                    self._average_spp_output(chunk_pred_light, chunk_spp, base_batch),
-                    self._average_spp_output(
-                        chunk_pbr_components.detach(), chunk_spp, base_batch
-                    ),
-                )
-                weighted_chunk_outputs = tuple(
-                    output * chunk_spp for output in chunk_outputs
-                )
-                if accumulated_outputs is None:
-                    accumulated_outputs = weighted_chunk_outputs
-                else:
-                    accumulated_outputs = tuple(
-                        accumulated + weighted
-                        for accumulated, weighted in zip(
-                            accumulated_outputs, weighted_chunk_outputs
-                        )
-                    )
+                for name, value in (
+                    ("pred_rgb", chunk_pred_rgb),
+                    ("pred_opacity", chunk_pred_opacity),
+                    ("pred_dist", chunk_pred_dist),
+                    ("pred_depth_second_moment", chunk_pred_dist_second_moment),
+                    ("pred_depth_distortion", chunk_pred_distortion),
+                    ("pred_normals", chunk_pred_normals),
+                    ("pred_shadingnormal", chunk_pred_shadingnormal),
+                    ("pred_material", chunk_pred_material),
+                    ("hits_count", chunk_hits_count),
+                    ("pred_pbr", chunk_pred_pbr),
+                    ("pred_light", chunk_pred_light),
+                    ("pbr_components", chunk_pbr_components.detach()),
+                ):
+                    accumulate_output(name, value)
 
                 mog_visibility = (
                     chunk_mog_visibility
@@ -877,56 +926,50 @@ class Tracer:
             if self.frame_timer is not None:
                 self.frame_timer.end()
 
-            (
-                pred_rgb,
-                pred_opacity,
-                pred_dist,
-                pred_dist_second_moment,
-                pred_distortion,
-                pred_normals,
-                pred_shadingnormal,
-                pred_material,
-                hits_count,
-                pred_pbr,
-                pred_light,
-                pbr_components,
-            ) = tuple(accumulated / total_spp for accumulated in accumulated_outputs)
-            pred_direct = pbr_components[..., 0, :]
-            pred_indirect = pbr_components[..., 1, :]
+            accumulated_outputs = {
+                name: accumulated / total_spp
+                for name, accumulated in accumulated_outputs.items()
+            }
+            pbr_components = accumulated_outputs.pop("pbr_components", None)
+            if pbr_components is not None:
+                accumulated_outputs["pred_direct"] = pbr_components[..., 0, :]
+                accumulated_outputs["pred_indirect"] = pbr_components[..., 1, :]
 
-            pred_dist = pred_dist / pred_opacity
-            pred_dist = torch.nan_to_num(pred_dist, 0.0, 0.0)
-
+            self._normalize_depth_output(accumulated_outputs)
             # https://github.com/fudan-zvg/IRGS/blob/main/gaussian_renderer/__init__.py#L233
-            pred_pbr = pred_pbr * pred_opacity
-            pred_direct = pred_direct * pred_opacity
-            pred_indirect = pred_indirect * pred_opacity
-
-            pred_pbr = self.pred_pbr_filter(pred_pbr)
-            pred_light = self.pred_pbr_filter(pred_light)
-            pred_direct = self.pred_pbr_filter(pred_direct)
-            pred_indirect = self.pred_pbr_filter(pred_indirect)
+            self._postprocess_pbr_outputs(accumulated_outputs)
 
         if self.frame_timer is not None:
             self.timings["forward_render"] = self.frame_timer.timing()
 
+        output_keys = (
+            "pred_rgb",
+            "pred_opacity",
+            "pred_dist",
+            "pred_depth_second_moment",
+            "pred_depth_distortion",
+            "pred_normals",
+            "pred_shadingnormal",
+            "pred_material",
+            "pred_pbr",
+            "pred_light",
+            "pred_direct",
+            "pred_indirect",
+            "hits_count",
+        )
+        output_values = {key: accumulated_outputs.get(key) for key in output_keys}
+        if output_values["pred_normals"] is not None:
+            output_values["pred_normals"] = torch.nn.functional.normalize(
+                output_values["pred_normals"], dim=3
+            )
         outputs = {
-            "pred_rgb": pred_rgb,
-            "pred_opacity": pred_opacity,
-            "pred_dist": pred_dist,
-            "pred_depth_second_moment": pred_dist_second_moment,
-            "pred_depth_distortion": pred_distortion,
-            "pred_normals": torch.nn.functional.normalize(pred_normals, dim=3),
-            "pred_shadingnormal": pred_shadingnormal,
-            "pred_material": pred_material,
-            "pred_pbr": pred_pbr,
-            "pred_light": pred_light,
-            "pred_direct": pred_direct,
-            "pred_indirect": pred_indirect,
-            "hits_count": hits_count,
-            "frame_time_ms": self.frame_timer.timing()
-            if self.frame_timer is not None
-            else 0.0,
-            "mog_visibility": mog_visibility,
+            key: value
+            for key, value in output_values.items()
+            if value is not None
+            and (final_output_keys is None or key in final_output_keys)
         }
+        outputs["frame_time_ms"] = (
+            self.frame_timer.timing() if self.frame_timer is not None else 0.0
+        )
+        outputs["mog_visibility"] = mog_visibility
         return post_processing(outputs, gpu_batch, self.visualize_lights)
